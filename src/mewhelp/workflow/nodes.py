@@ -1,0 +1,678 @@
+"""图节点。
+
+每个节点只做三件事：读状态 → 调一个模块 → 往状态里追加自己的产出。
+
+三条贯穿所有节点的纪律：
+
+1. **节点不抛异常。** 流水线的价值在于"部分失败也能给出有用结果"：
+   精排挂了还有召回结果，模型挂了还有兜底话术。异常冒到图外面，
+   用户拿到的就是一个 500，而不是一句"我暂时查不到，帮你转人工"。
+
+2. **每步都写 trace 和 path。** 一条请求要能还原成一棵调用树，
+   靠的就是节点自己记账 —— 事后从返回值反推是还原不出来的。
+
+3. **节点之间不共享可变状态。** 只通过 AgentState 传值，
+   这样任意节点都能被单独替换或测试。
+"""
+
+from __future__ import annotations
+
+from typing import Any
+
+from ..domain import Exit, Intent, NodeName, RefusalReason
+from ..schemas import (
+    Evidence,
+    GateDecision,
+    RetrievalResult,
+    SelfEvalResult,
+    SlotExtraction,
+    TokenUsage,
+    ToolCall,
+    TraceStep,
+    Turn,
+)
+from .state import AgentState
+
+
+def _usage_from(llm_response: Any) -> TokenUsage:
+    u = getattr(llm_response, "usage", None)
+    return u if isinstance(u, TokenUsage) else TokenUsage()
+
+
+def _step(node: str, **details: Any) -> TraceStep:
+    return TraceStep(node=node, details=details)
+
+
+# ============================================================
+# ③ 指代消解 + 意图识别
+# ============================================================
+
+
+def make_resolve_node(deps) -> Any:
+    def resolve_node(state: AgentState) -> dict[str, Any]:
+        q = state.get("question", "")
+        history = state.get("history", [])
+        try:
+            result = deps.resolver.resolve(q, history)
+        except Exception as exc:  # noqa: BLE001 — 消解失败不该阻断问答
+            from ..schemas import ResolveResult
+
+            result = ResolveResult(original=q, resolved=q, rewritten=False)
+            return {
+                "resolved_question": q,
+                "resolve": result,
+                "path": [NodeName.RESOLVE.value],
+                "trace": [
+                    _step(NodeName.RESOLVE.value, error=str(exc), fallback=True)
+                ],
+                "errors": [f"resolve: {exc}"],
+            }
+
+        return {
+            "resolved_question": result.resolved or q,
+            "resolve": result,
+            "path": [NodeName.RESOLVE.value],
+            "trace": [
+                _step(
+                    NodeName.RESOLVE.value,
+                    original=result.original,
+                    resolved=result.resolved,
+                    rewritten=result.rewritten,
+                    substitutions=result.substitutions,
+                )
+            ],
+        }
+
+    return resolve_node
+
+
+def make_classify_node(deps) -> Any:
+    def classify_node(state: AgentState) -> dict[str, Any]:
+        text = state.get("resolved_question") or state.get("question", "")
+        history = state.get("history", [])
+        try:
+            classify = deps.classifier.classify(text)
+            slots = deps.classifier.extract_slots(state.get("question", ""), history)
+        except Exception as exc:  # noqa: BLE001
+            from ..domain import INTENT_LABELS
+            from ..schemas import ClassifyResult
+
+            classify = ClassifyResult(
+                intent=Intent.POLICY_FAQ,
+                confidence=0.0,
+                label=INTENT_LABELS.get(Intent.POLICY_FAQ, ""),
+                method="fallback",
+            )
+            slots = SlotExtraction()
+            return {
+                "intent": classify.intent,
+                "intent_confidence": 0.0,
+                "classify": classify,
+                "slots": slots,
+                "exit": INTENT_TO_EXIT_FALLBACK,
+                "path": [NodeName.CLASSIFY.value],
+                "trace": [_step(NodeName.CLASSIFY.value, error=str(exc), fallback=True)],
+                "errors": [f"classify: {exc}"],
+            }
+
+        from ..domain import INTENT_TO_EXIT
+
+        exit_ = INTENT_TO_EXIT.get(classify.intent, Exit.FALLBACK)
+        return {
+            "intent": classify.intent,
+            "intent_confidence": classify.confidence,
+            "classify": classify,
+            "slots": slots,
+            "exit": exit_,
+            "path": [NodeName.CLASSIFY.value],
+            "trace": [
+                _step(
+                    NodeName.CLASSIFY.value,
+                    intent=classify.intent.value,
+                    confidence=classify.confidence,
+                    method=classify.method,
+                    matched=classify.matched,
+                    exit=exit_.value,
+                )
+            ],
+        }
+
+    return classify_node
+
+
+#: 分类降级时的出口。走知识检索而不是兜底，因为"答不上来"比"直接放弃"更有用；
+#: 真正的兜底由闸门在检索之后决定。
+INTENT_TO_EXIT_FALLBACK = Exit.KNOWLEDGE
+
+
+# ============================================================
+# 条件边的路由函数
+# ============================================================
+
+
+def route_by_exit(state: AgentState) -> str:
+    """按出口分流 —— 图上最重要的那道岔口。
+
+    九类意图收敛到五个出口，收敛的意义在这里体现：图只有五条边，
+    而不是九条。新增一类意图时，只要它落进已有出口，图一行都不用改。
+    """
+    exit_ = state.get("exit") or Exit.FALLBACK
+    return {
+        Exit.KNOWLEDGE: "retrieve",
+        Exit.BUSINESS_TOOL: "agent",
+        Exit.HIGH_RISK: "high_risk_flow",
+        Exit.HANDOFF: "handoff",
+        Exit.FALLBACK: "retrieve",
+    }.get(exit_, "retrieve")
+
+
+# ============================================================
+# 检索
+# ============================================================
+
+
+def make_retrieve_node(deps) -> Any:
+    def retrieve_node(state: AgentState) -> dict[str, Any]:
+        query = state.get("resolved_question") or state.get("question", "")
+        try:
+            result = deps.retriever.retrieve(query)
+        except Exception as exc:  # noqa: BLE001 — 检索挂了要能退化成"无证据"，而不是崩
+            result = RetrievalResult(query=query, strategy="failed")
+            # 检索失败 = 一条证据都没有 = 闸门必然拒答，但拒答话术得是人话。
+            # 不在这里给 answer 的话，handoff 节点会输出一句通用的转人工，
+            # 用户完全不知道发生了什么。
+            return {
+                "retrieval": result,
+                "answer": "抱歉，知识库暂时查询不通，我帮你转人工核实一下。",
+                "path": [NodeName.RETRIEVE.value],
+                "trace": [_step(NodeName.RETRIEVE.value, error=str(exc), fallback=True)],
+                "errors": [f"retrieve: {exc}"],
+            }
+
+        return {
+            "retrieval": result,
+            "path": [NodeName.RETRIEVE.value],
+            "trace": [
+                _step(
+                    NodeName.RETRIEVE.value,
+                    strategy=result.strategy,
+                    dense_hits=result.dense_hits,
+                    sparse_hits=result.sparse_hits,
+                    fused_hits=result.fused_hits,
+                    reranked_hits=result.reranked_hits,
+                    top_score=round(result.top_score, 4),
+                    # 只记 chunk_id 和标题，不记全文 —— 日志不该被证据正文撑爆
+                    chunks=[
+                        {"chunk_id": e.chunk_id, "title": e.chunk.title, "score": round(e.score, 4)}
+                        for e in result.evidences
+                    ],
+                )
+            ],
+        }
+
+    return retrieve_node
+
+
+def make_gate_node(deps) -> Any:
+    def gate_node(state: AgentState) -> dict[str, Any]:
+        try:
+            decision = deps.gate.check(
+                state.get("resolved_question") or state.get("question", ""),
+                state.get("retrieval"),
+                state.get("intent"),
+                state.get("slots"),
+            )
+        except Exception as exc:  # noqa: BLE001 — 闸门自己坏了，宁可不放行
+            decision = GateDecision.reject(
+                0.0, RefusalReason.NO_EVIDENCE, {}, "系统校验异常，帮你转人工确认。"
+            )
+            return {
+                "gate": decision,
+                "refusal_reason": decision.reason,
+                "path": [NodeName.GATE.value],
+                "trace": [_step(NodeName.GATE.value, error=str(exc), fallback=True)],
+                "errors": [f"gate: {exc}"],
+            }
+
+        return {
+            "gate": decision,
+            "refusal_reason": None if decision.passed else decision.reason,
+            "path": [NodeName.GATE.value],
+            "trace": [
+                _step(
+                    NodeName.GATE.value,
+                    passed=decision.passed,
+                    confidence=round(decision.confidence, 4),
+                    reason=decision.reason.value if decision.reason else None,
+                    # 四个判据逐条记下来 —— "为什么判它不过"要能一眼看到
+                    checks={k: round(v, 4) for k, v in decision.checks.items()},
+                    checked_before_generation=True,
+                )
+            ],
+        }
+
+    return gate_node
+
+
+def gate_route(state: AgentState) -> str:
+    """闸门之后走生成还是转人工。"""
+    gate = state.get("gate")
+    return "generate" if (gate and gate.passed) else "handoff"
+
+
+# ============================================================
+# 主力 Agent（ReAct）
+# ============================================================
+
+
+def make_agent_node(deps) -> Any:
+    """主力 Agent：ReAct 循环。
+
+    **循环上限是必需的。** 模型可以一直在"再查一个工具"里打转，
+    没有上限的话一次请求能烧掉几十次调用，而用户只是问了个物流。
+    """
+
+    def agent_node(state: AgentState) -> dict[str, Any]:
+        from ..llm import extract_json
+
+        question = state.get("resolved_question") or state.get("question", "")
+        specs = deps.tools.specs()
+        calls: list[ToolCall] = []
+        usage = TokenUsage()
+        steps_detail: list[dict[str, Any]] = []
+        errors: list[str] = []
+
+        scratch = [{"role": "user", "content": question}]
+        for step in range(deps.max_agent_steps):
+            try:
+                resp = deps.llm.chat(scratch, tools=specs, task="plan_tool")
+                usage = usage.add(_usage_from(resp))
+                plan = extract_json(resp.text)
+            except Exception as exc:  # noqa: BLE001 — 规划失败就收手，不用模型兜
+                errors.append(f"agent: {exc}")
+                break
+
+            action = (plan or {}).get("action")
+            action_input = (plan or {}).get("action_input") or {}
+            steps_detail.append({"step": step, "action": action, "args": action_input})
+
+            if not action or action == "finish":
+                break
+
+            # 高风险工具不允许 Agent 直接调用 —— 只能由 high_risk_flow 决定。
+            # 这是"业务铁律写死在图上"最具体的一处体现。
+            if action in deps.tools.high_risk_actions():
+                calls.append(
+                    ToolCall(
+                        name=action,
+                        args=dict(action_input),
+                        ok=False,
+                        error="HIGH_RISK_REQUIRES_FLOW",
+                    )
+                )
+                steps_detail[-1]["blocked"] = "high_risk"
+                break
+
+            call = deps.tools.call(action, dict(action_input))
+            calls.append(call)
+            scratch.append({"role": "assistant", "content": resp.text})
+            scratch.append(
+                {
+                    "role": "user",
+                    "content": f"工具 {action} 返回：{_brief(call.result if call.ok else call.error)}",
+                }
+            )
+        else:
+            errors.append("agent: 达到最大步数上限")
+
+        return {
+            "tool_calls": calls,
+            "usage": usage,
+            "path": [NodeName.AGENT.value],
+            "trace": [
+                _step(
+                    NodeName.AGENT.value,
+                    steps=steps_detail,
+                    tool_calls=[{"name": c.name, "ok": c.ok, "error": c.error} for c in calls],
+                    max_steps=deps.max_agent_steps,
+                )
+            ],
+            "errors": errors,
+        }
+
+    return agent_node
+
+
+def _brief(value: Any, limit: int = 400) -> str:
+    text = str(value)
+    return text if len(text) <= limit else text[:limit] + "…"
+
+
+def _render_tool_answer(calls: list[ToolCall]) -> str:
+    """把工具结果翻成给用户的人话。
+
+    和 high_risk 子流程同一原则：这是"查到了什么"的事实陈述，不交给模型写。
+    模型写只会引入"工具说待付款、模型说已发货"这类不一致；这里直接引用字段值。
+
+    每个工具的结果都是 dict，带自己的 `status_label` / `note` 字段，优先用它们。
+    这样新增一个业务工具时，只要它返回规范的 dict，这里就不用改。
+    """
+    if not calls:
+        return "没有可用的查询结果。"
+
+    parts: list[str] = []
+    for call in calls:
+        if not call.ok:
+            parts.append(_tool_error_text(call.error))
+            continue
+        data = call.result if isinstance(call.result, dict) else {}
+        note = data.get("note")
+        status_label = data.get("status_label")
+        if note:
+            parts.append(note)
+        elif status_label:
+            # 有状态标签但没有现成话术的，拼一句最小的状态陈述
+            oid = data.get("order_id", "")
+            parts.append(f"订单 {oid} 当前状态：{status_label}。")
+
+    if parts:
+        return "\n".join(parts)
+    return "已经查到相关信息，具体的我帮你转人工核对一下。"
+
+
+#: 工具错误码 → 人话。工具名对用户是内部实现细节，不该泄漏到答复里。
+_TOOL_ERROR_TEXT: dict[str, str] = {
+    "ORDER_NOT_FOUND": "没有查到这个订单号，麻烦核对一下再发我（形如 ORD-1007）。",
+    "ORDER_NOT_CANCELLABLE": "这笔订单已经发货了，没法直接取消。",
+    "ORDER_ADDRESS_LOCKED": "订单已发出，收货地址改不了了。",
+    "REFUND_NOT_ELIGIBLE": "这笔订单不在退款条件内，我可以帮你转人工复核。",
+    "TIMEOUT": "系统查询超时了，请稍后再试。",
+    "UPSTREAM_ERROR": "系统暂时不可用，我帮你转人工处理。",
+}
+
+
+def _tool_error_text(error: str | None) -> str:
+    if error and error in _TOOL_ERROR_TEXT:
+        return _TOOL_ERROR_TEXT[error]
+    return "暂时没查到，我帮你转人工核实一下。"
+
+
+# ============================================================
+# 高风险子流程（含中断）
+# ============================================================
+
+
+def make_high_risk_node(deps) -> Any:
+    from langgraph.types import interrupt
+
+    from .high_risk import run_high_risk_flow
+
+    def high_risk_node(state: AgentState) -> dict[str, Any]:
+        intent = state.get("intent") or Intent.POLICY_FAQ
+        question = state.get("question", "")
+
+        outcome = run_high_risk_flow(intent, question, deps.tools)
+
+        if outcome.interrupted and not deps.checkpointer:
+            # 没挂 checkpointer 就没有"挂起"这回事（interrupt() 会直接抛异常，
+            # 把整条请求打成 500）。这时正确的行为是**把追问当作答复返回**：
+            # 用户的诉求没被满足，但他明确知道下一步该给什么。
+            return {
+                "interrupt_prompt": outcome.interrupt_prompt,
+                "missing_slots": outcome.missing,
+                "answer": outcome.interrupt_prompt,
+                "handoff": False,
+                "path": [NodeName.HIGH_RISK_FLOW.value],
+                "trace": [
+                    _step(
+                        NodeName.HIGH_RISK_FLOW.value,
+                        interrupted=True,
+                        missing=outcome.missing,
+                        prompt=outcome.interrupt_prompt,
+                    )
+                ],
+            }
+
+        if outcome.interrupted:
+            # 挂了 checkpointer：真的把图挂在这一行。状态被原样存下，
+            # 用户补充信息后从本节点开头继续 —— 不是重跑整条流水线。
+            # 恢复时 LangGraph 会把"补充内容 + 原状态"一起回放给本节点，
+            # 而补充内容本身就是新的 question，所以直接重跑子流程即可。
+            payload = interrupt({"prompt": outcome.interrupt_prompt, "missing": outcome.missing})
+            resumed_question = payload if isinstance(payload, str) else question
+            outcome = run_high_risk_flow(intent, resumed_question, deps.tools)
+
+        escalate = bool(outcome.error) and outcome.error in _ESCALATE
+        return {
+            "interrupt_prompt": None,
+            "missing_slots": [],
+            "tool_calls": outcome.tool_calls,
+            "answer": outcome.answer or "",
+            "handoff": escalate,
+            "refusal_reason": RefusalReason.HIGH_RISK_UNAPPROVED if outcome.error else None,
+            "path": [NodeName.HIGH_RISK_FLOW.value],
+            "trace": [
+                _step(
+                    NodeName.HIGH_RISK_FLOW.value,
+                    interrupted=False,
+                    tool_calls=[
+                        {"name": c.name, "ok": c.ok, "error": c.error} for c in outcome.tool_calls
+                    ],
+                    error=outcome.error,
+                    escalate=escalate,
+                )
+            ],
+        }
+
+    return high_risk_node
+
+
+def _esc() -> frozenset[str]:
+    from .high_risk import ESCALATE_TO_HUMAN
+
+    return ESCALATE_TO_HUMAN
+
+
+_ESCALATE = _esc()
+
+#: 高风险流程跑完后：已经给出明确答复的走 END，需要人工的转 handoff
+def high_risk_route(state: AgentState) -> str:
+    return "handoff" if state.get("handoff") else "__end__"
+
+
+# ============================================================
+# 生成 / 转人工 / 飞轮
+# ============================================================
+
+
+def make_generate_node(deps) -> Any:
+    """生成回答。
+
+    两条来路：
+      * 从闸门过来 —— 有检索证据，生成前先自评（自评不过就转人工）
+      * 从 Agent / 高风险子流程过来 —— 已经有确定性的答案，直接沿用
+    """
+
+    def generate_node(state: AgentState) -> dict[str, Any]:
+        existing = state.get("answer") or ""
+        if existing:
+            return {
+                "answer": existing,
+                "path": [NodeName.GENERATE.value],
+                "trace": [_step(NodeName.GENERATE.value, source="deterministic", chars=len(existing))],
+            }
+
+        # 工具路径（business_tool 出口）：Agent 已经调过工具，工具结果本身就是答案。
+        # 这里不"生成"，只把结构化结果翻成人话 —— 和 high_risk 子流程同一个原则：
+        # 事实陈述不交给模型写，避免引入与工具结果不一致的措辞。
+        tool_calls = state.get("tool_calls") or []
+        if tool_calls:
+            answer = _render_tool_answer(tool_calls)
+            return {
+                "answer": answer,
+                "path": [NodeName.GENERATE.value],
+                "trace": [
+                    _step(
+                        NodeName.GENERATE.value,
+                        source="tool_result",
+                        tool_calls=[c.name for c in tool_calls],
+                        chars=len(answer),
+                    )
+                ],
+            }
+
+        retrieval = state.get("retrieval")
+        context = retrieval.to_context() if retrieval else ""
+        usage = TokenUsage()
+
+        try:
+            resp = deps.llm.chat(
+                [
+                    {
+                        "role": "system",
+                        "content": (
+                            "你是电商客服。只根据下面给出的知识库证据回答，"
+                            "不要引入证据之外的信息。证据不足时直接说无法确认。"
+                        ),
+                    },
+                    {
+                        "role": "user",
+                        "content": f"知识库证据：\n{context}\n\n用户问题：{state.get('resolved_question') or state.get('question', '')}",
+                    },
+                ],
+                task="generate",
+            )
+            answer = resp.text
+            usage = usage.add(_usage_from(resp))
+        except Exception as exc:  # noqa: BLE001 — 生成失败走兜底话术，不是 500
+            return {
+                "answer": "抱歉，我这边暂时没能组织出可靠的答复，帮你转人工确认。",
+                "handoff": True,
+                "path": [NodeName.GENERATE.value],
+                "trace": [_step(NodeName.GENERATE.value, error=str(exc), fallback=True)],
+                "errors": [f"generate: {exc}"],
+            }
+
+        # 生成前自评：不是等用户看出幻觉，而是发出去之前自己先校验一遍。
+        # 注意它拦不住已经发生的幻觉，但能拦住"即将发出去"的那一次。
+        selfeval = SelfEvalResult(grounded=True, coverage=1.0)
+        try:
+            selfeval = deps.self_eval.evaluate(answer, context)
+        except Exception as exc:  # noqa: BLE001
+            usage = usage
+            trace_err = str(exc)
+        else:
+            trace_err = None
+
+        if not selfeval.grounded:
+            return {
+                "answer": answer,
+                "handoff": True,
+                "refusal_reason": RefusalReason.SELF_EVAL_FAILED,
+                "usage": usage,
+                "path": [NodeName.GENERATE.value],
+                "trace": [
+                    _step(
+                        NodeName.GENERATE.value,
+                        self_eval=False,
+                        coverage=selfeval.coverage,
+                        unsupported=selfeval.unsupported_claims,
+                        error=trace_err,
+                    )
+                ],
+            }
+
+        return {
+            "answer": answer,
+            "usage": usage,
+            "path": [NodeName.GENERATE.value],
+            "trace": [
+                _step(
+                    NodeName.GENERATE.value,
+                    self_eval=True,
+                    coverage=selfeval.coverage,
+                    chars=len(answer),
+                    error=trace_err,
+                )
+            ],
+        }
+
+    return generate_node
+
+
+def make_handoff_node(deps) -> Any:
+    def handoff_node(state: AgentState) -> dict[str, Any]:
+        gate = state.get("gate")
+        # 已经有答复的（高风险流程业务拒绝等）沿用答复，只补一句转人工
+        existing = state.get("answer") or ""
+        if existing and state.get("handoff"):
+            answer = existing + "\n\n已经帮你转接人工客服进一步处理。"
+        elif gate and not gate.passed and gate.message:
+            answer = gate.message
+        else:
+            answer = "这个问题我帮你转人工处理，稍后会有客服同事联系你。"
+
+        return {
+            "answer": answer,
+            "handoff": True,
+            "refusal_reason": state.get("refusal_reason") or (gate.reason if gate and not gate.passed else None),
+            "path": [NodeName.HANDOFF.value],
+            "trace": [
+                _step(
+                    NodeName.HANDOFF.value,
+                    reason=(gate.reason.value if gate and not gate.passed and gate.reason else None),
+                )
+            ],
+        }
+
+    return handoff_node
+
+
+def make_flywheel_node(deps) -> Any:
+    """把答不上的问题落进问题池 —— 数据飞轮的入口。
+
+    落池时**连同当时的检索快照一起存**。没有快照，人工审核时就没法判断
+    "真缺知识"还是"知识有但没检索到"，而这两种情况的处理方式完全不同。
+    """
+
+    def flywheel_node(state: AgentState) -> dict[str, Any]:
+        if not state.get("handoff"):
+            return {"path": [NodeName.FLYWHEEL.value], "trace": [_step(NodeName.FLYWHEEL.value, skipped=True)]}
+
+        from ..flywheel.feedback import source_for
+        from ..schemas import FlywheelRecord
+
+        reason = state.get("refusal_reason")
+        source = source_for(reason, thumbs_down=False)
+
+        try:
+            record = FlywheelRecord(
+                record_id=f"{state.get('request_id', 'req')}-fw",
+                session_id=state.get("session_id", ""),
+                question=state.get("question", ""),
+                resolved_question=state.get("resolved_question", ""),
+                intent=state.get("intent"),
+                source=source,
+                refusal_reason=reason,
+                retrieval_snapshot=state.get("retrieval"),
+            )
+            saved = deps.flywheel.record(record)
+            detail: dict[str, Any] = {
+                "source": source.value,
+                "reason": reason.value if reason else None,
+                "ask_count": saved.ask_count,
+                "has_snapshot": saved.retrieval_snapshot is not None,
+            }
+            errors: list[str] = []
+        except Exception as exc:  # noqa: BLE001 — 落池失败不该影响这次答复
+            detail = {"error": str(exc)}
+            errors = [f"flywheel: {exc}"]
+
+        return {
+            "flywheel_source": source,
+            "path": [NodeName.FLYWHEEL.value],
+            "trace": [_step(NodeName.FLYWHEEL.value, **detail)],
+            "errors": errors,
+        }
+
+    return flywheel_node

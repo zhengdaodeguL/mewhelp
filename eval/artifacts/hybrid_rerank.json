@@ -1,0 +1,5263 @@
+{
+  "strategy": "hybrid_rerank",
+  "recall_at_5": 0.9431,
+  "mrr": 0.8945,
+  "hit_rate_at_5": 1.0,
+  "precision_at_5": 0.2608,
+  "n_scored": 240,
+  "buckets": [
+    {
+      "bucket": "fact_lookup",
+      "n": 60,
+      "recall_at_5": 1.0,
+      "mrr": 0.875,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "refusal_accuracy": null
+    },
+    {
+      "bucket": "multi_condition",
+      "n": 60,
+      "recall_at_5": 0.875,
+      "mrr": 0.8806,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.3533,
+      "refusal_accuracy": null
+    },
+    {
+      "bucket": "multi_turn",
+      "n": 60,
+      "recall_at_5": 0.8972,
+      "mrr": 0.8442,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.29,
+      "refusal_accuracy": null
+    },
+    {
+      "bucket": "table_lookup",
+      "n": 60,
+      "recall_at_5": 1.0,
+      "mrr": 0.9783,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "refusal_accuracy": null
+    },
+    {
+      "bucket": "no_answer",
+      "n": 60,
+      "recall_at_5": 0.0,
+      "mrr": 0.0,
+      "hit_rate_at_5": 0.0,
+      "precision_at_5": 0.0,
+      "refusal_accuracy": 1.0
+    }
+  ],
+  "refusal_accuracy": 1.0,
+  "n_refusal": 60,
+  "per_item": [
+    {
+      "qid": "FL001",
+      "bucket": "fact_lookup",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "会员与优惠#0002",
+        "会员与优惠#0003",
+        "会员与优惠#0004",
+        "会员与优惠#0001",
+        "会员与优惠#0011"
+      ],
+      "expected": [
+        "会员与优惠#0002"
+      ]
+    },
+    {
+      "qid": "FL002",
+      "bucket": "fact_lookup",
+      "recall_at_5": 1.0,
+      "mrr": 0.5,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "会员与优惠#0006",
+        "会员与优惠#0004",
+        "会员与优惠#0007",
+        "会员与优惠#0010",
+        "会员与优惠#0011"
+      ],
+      "expected": [
+        "会员与优惠#0004"
+      ]
+    },
+    {
+      "qid": "FL003",
+      "bucket": "fact_lookup",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "会员与优惠#0004",
+        "会员与优惠#0002",
+        "会员与优惠#0003",
+        "会员与优惠#0001",
+        "商品与尺码#0009"
+      ],
+      "expected": [
+        "会员与优惠#0004"
+      ]
+    },
+    {
+      "qid": "FL004",
+      "bucket": "fact_lookup",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "会员与优惠#0005",
+        "会员与优惠#0007",
+        "会员与优惠#0006",
+        "会员与优惠#0001",
+        "退款政策#0005"
+      ],
+      "expected": [
+        "会员与优惠#0005"
+      ]
+    },
+    {
+      "qid": "FL005",
+      "bucket": "fact_lookup",
+      "recall_at_5": 1.0,
+      "mrr": 0.3333,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "会员与优惠#0010",
+        "退款政策#0002",
+        "会员与优惠#0007",
+        "发票与售后#0006",
+        "物流与配送#0007"
+      ],
+      "expected": [
+        "会员与优惠#0007"
+      ]
+    },
+    {
+      "qid": "FL006",
+      "bucket": "fact_lookup",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "会员与优惠#0007",
+        "会员与优惠#0006",
+        "会员与优惠#0005",
+        "会员与优惠#0010",
+        "会员与优惠#0001"
+      ],
+      "expected": [
+        "会员与优惠#0007"
+      ]
+    },
+    {
+      "qid": "FL007",
+      "bucket": "fact_lookup",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "会员与优惠#0008",
+        "会员与优惠#0010",
+        "会员与优惠#0009",
+        "会员与优惠#0001",
+        "发票与售后#0005"
+      ],
+      "expected": [
+        "会员与优惠#0008"
+      ]
+    },
+    {
+      "qid": "FL008",
+      "bucket": "fact_lookup",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "会员与优惠#0008",
+        "会员与优惠#0010",
+        "会员与优惠#0009",
+        "会员与优惠#0001",
+        "发票与售后#0005"
+      ],
+      "expected": [
+        "会员与优惠#0008"
+      ]
+    },
+    {
+      "qid": "FL009",
+      "bucket": "fact_lookup",
+      "recall_at_5": 1.0,
+      "mrr": 0.5,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "会员与优惠#0009",
+        "会员与优惠#0010",
+        "会员与优惠#0008",
+        "发票与售后#0005",
+        "退货政策#0008"
+      ],
+      "expected": [
+        "会员与优惠#0010"
+      ]
+    },
+    {
+      "qid": "FL010",
+      "bucket": "fact_lookup",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "会员与优惠#0011",
+        "发票与售后#0005",
+        "物流与配送#0010",
+        "物流与配送#0003",
+        "发票与售后#0016"
+      ],
+      "expected": [
+        "会员与优惠#0011"
+      ]
+    },
+    {
+      "qid": "FL011",
+      "bucket": "fact_lookup",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "会员与优惠#0011",
+        "会员与优惠#0002",
+        "会员与优惠#0001",
+        "会员与优惠#0003",
+        "会员与优惠#0004"
+      ],
+      "expected": [
+        "会员与优惠#0011"
+      ]
+    },
+    {
+      "qid": "FL012",
+      "bucket": "fact_lookup",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "发票与售后#0002",
+        "发票与售后#0001",
+        "发票与售后#0004",
+        "发票与售后#0006",
+        "发票与售后#0015"
+      ],
+      "expected": [
+        "发票与售后#0002"
+      ]
+    },
+    {
+      "qid": "FL013",
+      "bucket": "fact_lookup",
+      "recall_at_5": 1.0,
+      "mrr": 0.3333,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "发票与售后#0007",
+        "发票与售后#0003",
+        "发票与售后#0004",
+        "发票与售后#0002",
+        "发票与售后#0001"
+      ],
+      "expected": [
+        "发票与售后#0004"
+      ]
+    },
+    {
+      "qid": "FL014",
+      "bucket": "fact_lookup",
+      "recall_at_5": 1.0,
+      "mrr": 0.5,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "发票与售后#0007",
+        "发票与售后#0004",
+        "发票与售后#0003",
+        "发票与售后#0005",
+        "发票与售后#0002"
+      ],
+      "expected": [
+        "发票与售后#0004"
+      ]
+    },
+    {
+      "qid": "FL015",
+      "bucket": "fact_lookup",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "发票与售后#0004",
+        "发票与售后#0003",
+        "发票与售后#0002",
+        "发票与售后#0001",
+        "发票与售后#0007"
+      ],
+      "expected": [
+        "发票与售后#0004"
+      ]
+    },
+    {
+      "qid": "FL016",
+      "bucket": "fact_lookup",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "发票与售后#0005",
+        "发票与售后#0006",
+        "发票与售后#0007",
+        "发票与售后#0001",
+        "会员与优惠#0007"
+      ],
+      "expected": [
+        "发票与售后#0005"
+      ]
+    },
+    {
+      "qid": "FL017",
+      "bucket": "fact_lookup",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "发票与售后#0007",
+        "发票与售后#0003",
+        "发票与售后#0002",
+        "发票与售后#0001",
+        "发票与售后#0004"
+      ],
+      "expected": [
+        "发票与售后#0007"
+      ]
+    },
+    {
+      "qid": "FL018",
+      "bucket": "fact_lookup",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "发票与售后#0008",
+        "发票与售后#0011",
+        "发票与售后#0010",
+        "发票与售后#0009",
+        "发票与售后#0012"
+      ],
+      "expected": [
+        "发票与售后#0008"
+      ]
+    },
+    {
+      "qid": "FL019",
+      "bucket": "fact_lookup",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "发票与售后#0010",
+        "退货政策#0008",
+        "会员与优惠#0004",
+        "物流与配送#0010",
+        "退款政策#0001"
+      ],
+      "expected": [
+        "发票与售后#0010"
+      ]
+    },
+    {
+      "qid": "FL020",
+      "bucket": "fact_lookup",
+      "recall_at_5": 1.0,
+      "mrr": 0.3333,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "发票与售后#0008",
+        "发票与售后#0009",
+        "发票与售后#0010",
+        "发票与售后#0012",
+        "发票与售后#0001"
+      ],
+      "expected": [
+        "发票与售后#0010"
+      ]
+    },
+    {
+      "qid": "FL021",
+      "bucket": "fact_lookup",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "发票与售后#0011",
+        "发票与售后#0012",
+        "发票与售后#0013",
+        "发票与售后#0001",
+        "发票与售后#0006"
+      ],
+      "expected": [
+        "发票与售后#0011"
+      ]
+    },
+    {
+      "qid": "FL022",
+      "bucket": "fact_lookup",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "发票与售后#0013",
+        "发票与售后#0011",
+        "发票与售后#0012",
+        "发票与售后#0010",
+        "发票与售后#0015"
+      ],
+      "expected": [
+        "发票与售后#0013"
+      ]
+    },
+    {
+      "qid": "FL023",
+      "bucket": "fact_lookup",
+      "recall_at_5": 1.0,
+      "mrr": 0.3333,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "发票与售后#0011",
+        "发票与售后#0012",
+        "发票与售后#0013",
+        "会员与优惠#0011",
+        "发票与售后#0001"
+      ],
+      "expected": [
+        "发票与售后#0013"
+      ]
+    },
+    {
+      "qid": "FL024",
+      "bucket": "fact_lookup",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "发票与售后#0014",
+        "发票与售后#0016",
+        "发票与售后#0015",
+        "发票与售后#0001",
+        "发票与售后#0004"
+      ],
+      "expected": [
+        "发票与售后#0014"
+      ]
+    },
+    {
+      "qid": "FL025",
+      "bucket": "fact_lookup",
+      "recall_at_5": 1.0,
+      "mrr": 0.5,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "发票与售后#0015",
+        "发票与售后#0016",
+        "发票与售后#0014",
+        "物流与配送#0008",
+        "退款政策#0002"
+      ],
+      "expected": [
+        "发票与售后#0016"
+      ]
+    },
+    {
+      "qid": "FL026",
+      "bucket": "fact_lookup",
+      "recall_at_5": 1.0,
+      "mrr": 0.3333,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "商品与尺码#0008",
+        "发票与售后#0009",
+        "商品与尺码#0002",
+        "商品与尺码#0005",
+        "会员与优惠#0003"
+      ],
+      "expected": [
+        "商品与尺码#0002"
+      ]
+    },
+    {
+      "qid": "FL027",
+      "bucket": "fact_lookup",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "商品与尺码#0004",
+        "商品与尺码#0001",
+        "商品与尺码#0002",
+        "商品与尺码#0005",
+        "商品与尺码#0006"
+      ],
+      "expected": [
+        "商品与尺码#0004"
+      ]
+    },
+    {
+      "qid": "FL028",
+      "bucket": "fact_lookup",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "商品与尺码#0006",
+        "商品与尺码#0011",
+        "发票与售后#0008",
+        "商品与尺码#0002",
+        "退款政策#0002"
+      ],
+      "expected": [
+        "商品与尺码#0006"
+      ]
+    },
+    {
+      "qid": "FL029",
+      "bucket": "fact_lookup",
+      "recall_at_5": 1.0,
+      "mrr": 0.5,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "商品与尺码#0007",
+        "商品与尺码#0006",
+        "商品与尺码#0010",
+        "商品与尺码#0009",
+        "商品与尺码#0008"
+      ],
+      "expected": [
+        "商品与尺码#0006"
+      ]
+    },
+    {
+      "qid": "FL030",
+      "bucket": "fact_lookup",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "商品与尺码#0008",
+        "物流与配送#0008",
+        "退款政策#0004",
+        "发票与售后#0008",
+        "退款政策#0006"
+      ],
+      "expected": [
+        "商品与尺码#0008"
+      ]
+    },
+    {
+      "qid": "FL031",
+      "bucket": "fact_lookup",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "商品与尺码#0009",
+        "商品与尺码#0005",
+        "商品与尺码#0010",
+        "商品与尺码#0002",
+        "商品与尺码#0011"
+      ],
+      "expected": [
+        "商品与尺码#0009"
+      ]
+    },
+    {
+      "qid": "FL032",
+      "bucket": "fact_lookup",
+      "recall_at_5": 1.0,
+      "mrr": 0.3333,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "商品与尺码#0009",
+        "商品与尺码#0012",
+        "商品与尺码#0013",
+        "物流与配送#0010",
+        "物流与配送#0002"
+      ],
+      "expected": [
+        "商品与尺码#0013"
+      ]
+    },
+    {
+      "qid": "FL033",
+      "bucket": "fact_lookup",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "商品与尺码#0013",
+        "商品与尺码#0012",
+        "会员与优惠#0002",
+        "退款政策#0011",
+        "发票与售后#0004"
+      ],
+      "expected": [
+        "商品与尺码#0013"
+      ]
+    },
+    {
+      "qid": "FL034",
+      "bucket": "fact_lookup",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "商品与尺码#0013",
+        "商品与尺码#0011",
+        "商品与尺码#0012",
+        "发票与售后#0008",
+        "商品与尺码#0001"
+      ],
+      "expected": [
+        "商品与尺码#0013"
+      ]
+    },
+    {
+      "qid": "FL035",
+      "bucket": "fact_lookup",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "物流与配送#0002",
+        "发票与售后#0003",
+        "退款政策#0012",
+        "物流与配送#0010",
+        "物流与配送#0008"
+      ],
+      "expected": [
+        "物流与配送#0002"
+      ]
+    },
+    {
+      "qid": "FL036",
+      "bucket": "fact_lookup",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "物流与配送#0002",
+        "退款政策#0008",
+        "退款政策#0004",
+        "退款政策#0002",
+        "物流与配送#0010"
+      ],
+      "expected": [
+        "物流与配送#0002"
+      ]
+    },
+    {
+      "qid": "FL037",
+      "bucket": "fact_lookup",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "物流与配送#0007",
+        "物流与配送#0006",
+        "发票与售后#0008",
+        "退货政策#0002",
+        "物流与配送#0002"
+      ],
+      "expected": [
+        "物流与配送#0007"
+      ]
+    },
+    {
+      "qid": "FL038",
+      "bucket": "fact_lookup",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "物流与配送#0008",
+        "物流与配送#0009",
+        "物流与配送#0001",
+        "物流与配送#0005",
+        "物流与配送#0002"
+      ],
+      "expected": [
+        "物流与配送#0008"
+      ]
+    },
+    {
+      "qid": "FL039",
+      "bucket": "fact_lookup",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "物流与配送#0008",
+        "物流与配送#0004",
+        "物流与配送#0002",
+        "物流与配送#0001",
+        "物流与配送#0005"
+      ],
+      "expected": [
+        "物流与配送#0008"
+      ]
+    },
+    {
+      "qid": "FL040",
+      "bucket": "fact_lookup",
+      "recall_at_5": 1.0,
+      "mrr": 0.5,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "物流与配送#0001",
+        "物流与配送#0008",
+        "物流与配送#0009",
+        "物流与配送#0010",
+        "发票与售后#0016"
+      ],
+      "expected": [
+        "物流与配送#0008"
+      ]
+    },
+    {
+      "qid": "FL041",
+      "bucket": "fact_lookup",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "物流与配送#0010",
+        "物流与配送#0008",
+        "发票与售后#0010",
+        "物流与配送#0002",
+        "物流与配送#0003"
+      ],
+      "expected": [
+        "物流与配送#0010"
+      ]
+    },
+    {
+      "qid": "FL042",
+      "bucket": "fact_lookup",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "物流与配送#0010",
+        "物流与配送#0007",
+        "发票与售后#0004",
+        "退款政策#0002",
+        "发票与售后#0006"
+      ],
+      "expected": [
+        "物流与配送#0010"
+      ]
+    },
+    {
+      "qid": "FL043",
+      "bucket": "fact_lookup",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "退款政策#0002",
+        "退款政策#0003",
+        "退款政策#0006",
+        "退款政策#0009",
+        "退款政策#0012"
+      ],
+      "expected": [
+        "退款政策#0002"
+      ]
+    },
+    {
+      "qid": "FL044",
+      "bucket": "fact_lookup",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "退款政策#0002",
+        "物流与配送#0007",
+        "物流与配送#0002",
+        "物流与配送#0010",
+        "退款政策#0009"
+      ],
+      "expected": [
+        "退款政策#0002"
+      ]
+    },
+    {
+      "qid": "FL045",
+      "bucket": "fact_lookup",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "退款政策#0002",
+        "退款政策#0011",
+        "退款政策#0006",
+        "退款政策#0001",
+        "退款政策#0005"
+      ],
+      "expected": [
+        "退款政策#0002"
+      ]
+    },
+    {
+      "qid": "FL046",
+      "bucket": "fact_lookup",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "退款政策#0003",
+        "退款政策#0005",
+        "退款政策#0004",
+        "退款政策#0009",
+        "退款政策#0006"
+      ],
+      "expected": [
+        "退款政策#0003"
+      ]
+    },
+    {
+      "qid": "FL047",
+      "bucket": "fact_lookup",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "退款政策#0005",
+        "退款政策#0003",
+        "退款政策#0004",
+        "物流与配送#0006",
+        "退款政策#0011"
+      ],
+      "expected": [
+        "退款政策#0005"
+      ]
+    },
+    {
+      "qid": "FL048",
+      "bucket": "fact_lookup",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "退款政策#0006",
+        "退款政策#0007",
+        "退款政策#0008",
+        "会员与优惠#0006",
+        "退货政策#0004"
+      ],
+      "expected": [
+        "退款政策#0006"
+      ]
+    },
+    {
+      "qid": "FL049",
+      "bucket": "fact_lookup",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "退款政策#0008",
+        "退款政策#0007",
+        "退款政策#0006",
+        "商品与尺码#0001",
+        "退货政策#0002"
+      ],
+      "expected": [
+        "退款政策#0008"
+      ]
+    },
+    {
+      "qid": "FL050",
+      "bucket": "fact_lookup",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "退款政策#0009",
+        "退款政策#0011",
+        "退款政策#0010",
+        "退款政策#0003",
+        "退款政策#0006"
+      ],
+      "expected": [
+        "退款政策#0009"
+      ]
+    },
+    {
+      "qid": "FL051",
+      "bucket": "fact_lookup",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "退款政策#0011",
+        "退款政策#0009",
+        "退款政策#0010",
+        "物流与配送#0008",
+        "退款政策#0002"
+      ],
+      "expected": [
+        "退款政策#0011"
+      ]
+    },
+    {
+      "qid": "FL052",
+      "bucket": "fact_lookup",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "退款政策#0012",
+        "退款政策#0003",
+        "退款政策#0006",
+        "退款政策#0009",
+        "退款政策#0002"
+      ],
+      "expected": [
+        "退款政策#0012"
+      ]
+    },
+    {
+      "qid": "FL053",
+      "bucket": "fact_lookup",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "退货政策#0001",
+        "退货政策#0006",
+        "退货政策#0008",
+        "退款政策#0002",
+        "退货政策#0007"
+      ],
+      "expected": [
+        "退货政策#0001"
+      ]
+    },
+    {
+      "qid": "FL054",
+      "bucket": "fact_lookup",
+      "recall_at_5": 1.0,
+      "mrr": 0.5,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "退款政策#0009",
+        "退货政策#0002",
+        "退货政策#0005",
+        "退货政策#0003",
+        "退款政策#0003"
+      ],
+      "expected": [
+        "退货政策#0002"
+      ]
+    },
+    {
+      "qid": "FL055",
+      "bucket": "fact_lookup",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "退货政策#0002",
+        "退款政策#0010",
+        "退款政策#0006",
+        "退款政策#0004",
+        "发票与售后#0008"
+      ],
+      "expected": [
+        "退货政策#0002"
+      ]
+    },
+    {
+      "qid": "FL056",
+      "bucket": "fact_lookup",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "退货政策#0005",
+        "退货政策#0003",
+        "退货政策#0004",
+        "退货政策#0001",
+        "商品与尺码#0013"
+      ],
+      "expected": [
+        "退货政策#0005"
+      ]
+    },
+    {
+      "qid": "FL057",
+      "bucket": "fact_lookup",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "退货政策#0006",
+        "退货政策#0002",
+        "退货政策#0008",
+        "退货政策#0007",
+        "退货政策#0003"
+      ],
+      "expected": [
+        "退货政策#0006"
+      ]
+    },
+    {
+      "qid": "FL058",
+      "bucket": "fact_lookup",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "退货政策#0008",
+        "退货政策#0006",
+        "退货政策#0003",
+        "退货政策#0005",
+        "退货政策#0002"
+      ],
+      "expected": [
+        "退货政策#0008"
+      ]
+    },
+    {
+      "qid": "FL059",
+      "bucket": "fact_lookup",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "退货政策#0008",
+        "退货政策#0006",
+        "退货政策#0005",
+        "退货政策#0003",
+        "退货政策#0001"
+      ],
+      "expected": [
+        "退货政策#0008"
+      ]
+    },
+    {
+      "qid": "FL060",
+      "bucket": "fact_lookup",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "退货政策#0008",
+        "退货政策#0007",
+        "退货政策#0006",
+        "退货政策#0003",
+        "退货政策#0001"
+      ],
+      "expected": [
+        "退货政策#0008"
+      ]
+    },
+    {
+      "qid": "MC001",
+      "bucket": "multi_condition",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.6,
+      "retrieved": [
+        "退款政策#0004",
+        "退款政策#0003",
+        "退款政策#0005",
+        "退货政策#0007",
+        "物流与配送#0009"
+      ],
+      "expected": [
+        "退款政策#0003",
+        "退款政策#0004",
+        "退款政策#0005"
+      ]
+    },
+    {
+      "qid": "MC002",
+      "bucket": "multi_condition",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.4,
+      "retrieved": [
+        "退款政策#0004",
+        "退款政策#0002",
+        "退款政策#0006",
+        "退款政策#0003",
+        "退款政策#0005"
+      ],
+      "expected": [
+        "退款政策#0002",
+        "退款政策#0004"
+      ]
+    },
+    {
+      "qid": "MC003",
+      "bucket": "multi_condition",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.4,
+      "retrieved": [
+        "退款政策#0004",
+        "退款政策#0002",
+        "退款政策#0003",
+        "退款政策#0005",
+        "退款政策#0007"
+      ],
+      "expected": [
+        "退款政策#0002",
+        "退款政策#0004"
+      ]
+    },
+    {
+      "qid": "MC004",
+      "bucket": "multi_condition",
+      "recall_at_5": 1.0,
+      "mrr": 0.5,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.4,
+      "retrieved": [
+        "退款政策#0005",
+        "退款政策#0003",
+        "退款政策#0004",
+        "物流与配送#0009",
+        "物流与配送#0008"
+      ],
+      "expected": [
+        "退款政策#0003",
+        "退款政策#0004"
+      ]
+    },
+    {
+      "qid": "MC005",
+      "bucket": "multi_condition",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.4,
+      "retrieved": [
+        "退款政策#0005",
+        "退款政策#0004",
+        "退款政策#0003",
+        "退款政策#0010",
+        "退款政策#0007"
+      ],
+      "expected": [
+        "退款政策#0004",
+        "退款政策#0005"
+      ]
+    },
+    {
+      "qid": "MC006",
+      "bucket": "multi_condition",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.4,
+      "retrieved": [
+        "退款政策#0006",
+        "退款政策#0007",
+        "退货政策#0004",
+        "退货政策#0002",
+        "发票与售后#0012"
+      ],
+      "expected": [
+        "退款政策#0006",
+        "退款政策#0007"
+      ]
+    },
+    {
+      "qid": "MC007",
+      "bucket": "multi_condition",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.4,
+      "retrieved": [
+        "退款政策#0007",
+        "退款政策#0006",
+        "退款政策#0010",
+        "退货政策#0002",
+        "退货政策#0005"
+      ],
+      "expected": [
+        "退款政策#0006",
+        "退款政策#0007"
+      ]
+    },
+    {
+      "qid": "MC008",
+      "bucket": "multi_condition",
+      "recall_at_5": 1.0,
+      "mrr": 0.5,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.4,
+      "retrieved": [
+        "退款政策#0006",
+        "退款政策#0008",
+        "退款政策#0007",
+        "退款政策#0003",
+        "退款政策#0009"
+      ],
+      "expected": [
+        "退款政策#0007",
+        "退款政策#0008"
+      ]
+    },
+    {
+      "qid": "MC009",
+      "bucket": "multi_condition",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.4,
+      "retrieved": [
+        "退款政策#0006",
+        "退款政策#0007",
+        "退货政策#0002",
+        "退货政策#0005",
+        "退货政策#0003"
+      ],
+      "expected": [
+        "退款政策#0006",
+        "退款政策#0007"
+      ]
+    },
+    {
+      "qid": "MC010",
+      "bucket": "multi_condition",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.4,
+      "retrieved": [
+        "退款政策#0007",
+        "退款政策#0006",
+        "退款政策#0008",
+        "发票与售后#0012",
+        "发票与售后#0009"
+      ],
+      "expected": [
+        "退款政策#0006",
+        "退款政策#0007"
+      ]
+    },
+    {
+      "qid": "MC011",
+      "bucket": "multi_condition",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.4,
+      "retrieved": [
+        "退款政策#0010",
+        "退款政策#0009",
+        "退货政策#0002",
+        "退款政策#0004",
+        "退款政策#0007"
+      ],
+      "expected": [
+        "退款政策#0009",
+        "退款政策#0010"
+      ]
+    },
+    {
+      "qid": "MC012",
+      "bucket": "multi_condition",
+      "recall_at_5": 0.5,
+      "mrr": 0.25,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "商品与尺码#0009",
+        "退款政策#0004",
+        "退款政策#0007",
+        "退款政策#0010",
+        "发票与售后#0002"
+      ],
+      "expected": [
+        "退款政策#0010",
+        "退款政策#0011"
+      ]
+    },
+    {
+      "qid": "MC013",
+      "bucket": "multi_condition",
+      "recall_at_5": 0.5,
+      "mrr": 0.5,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "退货政策#0004",
+        "退款政策#0010",
+        "退货政策#0003",
+        "退货政策#0005",
+        "退货政策#0002"
+      ],
+      "expected": [
+        "退款政策#0009",
+        "退款政策#0010"
+      ]
+    },
+    {
+      "qid": "MC014",
+      "bucket": "multi_condition",
+      "recall_at_5": 0.5,
+      "mrr": 0.5,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "退款政策#0007",
+        "退款政策#0010",
+        "退货政策#0006",
+        "商品与尺码#0009",
+        "退货政策#0005"
+      ],
+      "expected": [
+        "退款政策#0009",
+        "退款政策#0010"
+      ]
+    },
+    {
+      "qid": "MC015",
+      "bucket": "multi_condition",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.4,
+      "retrieved": [
+        "退款政策#0009",
+        "退款政策#0011",
+        "退款政策#0010",
+        "退款政策#0003",
+        "退款政策#0006"
+      ],
+      "expected": [
+        "退款政策#0009",
+        "退款政策#0010"
+      ]
+    },
+    {
+      "qid": "MC016",
+      "bucket": "multi_condition",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.4,
+      "retrieved": [
+        "会员与优惠#0004",
+        "会员与优惠#0006",
+        "会员与优惠#0007",
+        "会员与优惠#0003",
+        "会员与优惠#0002"
+      ],
+      "expected": [
+        "会员与优惠#0003",
+        "会员与优惠#0004"
+      ]
+    },
+    {
+      "qid": "MC017",
+      "bucket": "multi_condition",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.4,
+      "retrieved": [
+        "会员与优惠#0007",
+        "会员与优惠#0006",
+        "物流与配送#0007",
+        "发票与售后#0016",
+        "物流与配送#0010"
+      ],
+      "expected": [
+        "会员与优惠#0006",
+        "会员与优惠#0007"
+      ]
+    },
+    {
+      "qid": "MC018",
+      "bucket": "multi_condition",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.4,
+      "retrieved": [
+        "会员与优惠#0007",
+        "会员与优惠#0006",
+        "退货政策#0007",
+        "退货政策#0006",
+        "退货政策#0008"
+      ],
+      "expected": [
+        "会员与优惠#0006",
+        "会员与优惠#0007"
+      ]
+    },
+    {
+      "qid": "MC019",
+      "bucket": "multi_condition",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.4,
+      "retrieved": [
+        "会员与优惠#0010",
+        "会员与优惠#0006",
+        "会员与优惠#0004",
+        "会员与优惠#0007",
+        "会员与优惠#0008"
+      ],
+      "expected": [
+        "会员与优惠#0006",
+        "会员与优惠#0010"
+      ]
+    },
+    {
+      "qid": "MC020",
+      "bucket": "multi_condition",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.4,
+      "retrieved": [
+        "会员与优惠#0011",
+        "发票与售后#0014",
+        "发票与售后#0016",
+        "发票与售后#0015",
+        "会员与优惠#0002"
+      ],
+      "expected": [
+        "会员与优惠#0002",
+        "会员与优惠#0011"
+      ]
+    },
+    {
+      "qid": "MC021",
+      "bucket": "multi_condition",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.4,
+      "retrieved": [
+        "会员与优惠#0011",
+        "发票与售后#0005",
+        "发票与售后#0002",
+        "发票与售后#0007",
+        "发票与售后#0001"
+      ],
+      "expected": [
+        "会员与优惠#0011",
+        "发票与售后#0005"
+      ]
+    },
+    {
+      "qid": "MC022",
+      "bucket": "multi_condition",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.4,
+      "retrieved": [
+        "会员与优惠#0008",
+        "会员与优惠#0007",
+        "退款政策#0002",
+        "会员与优惠#0009",
+        "会员与优惠#0005"
+      ],
+      "expected": [
+        "会员与优惠#0007",
+        "会员与优惠#0008"
+      ]
+    },
+    {
+      "qid": "MC023",
+      "bucket": "multi_condition",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.4,
+      "retrieved": [
+        "会员与优惠#0003",
+        "会员与优惠#0009",
+        "会员与优惠#0011",
+        "会员与优惠#0004",
+        "退货政策#0008"
+      ],
+      "expected": [
+        "会员与优惠#0003",
+        "会员与优惠#0004"
+      ]
+    },
+    {
+      "qid": "MC024",
+      "bucket": "multi_condition",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.4,
+      "retrieved": [
+        "会员与优惠#0003",
+        "会员与优惠#0004",
+        "会员与优惠#0002",
+        "会员与优惠#0001",
+        "会员与优惠#0011"
+      ],
+      "expected": [
+        "会员与优惠#0003",
+        "会员与优惠#0004"
+      ]
+    },
+    {
+      "qid": "MC025",
+      "bucket": "multi_condition",
+      "recall_at_5": 0.5,
+      "mrr": 0.25,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "退款政策#0002",
+        "退款政策#0001",
+        "退款政策#0005",
+        "发票与售后#0006",
+        "会员与优惠#0008"
+      ],
+      "expected": [
+        "发票与售后#0006",
+        "发票与售后#0007"
+      ]
+    },
+    {
+      "qid": "MC026",
+      "bucket": "multi_condition",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.4,
+      "retrieved": [
+        "发票与售后#0007",
+        "发票与售后#0003",
+        "发票与售后#0004",
+        "退货政策#0008",
+        "发票与售后#0005"
+      ],
+      "expected": [
+        "发票与售后#0003",
+        "发票与售后#0007"
+      ]
+    },
+    {
+      "qid": "MC027",
+      "bucket": "multi_condition",
+      "recall_at_5": 1.0,
+      "mrr": 0.3333,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.4,
+      "retrieved": [
+        "退款政策#0004",
+        "退款政策#0007",
+        "发票与售后#0002",
+        "退款政策#0010",
+        "发票与售后#0006"
+      ],
+      "expected": [
+        "发票与售后#0002",
+        "发票与售后#0006"
+      ]
+    },
+    {
+      "qid": "MC028",
+      "bucket": "multi_condition",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.4,
+      "retrieved": [
+        "发票与售后#0009",
+        "发票与售后#0008",
+        "发票与售后#0010",
+        "发票与售后#0012",
+        "退款政策#0006"
+      ],
+      "expected": [
+        "发票与售后#0008",
+        "发票与售后#0009"
+      ]
+    },
+    {
+      "qid": "MC029",
+      "bucket": "multi_condition",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.4,
+      "retrieved": [
+        "发票与售后#0009",
+        "发票与售后#0008",
+        "发票与售后#0010",
+        "发票与售后#0012",
+        "发票与售后#0001"
+      ],
+      "expected": [
+        "发票与售后#0008",
+        "发票与售后#0009"
+      ]
+    },
+    {
+      "qid": "MC030",
+      "bucket": "multi_condition",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.4,
+      "retrieved": [
+        "物流与配送#0006",
+        "物流与配送#0005",
+        "物流与配送#0007",
+        "发票与售后#0010",
+        "发票与售后#0012"
+      ],
+      "expected": [
+        "发票与售后#0010",
+        "物流与配送#0006"
+      ]
+    },
+    {
+      "qid": "MC031",
+      "bucket": "multi_condition",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.4,
+      "retrieved": [
+        "发票与售后#0012",
+        "发票与售后#0011",
+        "发票与售后#0013",
+        "发票与售后#0007",
+        "退款政策#0006"
+      ],
+      "expected": [
+        "发票与售后#0011",
+        "发票与售后#0012"
+      ]
+    },
+    {
+      "qid": "MC032",
+      "bucket": "multi_condition",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.4,
+      "retrieved": [
+        "发票与售后#0013",
+        "发票与售后#0011",
+        "发票与售后#0012",
+        "发票与售后#0010",
+        "退款政策#0008"
+      ],
+      "expected": [
+        "发票与售后#0012",
+        "发票与售后#0013"
+      ]
+    },
+    {
+      "qid": "MC033",
+      "bucket": "multi_condition",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.4,
+      "retrieved": [
+        "发票与售后#0010",
+        "会员与优惠#0002",
+        "发票与售后#0008",
+        "发票与售后#0011",
+        "发票与售后#0009"
+      ],
+      "expected": [
+        "发票与售后#0008",
+        "发票与售后#0010"
+      ]
+    },
+    {
+      "qid": "MC034",
+      "bucket": "multi_condition",
+      "recall_at_5": 0.5,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "发票与售后#0015",
+        "发票与售后#0009",
+        "发票与售后#0008",
+        "发票与售后#0010",
+        "发票与售后#0001"
+      ],
+      "expected": [
+        "发票与售后#0015",
+        "发票与售后#0016"
+      ]
+    },
+    {
+      "qid": "MC035",
+      "bucket": "multi_condition",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.4,
+      "retrieved": [
+        "发票与售后#0015",
+        "发票与售后#0016",
+        "发票与售后#0014",
+        "物流与配送#0008",
+        "物流与配送#0009"
+      ],
+      "expected": [
+        "发票与售后#0015",
+        "发票与售后#0016"
+      ]
+    },
+    {
+      "qid": "MC036",
+      "bucket": "multi_condition",
+      "recall_at_5": 0.5,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "物流与配送#0006",
+        "退款政策#0003",
+        "退款政策#0005",
+        "退款政策#0004",
+        "物流与配送#0003"
+      ],
+      "expected": [
+        "物流与配送#0005",
+        "物流与配送#0006"
+      ]
+    },
+    {
+      "qid": "MC037",
+      "bucket": "multi_condition",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.4,
+      "retrieved": [
+        "物流与配送#0007",
+        "物流与配送#0006",
+        "物流与配送#0003",
+        "发票与售后#0006",
+        "退款政策#0002"
+      ],
+      "expected": [
+        "物流与配送#0006",
+        "物流与配送#0007"
+      ]
+    },
+    {
+      "qid": "MC038",
+      "bucket": "multi_condition",
+      "recall_at_5": 0.5,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "物流与配送#0006",
+        "发票与售后#0012",
+        "发票与售后#0009",
+        "发票与售后#0010",
+        "发票与售后#0011"
+      ],
+      "expected": [
+        "物流与配送#0005",
+        "物流与配送#0006"
+      ]
+    },
+    {
+      "qid": "MC039",
+      "bucket": "multi_condition",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.4,
+      "retrieved": [
+        "物流与配送#0003",
+        "物流与配送#0004",
+        "退货政策#0003",
+        "退货政策#0001",
+        "退货政策#0005"
+      ],
+      "expected": [
+        "物流与配送#0003",
+        "物流与配送#0004"
+      ]
+    },
+    {
+      "qid": "MC040",
+      "bucket": "multi_condition",
+      "recall_at_5": 0.5,
+      "mrr": 0.5,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "退货政策#0008",
+        "物流与配送#0003",
+        "会员与优惠#0003",
+        "商品与尺码#0013",
+        "发票与售后#0004"
+      ],
+      "expected": [
+        "物流与配送#0003",
+        "物流与配送#0004"
+      ]
+    },
+    {
+      "qid": "MC041",
+      "bucket": "multi_condition",
+      "recall_at_5": 0.5,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "物流与配送#0010",
+        "物流与配送#0008",
+        "物流与配送#0007",
+        "发票与售后#0004",
+        "退款政策#0004"
+      ],
+      "expected": [
+        "物流与配送#0002",
+        "物流与配送#0010"
+      ]
+    },
+    {
+      "qid": "MC042",
+      "bucket": "multi_condition",
+      "recall_at_5": 0.5,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "物流与配送#0010",
+        "物流与配送#0008",
+        "物流与配送#0007",
+        "物流与配送#0002",
+        "物流与配送#0003"
+      ],
+      "expected": [
+        "退款政策#0002",
+        "物流与配送#0010"
+      ]
+    },
+    {
+      "qid": "MC043",
+      "bucket": "multi_condition",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.4,
+      "retrieved": [
+        "物流与配送#0002",
+        "物流与配送#0003",
+        "物流与配送#0010",
+        "物流与配送#0008",
+        "商品与尺码#0013"
+      ],
+      "expected": [
+        "物流与配送#0002",
+        "物流与配送#0003"
+      ]
+    },
+    {
+      "qid": "MC044",
+      "bucket": "multi_condition",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.4,
+      "retrieved": [
+        "物流与配送#0008",
+        "物流与配送#0009",
+        "物流与配送#0010",
+        "物流与配送#0007",
+        "发票与售后#0004"
+      ],
+      "expected": [
+        "物流与配送#0008",
+        "物流与配送#0009"
+      ]
+    },
+    {
+      "qid": "MC045",
+      "bucket": "multi_condition",
+      "recall_at_5": 1.0,
+      "mrr": 0.5,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.4,
+      "retrieved": [
+        "退货政策#0006",
+        "物流与配送#0009",
+        "物流与配送#0008",
+        "退款政策#0004",
+        "退款政策#0010"
+      ],
+      "expected": [
+        "物流与配送#0008",
+        "物流与配送#0009"
+      ]
+    },
+    {
+      "qid": "MC046",
+      "bucket": "multi_condition",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.4,
+      "retrieved": [
+        "物流与配送#0008",
+        "物流与配送#0009",
+        "物流与配送#0001",
+        "退款政策#0005",
+        "物流与配送#0007"
+      ],
+      "expected": [
+        "物流与配送#0008",
+        "物流与配送#0009"
+      ]
+    },
+    {
+      "qid": "MC047",
+      "bucket": "multi_condition",
+      "recall_at_5": 0.5,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "物流与配送#0007",
+        "物流与配送#0006",
+        "发票与售后#0008",
+        "退货政策#0002",
+        "退款政策#0006"
+      ],
+      "expected": [
+        "物流与配送#0007",
+        "退款政策#0002"
+      ]
+    },
+    {
+      "qid": "MC048",
+      "bucket": "multi_condition",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.4,
+      "retrieved": [
+        "退货政策#0004",
+        "退货政策#0002",
+        "退货政策#0003",
+        "退货政策#0001",
+        "退货政策#0005"
+      ],
+      "expected": [
+        "退货政策#0002",
+        "退货政策#0004"
+      ]
+    },
+    {
+      "qid": "MC049",
+      "bucket": "multi_condition",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.4,
+      "retrieved": [
+        "退货政策#0004",
+        "退款政策#0010",
+        "退货政策#0005",
+        "退款政策#0007",
+        "商品与尺码#0013"
+      ],
+      "expected": [
+        "退货政策#0004",
+        "退货政策#0005"
+      ]
+    },
+    {
+      "qid": "MC050",
+      "bucket": "multi_condition",
+      "recall_at_5": 0.5,
+      "mrr": 0.5,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "商品与尺码#0004",
+        "商品与尺码#0001",
+        "商品与尺码#0002",
+        "商品与尺码#0005",
+        "退款政策#0002"
+      ],
+      "expected": [
+        "商品与尺码#0001",
+        "退货政策#0008"
+      ]
+    },
+    {
+      "qid": "MC051",
+      "bucket": "multi_condition",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.4,
+      "retrieved": [
+        "退货政策#0006",
+        "退货政策#0007",
+        "退货政策#0008",
+        "退货政策#0003",
+        "退货政策#0001"
+      ],
+      "expected": [
+        "退货政策#0006",
+        "退货政策#0007"
+      ]
+    },
+    {
+      "qid": "MC052",
+      "bucket": "multi_condition",
+      "recall_at_5": 0.5,
+      "mrr": 0.5,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "退货政策#0006",
+        "退货政策#0007",
+        "退货政策#0001",
+        "退款政策#0003",
+        "退货政策#0008"
+      ],
+      "expected": [
+        "退款政策#0012",
+        "退货政策#0007"
+      ]
+    },
+    {
+      "qid": "MC053",
+      "bucket": "multi_condition",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.4,
+      "retrieved": [
+        "退货政策#0008",
+        "退货政策#0006",
+        "退货政策#0005",
+        "退货政策#0003",
+        "退货政策#0001"
+      ],
+      "expected": [
+        "退货政策#0006",
+        "退货政策#0008"
+      ]
+    },
+    {
+      "qid": "MC054",
+      "bucket": "multi_condition",
+      "recall_at_5": 0.5,
+      "mrr": 0.5,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "物流与配送#0010",
+        "退货政策#0008",
+        "发票与售后#0013",
+        "发票与售后#0006",
+        "退款政策#0002"
+      ],
+      "expected": [
+        "退货政策#0006",
+        "退货政策#0008"
+      ]
+    },
+    {
+      "qid": "MC055",
+      "bucket": "multi_condition",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.4,
+      "retrieved": [
+        "退货政策#0002",
+        "退款政策#0006",
+        "退货政策#0003",
+        "退货政策#0005",
+        "退货政策#0004"
+      ],
+      "expected": [
+        "退货政策#0002",
+        "退货政策#0004"
+      ]
+    },
+    {
+      "qid": "MC056",
+      "bucket": "multi_condition",
+      "recall_at_5": 0.5,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "退款政策#0003",
+        "退货政策#0002",
+        "退款政策#0005",
+        "退款政策#0004",
+        "退货政策#0003"
+      ],
+      "expected": [
+        "退款政策#0003",
+        "退货政策#0004"
+      ]
+    },
+    {
+      "qid": "MC057",
+      "bucket": "multi_condition",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.4,
+      "retrieved": [
+        "退货政策#0008",
+        "退货政策#0006",
+        "退货政策#0005",
+        "退货政策#0003",
+        "退货政策#0002"
+      ],
+      "expected": [
+        "退货政策#0006",
+        "退货政策#0008"
+      ]
+    },
+    {
+      "qid": "MC058",
+      "bucket": "multi_condition",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.4,
+      "retrieved": [
+        "退货政策#0004",
+        "退货政策#0003",
+        "退货政策#0002",
+        "退货政策#0005",
+        "商品与尺码#0001"
+      ],
+      "expected": [
+        "退货政策#0004",
+        "退货政策#0005"
+      ]
+    },
+    {
+      "qid": "MC059",
+      "bucket": "multi_condition",
+      "recall_at_5": 1.0,
+      "mrr": 0.5,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.4,
+      "retrieved": [
+        "发票与售后#0012",
+        "发票与售后#0009",
+        "发票与售后#0010",
+        "发票与售后#0011",
+        "发票与售后#0013"
+      ],
+      "expected": [
+        "发票与售后#0009",
+        "发票与售后#0011"
+      ]
+    },
+    {
+      "qid": "MC060",
+      "bucket": "multi_condition",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.4,
+      "retrieved": [
+        "发票与售后#0013",
+        "发票与售后#0011",
+        "发票与售后#0012",
+        "物流与配送#0010",
+        "退货政策#0008"
+      ],
+      "expected": [
+        "发票与售后#0012",
+        "发票与售后#0013"
+      ]
+    },
+    {
+      "qid": "MT001",
+      "bucket": "multi_turn",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.4,
+      "retrieved": [
+        "退款政策#0006",
+        "发票与售后#0012",
+        "发票与售后#0009",
+        "退款政策#0004",
+        "退款政策#0007"
+      ],
+      "expected": [
+        "退款政策#0006",
+        "退款政策#0007"
+      ]
+    },
+    {
+      "qid": "MT002",
+      "bucket": "multi_turn",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.4,
+      "retrieved": [
+        "退款政策#0006",
+        "发票与售后#0012",
+        "发票与售后#0009",
+        "退款政策#0007",
+        "退货政策#0002"
+      ],
+      "expected": [
+        "退款政策#0006",
+        "退款政策#0007"
+      ]
+    },
+    {
+      "qid": "MT003",
+      "bucket": "multi_turn",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.4,
+      "retrieved": [
+        "发票与售后#0009",
+        "发票与售后#0010",
+        "发票与售后#0008",
+        "发票与售后#0012",
+        "发票与售后#0001"
+      ],
+      "expected": [
+        "发票与售后#0008",
+        "发票与售后#0009"
+      ]
+    },
+    {
+      "qid": "MT004",
+      "bucket": "multi_turn",
+      "recall_at_5": 0.5,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "发票与售后#0009",
+        "发票与售后#0012",
+        "退款政策#0006",
+        "发票与售后#0010",
+        "发票与售后#0011"
+      ],
+      "expected": [
+        "发票与售后#0008",
+        "发票与售后#0009"
+      ]
+    },
+    {
+      "qid": "MT005",
+      "bucket": "multi_turn",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.4,
+      "retrieved": [
+        "商品与尺码#0013",
+        "商品与尺码#0012",
+        "物流与配送#0010",
+        "退货政策#0006",
+        "物流与配送#0002"
+      ],
+      "expected": [
+        "商品与尺码#0012",
+        "商品与尺码#0013"
+      ]
+    },
+    {
+      "qid": "MT006",
+      "bucket": "multi_turn",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.4,
+      "retrieved": [
+        "商品与尺码#0012",
+        "商品与尺码#0013",
+        "会员与优惠#0006",
+        "会员与优惠#0010",
+        "退款政策#0011"
+      ],
+      "expected": [
+        "商品与尺码#0012",
+        "商品与尺码#0013"
+      ]
+    },
+    {
+      "qid": "MT007",
+      "bucket": "multi_turn",
+      "recall_at_5": 0.3333,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "商品与尺码#0008",
+        "物流与配送#0008",
+        "退款政策#0004",
+        "物流与配送#0009",
+        "发票与售后#0008"
+      ],
+      "expected": [
+        "商品与尺码#0006",
+        "商品与尺码#0007",
+        "商品与尺码#0008"
+      ]
+    },
+    {
+      "qid": "MT008",
+      "bucket": "multi_turn",
+      "recall_at_5": 0.5,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "商品与尺码#0001",
+        "商品与尺码#0004",
+        "商品与尺码#0002",
+        "商品与尺码#0006",
+        "商品与尺码#0005"
+      ],
+      "expected": [
+        "商品与尺码#0001",
+        "退货政策#0008"
+      ]
+    },
+    {
+      "qid": "MT009",
+      "bucket": "multi_turn",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.4,
+      "retrieved": [
+        "退货政策#0004",
+        "退货政策#0003",
+        "退货政策#0005",
+        "退货政策#0002",
+        "退款政策#0010"
+      ],
+      "expected": [
+        "退货政策#0002",
+        "退货政策#0004"
+      ]
+    },
+    {
+      "qid": "MT010",
+      "bucket": "multi_turn",
+      "recall_at_5": 1.0,
+      "mrr": 0.3333,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "退款政策#0007",
+        "退款政策#0006",
+        "退货政策#0004",
+        "退货政策#0001",
+        "退款政策#0009"
+      ],
+      "expected": [
+        "退货政策#0004"
+      ]
+    },
+    {
+      "qid": "MT011",
+      "bucket": "multi_turn",
+      "recall_at_5": 0.5,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "退货政策#0004",
+        "退款政策#0012",
+        "会员与优惠#0007",
+        "物流与配送#0003",
+        "商品与尺码#0009"
+      ],
+      "expected": [
+        "退货政策#0004",
+        "退货政策#0005"
+      ]
+    },
+    {
+      "qid": "MT012",
+      "bucket": "multi_turn",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "退货政策#0004",
+        "退款政策#0007",
+        "退款政策#0006",
+        "发票与售后#0006",
+        "退款政策#0002"
+      ],
+      "expected": [
+        "退货政策#0004"
+      ]
+    },
+    {
+      "qid": "MT013",
+      "bucket": "multi_turn",
+      "recall_at_5": 0.5,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "退款政策#0003",
+        "退款政策#0011",
+        "退款政策#0006",
+        "退款政策#0009",
+        "退款政策#0010"
+      ],
+      "expected": [
+        "退款政策#0003",
+        "退款政策#0004"
+      ]
+    },
+    {
+      "qid": "MT014",
+      "bucket": "multi_turn",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.4,
+      "retrieved": [
+        "退款政策#0005",
+        "退款政策#0004",
+        "退款政策#0007",
+        "退款政策#0010",
+        "发票与售后#0002"
+      ],
+      "expected": [
+        "退款政策#0004",
+        "退款政策#0005"
+      ]
+    },
+    {
+      "qid": "MT015",
+      "bucket": "multi_turn",
+      "recall_at_5": 1.0,
+      "mrr": 0.3333,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "退款政策#0002",
+        "退款政策#0001",
+        "退款政策#0012",
+        "退款政策#0008",
+        "发票与售后#0006"
+      ],
+      "expected": [
+        "退款政策#0012"
+      ]
+    },
+    {
+      "qid": "MT016",
+      "bucket": "multi_turn",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "物流与配送#0010",
+        "物流与配送#0007",
+        "发票与售后#0004",
+        "发票与售后#0006",
+        "物流与配送#0004"
+      ],
+      "expected": [
+        "物流与配送#0010"
+      ]
+    },
+    {
+      "qid": "MT017",
+      "bucket": "multi_turn",
+      "recall_at_5": 1.0,
+      "mrr": 0.25,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "退货政策#0008",
+        "物流与配送#0004",
+        "会员与优惠#0010",
+        "退款政策#0002",
+        "发票与售后#0004"
+      ],
+      "expected": [
+        "退款政策#0002"
+      ]
+    },
+    {
+      "qid": "MT018",
+      "bucket": "multi_turn",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "退货政策#0008",
+        "退货政策#0006",
+        "退货政策#0003",
+        "退货政策#0001",
+        "退款政策#0002"
+      ],
+      "expected": [
+        "退货政策#0008"
+      ]
+    },
+    {
+      "qid": "MT019",
+      "bucket": "multi_turn",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.4,
+      "retrieved": [
+        "发票与售后#0007",
+        "发票与售后#0003",
+        "发票与售后#0002",
+        "发票与售后#0004",
+        "发票与售后#0001"
+      ],
+      "expected": [
+        "发票与售后#0003",
+        "发票与售后#0007"
+      ]
+    },
+    {
+      "qid": "MT020",
+      "bucket": "multi_turn",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.4,
+      "retrieved": [
+        "物流与配送#0006",
+        "发票与售后#0006",
+        "物流与配送#0007",
+        "物流与配送#0004",
+        "发票与售后#0004"
+      ],
+      "expected": [
+        "物流与配送#0006",
+        "物流与配送#0007"
+      ]
+    },
+    {
+      "qid": "MT021",
+      "bucket": "multi_turn",
+      "recall_at_5": 1.0,
+      "mrr": 0.25,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.4,
+      "retrieved": [
+        "退款政策#0003",
+        "退款政策#0011",
+        "退款政策#0006",
+        "退款政策#0009",
+        "退款政策#0010"
+      ],
+      "expected": [
+        "退款政策#0009",
+        "退款政策#0010"
+      ]
+    },
+    {
+      "qid": "MT022",
+      "bucket": "multi_turn",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.4,
+      "retrieved": [
+        "退款政策#0010",
+        "退货政策#0002",
+        "退款政策#0009",
+        "会员与优惠#0002",
+        "会员与优惠#0004"
+      ],
+      "expected": [
+        "退款政策#0009",
+        "退款政策#0010"
+      ]
+    },
+    {
+      "qid": "MT023",
+      "bucket": "multi_turn",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "物流与配送#0003",
+        "退货政策#0008",
+        "退货政策#0003",
+        "退货政策#0001",
+        "商品与尺码#0001"
+      ],
+      "expected": [
+        "物流与配送#0003"
+      ]
+    },
+    {
+      "qid": "MT024",
+      "bucket": "multi_turn",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.4,
+      "retrieved": [
+        "物流与配送#0004",
+        "物流与配送#0003",
+        "会员与优惠#0009",
+        "会员与优惠#0003",
+        "会员与优惠#0011"
+      ],
+      "expected": [
+        "物流与配送#0003",
+        "物流与配送#0004"
+      ]
+    },
+    {
+      "qid": "MT025",
+      "bucket": "multi_turn",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.4,
+      "retrieved": [
+        "发票与售后#0009",
+        "发票与售后#0008",
+        "发票与售后#0010",
+        "发票与售后#0012",
+        "发票与售后#0001"
+      ],
+      "expected": [
+        "发票与售后#0008",
+        "发票与售后#0009"
+      ]
+    },
+    {
+      "qid": "MT026",
+      "bucket": "multi_turn",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.4,
+      "retrieved": [
+        "发票与售后#0011",
+        "发票与售后#0012",
+        "发票与售后#0013",
+        "物流与配送#0007",
+        "会员与优惠#0008"
+      ],
+      "expected": [
+        "发票与售后#0011",
+        "发票与售后#0012"
+      ]
+    },
+    {
+      "qid": "MT027",
+      "bucket": "multi_turn",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.4,
+      "retrieved": [
+        "发票与售后#0009",
+        "发票与售后#0013",
+        "发票与售后#0010",
+        "发票与售后#0012",
+        "物流与配送#0006"
+      ],
+      "expected": [
+        "发票与售后#0009",
+        "发票与售后#0010"
+      ]
+    },
+    {
+      "qid": "MT028",
+      "bucket": "multi_turn",
+      "recall_at_5": 0.5,
+      "mrr": 0.25,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "商品与尺码#0008",
+        "商品与尺码#0010",
+        "商品与尺码#0004",
+        "商品与尺码#0002",
+        "商品与尺码#0001"
+      ],
+      "expected": [
+        "商品与尺码#0002",
+        "商品与尺码#0003"
+      ]
+    },
+    {
+      "qid": "MT029",
+      "bucket": "multi_turn",
+      "recall_at_5": 0.5,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "物流与配送#0006",
+        "发票与售后#0011",
+        "发票与售后#0012",
+        "发票与售后#0013",
+        "商品与尺码#0011"
+      ],
+      "expected": [
+        "物流与配送#0005",
+        "物流与配送#0006"
+      ]
+    },
+    {
+      "qid": "MT030",
+      "bucket": "multi_turn",
+      "recall_at_5": 0.5,
+      "mrr": 0.2,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "会员与优惠#0001",
+        "会员与优惠#0005",
+        "商品与尺码#0010",
+        "会员与优惠#0008",
+        "物流与配送#0006"
+      ],
+      "expected": [
+        "物流与配送#0005",
+        "物流与配送#0006"
+      ]
+    },
+    {
+      "qid": "MT031",
+      "bucket": "multi_turn",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "会员与优惠#0008",
+        "会员与优惠#0010",
+        "会员与优惠#0009",
+        "会员与优惠#0001",
+        "发票与售后#0005"
+      ],
+      "expected": [
+        "会员与优惠#0008"
+      ]
+    },
+    {
+      "qid": "MT032",
+      "bucket": "multi_turn",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.4,
+      "retrieved": [
+        "会员与优惠#0007",
+        "会员与优惠#0011",
+        "会员与优惠#0006",
+        "会员与优惠#0005",
+        "会员与优惠#0004"
+      ],
+      "expected": [
+        "会员与优惠#0006",
+        "会员与优惠#0007"
+      ]
+    },
+    {
+      "qid": "MT033",
+      "bucket": "multi_turn",
+      "recall_at_5": 1.0,
+      "mrr": 0.5,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "退款政策#0005",
+        "会员与优惠#0007",
+        "会员与优惠#0005",
+        "会员与优惠#0006",
+        "退款政策#0006"
+      ],
+      "expected": [
+        "会员与优惠#0007"
+      ]
+    },
+    {
+      "qid": "MT034",
+      "bucket": "multi_turn",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "发票与售后#0005",
+        "发票与售后#0006",
+        "发票与售后#0007",
+        "发票与售后#0001",
+        "退款政策#0001"
+      ],
+      "expected": [
+        "发票与售后#0005"
+      ]
+    },
+    {
+      "qid": "MT035",
+      "bucket": "multi_turn",
+      "recall_at_5": 1.0,
+      "mrr": 0.5,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.4,
+      "retrieved": [
+        "退款政策#0005",
+        "退款政策#0004",
+        "退款政策#0003",
+        "物流与配送#0009",
+        "退货政策#0007"
+      ],
+      "expected": [
+        "退款政策#0003",
+        "退款政策#0004"
+      ]
+    },
+    {
+      "qid": "MT036",
+      "bucket": "multi_turn",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.4,
+      "retrieved": [
+        "退款政策#0007",
+        "退款政策#0008",
+        "发票与售后#0006",
+        "会员与优惠#0010",
+        "物流与配送#0004"
+      ],
+      "expected": [
+        "退款政策#0007",
+        "退款政策#0008"
+      ]
+    },
+    {
+      "qid": "MT037",
+      "bucket": "multi_turn",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "退款政策#0008",
+        "发票与售后#0012",
+        "发票与售后#0013",
+        "发票与售后#0009",
+        "退款政策#0006"
+      ],
+      "expected": [
+        "退款政策#0008"
+      ]
+    },
+    {
+      "qid": "MT038",
+      "bucket": "multi_turn",
+      "recall_at_5": 0.5,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "退货政策#0002",
+        "退货政策#0003",
+        "退货政策#0005",
+        "退货政策#0008",
+        "退货政策#0006"
+      ],
+      "expected": [
+        "退货政策#0002",
+        "退货政策#0004"
+      ]
+    },
+    {
+      "qid": "MT039",
+      "bucket": "multi_turn",
+      "recall_at_5": 0.5,
+      "mrr": 0.2,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "退货政策#0006",
+        "退款政策#0002",
+        "退款政策#0001",
+        "退货政策#0001",
+        "退货政策#0007"
+      ],
+      "expected": [
+        "退款政策#0012",
+        "退货政策#0007"
+      ]
+    },
+    {
+      "qid": "MT040",
+      "bucket": "multi_turn",
+      "recall_at_5": 1.0,
+      "mrr": 0.3333,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "发票与售后#0014",
+        "发票与售后#0016",
+        "发票与售后#0015",
+        "发票与售后#0006",
+        "物流与配送#0004"
+      ],
+      "expected": [
+        "发票与售后#0015"
+      ]
+    },
+    {
+      "qid": "MT041",
+      "bucket": "multi_turn",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.4,
+      "retrieved": [
+        "物流与配送#0008",
+        "物流与配送#0009",
+        "物流与配送#0001",
+        "物流与配送#0004",
+        "物流与配送#0007"
+      ],
+      "expected": [
+        "物流与配送#0008",
+        "物流与配送#0009"
+      ]
+    },
+    {
+      "qid": "MT042",
+      "bucket": "multi_turn",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.4,
+      "retrieved": [
+        "物流与配送#0008",
+        "物流与配送#0009",
+        "发票与售后#0006",
+        "物流与配送#0007",
+        "物流与配送#0004"
+      ],
+      "expected": [
+        "物流与配送#0008",
+        "物流与配送#0009"
+      ]
+    },
+    {
+      "qid": "MT043",
+      "bucket": "multi_turn",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "物流与配送#0010",
+        "物流与配送#0007",
+        "发票与售后#0004",
+        "发票与售后#0006",
+        "退款政策#0002"
+      ],
+      "expected": [
+        "物流与配送#0010"
+      ]
+    },
+    {
+      "qid": "MT044",
+      "bucket": "multi_turn",
+      "recall_at_5": 1.0,
+      "mrr": 0.5,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "退款政策#0002",
+        "物流与配送#0002",
+        "物流与配送#0010",
+        "退款政策#0004",
+        "发票与售后#0006"
+      ],
+      "expected": [
+        "物流与配送#0002"
+      ]
+    },
+    {
+      "qid": "MT045",
+      "bucket": "multi_turn",
+      "recall_at_5": 1.0,
+      "mrr": 0.5,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "发票与售后#0006",
+        "物流与配送#0002",
+        "发票与售后#0005",
+        "发票与售后#0016",
+        "商品与尺码#0010"
+      ],
+      "expected": [
+        "物流与配送#0002"
+      ]
+    },
+    {
+      "qid": "MT046",
+      "bucket": "multi_turn",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.4,
+      "retrieved": [
+        "退货政策#0008",
+        "退货政策#0003",
+        "退货政策#0001",
+        "退货政策#0006",
+        "退货政策#0005"
+      ],
+      "expected": [
+        "退货政策#0006",
+        "退货政策#0008"
+      ]
+    },
+    {
+      "qid": "MT047",
+      "bucket": "multi_turn",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "退货政策#0008",
+        "会员与优惠#0003",
+        "物流与配送#0004",
+        "会员与优惠#0009",
+        "会员与优惠#0010"
+      ],
+      "expected": [
+        "退货政策#0008"
+      ]
+    },
+    {
+      "qid": "MT048",
+      "bucket": "multi_turn",
+      "recall_at_5": 1.0,
+      "mrr": 0.5,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "退货政策#0006",
+        "退款政策#0012",
+        "退货政策#0007",
+        "发票与售后#0006",
+        "物流与配送#0004"
+      ],
+      "expected": [
+        "退款政策#0012"
+      ]
+    },
+    {
+      "qid": "MT049",
+      "bucket": "multi_turn",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.4,
+      "retrieved": [
+        "退款政策#0010",
+        "退款政策#0009",
+        "退货政策#0002",
+        "会员与优惠#0004",
+        "会员与优惠#0003"
+      ],
+      "expected": [
+        "退款政策#0009",
+        "退款政策#0010"
+      ]
+    },
+    {
+      "qid": "MT050",
+      "bucket": "multi_turn",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "商品与尺码#0012",
+        "商品与尺码#0011",
+        "商品与尺码#0013",
+        "商品与尺码#0001",
+        "商品与尺码#0004"
+      ],
+      "expected": [
+        "商品与尺码#0012"
+      ]
+    },
+    {
+      "qid": "MT051",
+      "bucket": "multi_turn",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "商品与尺码#0012",
+        "商品与尺码#0009",
+        "商品与尺码#0013",
+        "退货政策#0006",
+        "发票与售后#0010"
+      ],
+      "expected": [
+        "商品与尺码#0012"
+      ]
+    },
+    {
+      "qid": "MT052",
+      "bucket": "multi_turn",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "发票与售后#0009",
+        "发票与售后#0008",
+        "发票与售后#0010",
+        "退货政策#0004",
+        "发票与售后#0003"
+      ],
+      "expected": [
+        "发票与售后#0009"
+      ]
+    },
+    {
+      "qid": "MT053",
+      "bucket": "multi_turn",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.4,
+      "retrieved": [
+        "退款政策#0010",
+        "退款政策#0009",
+        "退货政策#0002",
+        "退款政策#0006",
+        "物流与配送#0007"
+      ],
+      "expected": [
+        "退款政策#0009",
+        "退款政策#0010"
+      ]
+    },
+    {
+      "qid": "MT054",
+      "bucket": "multi_turn",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.4,
+      "retrieved": [
+        "商品与尺码#0005",
+        "商品与尺码#0002",
+        "商品与尺码#0004",
+        "商品与尺码#0001",
+        "商品与尺码#0006"
+      ],
+      "expected": [
+        "商品与尺码#0004",
+        "商品与尺码#0005"
+      ]
+    },
+    {
+      "qid": "MT055",
+      "bucket": "multi_turn",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.4,
+      "retrieved": [
+        "商品与尺码#0002",
+        "商品与尺码#0003",
+        "商品与尺码#0010",
+        "商品与尺码#0009",
+        "会员与优惠#0005"
+      ],
+      "expected": [
+        "商品与尺码#0002",
+        "商品与尺码#0003"
+      ]
+    },
+    {
+      "qid": "MT056",
+      "bucket": "multi_turn",
+      "recall_at_5": 1.0,
+      "mrr": 0.5,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.4,
+      "retrieved": [
+        "商品与尺码#0008",
+        "商品与尺码#0006",
+        "商品与尺码#0007",
+        "商品与尺码#0004",
+        "商品与尺码#0002"
+      ],
+      "expected": [
+        "商品与尺码#0006",
+        "商品与尺码#0007"
+      ]
+    },
+    {
+      "qid": "MT057",
+      "bucket": "multi_turn",
+      "recall_at_5": 0.5,
+      "mrr": 0.5,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "退货政策#0008",
+        "物流与配送#0004",
+        "会员与优惠#0010",
+        "退款政策#0002",
+        "发票与售后#0004"
+      ],
+      "expected": [
+        "物流与配送#0003",
+        "物流与配送#0004"
+      ]
+    },
+    {
+      "qid": "MT058",
+      "bucket": "multi_turn",
+      "recall_at_5": 0.5,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "物流与配送#0006",
+        "会员与优惠#0010",
+        "会员与优惠#0006",
+        "会员与优惠#0003",
+        "发票与售后#0016"
+      ],
+      "expected": [
+        "物流与配送#0003",
+        "物流与配送#0006"
+      ]
+    },
+    {
+      "qid": "MT059",
+      "bucket": "multi_turn",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.4,
+      "retrieved": [
+        "发票与售后#0011",
+        "发票与售后#0012",
+        "发票与售后#0013",
+        "发票与售后#0001",
+        "物流与配送#0007"
+      ],
+      "expected": [
+        "发票与售后#0011",
+        "发票与售后#0012"
+      ]
+    },
+    {
+      "qid": "MT060",
+      "bucket": "multi_turn",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "退款政策#0002",
+        "退款政策#0001",
+        "发票与售后#0006",
+        "退货政策#0006",
+        "物流与配送#0010"
+      ],
+      "expected": [
+        "退款政策#0002"
+      ]
+    },
+    {
+      "qid": "TL001",
+      "bucket": "table_lookup",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "会员与优惠#0003",
+        "会员与优惠#0011",
+        "会员与优惠#0009",
+        "发票与售后#0016",
+        "发票与售后#0015"
+      ],
+      "expected": [
+        "会员与优惠#0003"
+      ]
+    },
+    {
+      "qid": "TL002",
+      "bucket": "table_lookup",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "会员与优惠#0003",
+        "会员与优惠#0004",
+        "会员与优惠#0002",
+        "会员与优惠#0011",
+        "会员与优惠#0001"
+      ],
+      "expected": [
+        "会员与优惠#0003"
+      ]
+    },
+    {
+      "qid": "TL003",
+      "bucket": "table_lookup",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "会员与优惠#0003",
+        "会员与优惠#0009",
+        "会员与优惠#0011",
+        "会员与优惠#0010",
+        "物流与配送#0004"
+      ],
+      "expected": [
+        "会员与优惠#0003"
+      ]
+    },
+    {
+      "qid": "TL004",
+      "bucket": "table_lookup",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "会员与优惠#0003",
+        "会员与优惠#0011",
+        "会员与优惠#0001",
+        "会员与优惠#0004",
+        "会员与优惠#0002"
+      ],
+      "expected": [
+        "会员与优惠#0003"
+      ]
+    },
+    {
+      "qid": "TL005",
+      "bucket": "table_lookup",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "会员与优惠#0006",
+        "会员与优惠#0007",
+        "会员与优惠#0005",
+        "会员与优惠#0010",
+        "会员与优惠#0004"
+      ],
+      "expected": [
+        "会员与优惠#0006"
+      ]
+    },
+    {
+      "qid": "TL006",
+      "bucket": "table_lookup",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "会员与优惠#0006",
+        "会员与优惠#0007",
+        "会员与优惠#0005",
+        "会员与优惠#0010",
+        "物流与配送#0005"
+      ],
+      "expected": [
+        "会员与优惠#0006"
+      ]
+    },
+    {
+      "qid": "TL007",
+      "bucket": "table_lookup",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "会员与优惠#0006",
+        "会员与优惠#0007",
+        "会员与优惠#0005",
+        "会员与优惠#0004",
+        "会员与优惠#0011"
+      ],
+      "expected": [
+        "会员与优惠#0006"
+      ]
+    },
+    {
+      "qid": "TL008",
+      "bucket": "table_lookup",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "会员与优惠#0009",
+        "会员与优惠#0008",
+        "会员与优惠#0010",
+        "会员与优惠#0003",
+        "物流与配送#0004"
+      ],
+      "expected": [
+        "会员与优惠#0009"
+      ]
+    },
+    {
+      "qid": "TL009",
+      "bucket": "table_lookup",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "会员与优惠#0009",
+        "发票与售后#0005",
+        "会员与优惠#0010",
+        "发票与售后#0007",
+        "会员与优惠#0008"
+      ],
+      "expected": [
+        "会员与优惠#0009"
+      ]
+    },
+    {
+      "qid": "TL010",
+      "bucket": "table_lookup",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "会员与优惠#0009",
+        "会员与优惠#0002",
+        "会员与优惠#0003",
+        "物流与配送#0004",
+        "会员与优惠#0011"
+      ],
+      "expected": [
+        "会员与优惠#0009"
+      ]
+    },
+    {
+      "qid": "TL011",
+      "bucket": "table_lookup",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "发票与售后#0003",
+        "发票与售后#0004",
+        "发票与售后#0002",
+        "发票与售后#0001",
+        "发票与售后#0007"
+      ],
+      "expected": [
+        "发票与售后#0003"
+      ]
+    },
+    {
+      "qid": "TL012",
+      "bucket": "table_lookup",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "发票与售后#0003",
+        "发票与售后#0004",
+        "发票与售后#0007",
+        "发票与售后#0015",
+        "物流与配送#0009"
+      ],
+      "expected": [
+        "发票与售后#0003"
+      ]
+    },
+    {
+      "qid": "TL013",
+      "bucket": "table_lookup",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "发票与售后#0003",
+        "发票与售后#0007",
+        "发票与售后#0004",
+        "发票与售后#0002",
+        "发票与售后#0001"
+      ],
+      "expected": [
+        "发票与售后#0003"
+      ]
+    },
+    {
+      "qid": "TL014",
+      "bucket": "table_lookup",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "发票与售后#0006",
+        "发票与售后#0001",
+        "发票与售后#0004",
+        "退款政策#0002",
+        "退款政策#0001"
+      ],
+      "expected": [
+        "发票与售后#0006"
+      ]
+    },
+    {
+      "qid": "TL015",
+      "bucket": "table_lookup",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "发票与售后#0006",
+        "发票与售后#0005",
+        "发票与售后#0007",
+        "物流与配送#0002",
+        "发票与售后#0001"
+      ],
+      "expected": [
+        "发票与售后#0006"
+      ]
+    },
+    {
+      "qid": "TL016",
+      "bucket": "table_lookup",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "发票与售后#0009",
+        "发票与售后#0010",
+        "发票与售后#0012",
+        "物流与配送#0006",
+        "商品与尺码#0007"
+      ],
+      "expected": [
+        "发票与售后#0009"
+      ]
+    },
+    {
+      "qid": "TL017",
+      "bucket": "table_lookup",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "发票与售后#0009",
+        "发票与售后#0010",
+        "发票与售后#0012",
+        "发票与售后#0008",
+        "物流与配送#0006"
+      ],
+      "expected": [
+        "发票与售后#0009"
+      ]
+    },
+    {
+      "qid": "TL018",
+      "bucket": "table_lookup",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "发票与售后#0009",
+        "退款政策#0011",
+        "退款政策#0009",
+        "退款政策#0010",
+        "发票与售后#0011"
+      ],
+      "expected": [
+        "发票与售后#0009"
+      ]
+    },
+    {
+      "qid": "TL019",
+      "bucket": "table_lookup",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "发票与售后#0009",
+        "退款政策#0001",
+        "退货政策#0001",
+        "退货政策#0005",
+        "发票与售后#0008"
+      ],
+      "expected": [
+        "发票与售后#0009"
+      ]
+    },
+    {
+      "qid": "TL020",
+      "bucket": "table_lookup",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "发票与售后#0012",
+        "发票与售后#0009",
+        "物流与配送#0006",
+        "发票与售后#0010",
+        "发票与售后#0011"
+      ],
+      "expected": [
+        "发票与售后#0012"
+      ]
+    },
+    {
+      "qid": "TL021",
+      "bucket": "table_lookup",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "发票与售后#0012",
+        "发票与售后#0011",
+        "发票与售后#0013",
+        "会员与优惠#0007",
+        "退款政策#0006"
+      ],
+      "expected": [
+        "发票与售后#0012"
+      ]
+    },
+    {
+      "qid": "TL022",
+      "bucket": "table_lookup",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "发票与售后#0015",
+        "发票与售后#0014",
+        "物流与配送#0009",
+        "商品与尺码#0013",
+        "发票与售后#0013"
+      ],
+      "expected": [
+        "发票与售后#0015"
+      ]
+    },
+    {
+      "qid": "TL023",
+      "bucket": "table_lookup",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "发票与售后#0015",
+        "发票与售后#0016",
+        "物流与配送#0009",
+        "退货政策#0007",
+        "退货政策#0006"
+      ],
+      "expected": [
+        "发票与售后#0015"
+      ]
+    },
+    {
+      "qid": "TL024",
+      "bucket": "table_lookup",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "商品与尺码#0003",
+        "商品与尺码#0005",
+        "会员与优惠#0008",
+        "商品与尺码#0002",
+        "商品与尺码#0010"
+      ],
+      "expected": [
+        "商品与尺码#0003"
+      ]
+    },
+    {
+      "qid": "TL025",
+      "bucket": "table_lookup",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "商品与尺码#0003",
+        "商品与尺码#0005",
+        "会员与优惠#0002",
+        "退款政策#0011",
+        "会员与优惠#0010"
+      ],
+      "expected": [
+        "商品与尺码#0003"
+      ]
+    },
+    {
+      "qid": "TL026",
+      "bucket": "table_lookup",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "商品与尺码#0003",
+        "商品与尺码#0008",
+        "商品与尺码#0013",
+        "商品与尺码#0012",
+        "会员与优惠#0002"
+      ],
+      "expected": [
+        "商品与尺码#0003"
+      ]
+    },
+    {
+      "qid": "TL027",
+      "bucket": "table_lookup",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "商品与尺码#0003",
+        "商品与尺码#0004",
+        "商品与尺码#0010",
+        "商品与尺码#0005",
+        "商品与尺码#0009"
+      ],
+      "expected": [
+        "商品与尺码#0003"
+      ]
+    },
+    {
+      "qid": "TL028",
+      "bucket": "table_lookup",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "商品与尺码#0005",
+        "商品与尺码#0010",
+        "商品与尺码#0009",
+        "物流与配送#0007",
+        "商品与尺码#0008"
+      ],
+      "expected": [
+        "商品与尺码#0005"
+      ]
+    },
+    {
+      "qid": "TL029",
+      "bucket": "table_lookup",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "商品与尺码#0005",
+        "发票与售后#0014",
+        "会员与优惠#0011",
+        "商品与尺码#0007",
+        "商品与尺码#0010"
+      ],
+      "expected": [
+        "商品与尺码#0005"
+      ]
+    },
+    {
+      "qid": "TL030",
+      "bucket": "table_lookup",
+      "recall_at_5": 1.0,
+      "mrr": 0.2,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "商品与尺码#0004",
+        "商品与尺码#0009",
+        "商品与尺码#0003",
+        "商品与尺码#0010",
+        "商品与尺码#0005"
+      ],
+      "expected": [
+        "商品与尺码#0005"
+      ]
+    },
+    {
+      "qid": "TL031",
+      "bucket": "table_lookup",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "商品与尺码#0007",
+        "商品与尺码#0005",
+        "会员与优惠#0008",
+        "商品与尺码#0006",
+        "商品与尺码#0010"
+      ],
+      "expected": [
+        "商品与尺码#0007"
+      ]
+    },
+    {
+      "qid": "TL032",
+      "bucket": "table_lookup",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "商品与尺码#0007",
+        "商品与尺码#0009",
+        "商品与尺码#0005",
+        "会员与优惠#0005",
+        "会员与优惠#0007"
+      ],
+      "expected": [
+        "商品与尺码#0007"
+      ]
+    },
+    {
+      "qid": "TL033",
+      "bucket": "table_lookup",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "商品与尺码#0007",
+        "物流与配送#0010",
+        "商品与尺码#0005",
+        "商品与尺码#0011",
+        "退货政策#0005"
+      ],
+      "expected": [
+        "商品与尺码#0007"
+      ]
+    },
+    {
+      "qid": "TL034",
+      "bucket": "table_lookup",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "商品与尺码#0010",
+        "商品与尺码#0009",
+        "商品与尺码#0006",
+        "商品与尺码#0005",
+        "会员与优惠#0009"
+      ],
+      "expected": [
+        "商品与尺码#0010"
+      ]
+    },
+    {
+      "qid": "TL035",
+      "bucket": "table_lookup",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "商品与尺码#0010",
+        "商品与尺码#0006",
+        "商品与尺码#0007",
+        "商品与尺码#0009",
+        "商品与尺码#0008"
+      ],
+      "expected": [
+        "商品与尺码#0010"
+      ]
+    },
+    {
+      "qid": "TL036",
+      "bucket": "table_lookup",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "商品与尺码#0012",
+        "商品与尺码#0001",
+        "商品与尺码#0004",
+        "商品与尺码#0006",
+        "商品与尺码#0005"
+      ],
+      "expected": [
+        "商品与尺码#0012"
+      ]
+    },
+    {
+      "qid": "TL037",
+      "bucket": "table_lookup",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "商品与尺码#0012",
+        "商品与尺码#0013",
+        "商品与尺码#0008",
+        "商品与尺码#0003",
+        "物流与配送#0002"
+      ],
+      "expected": [
+        "商品与尺码#0012"
+      ]
+    },
+    {
+      "qid": "TL038",
+      "bucket": "table_lookup",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "商品与尺码#0012",
+        "商品与尺码#0006",
+        "退货政策#0006",
+        "商品与尺码#0001",
+        "商品与尺码#0010"
+      ],
+      "expected": [
+        "商品与尺码#0012"
+      ]
+    },
+    {
+      "qid": "TL039",
+      "bucket": "table_lookup",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "物流与配送#0003",
+        "物流与配送#0002",
+        "物流与配送#0010",
+        "物流与配送#0008",
+        "退货政策#0007"
+      ],
+      "expected": [
+        "物流与配送#0003"
+      ]
+    },
+    {
+      "qid": "TL040",
+      "bucket": "table_lookup",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "物流与配送#0003",
+        "物流与配送#0004",
+        "物流与配送#0006",
+        "物流与配送#0005",
+        "物流与配送#0007"
+      ],
+      "expected": [
+        "物流与配送#0003"
+      ]
+    },
+    {
+      "qid": "TL041",
+      "bucket": "table_lookup",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "物流与配送#0003",
+        "物流与配送#0007",
+        "物流与配送#0005",
+        "商品与尺码#0013",
+        "商品与尺码#0005"
+      ],
+      "expected": [
+        "物流与配送#0003"
+      ]
+    },
+    {
+      "qid": "TL042",
+      "bucket": "table_lookup",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "物流与配送#0003",
+        "发票与售后#0012",
+        "发票与售后#0008",
+        "退货政策#0002",
+        "发票与售后#0002"
+      ],
+      "expected": [
+        "物流与配送#0003"
+      ]
+    },
+    {
+      "qid": "TL043",
+      "bucket": "table_lookup",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "物流与配送#0006",
+        "物流与配送#0002",
+        "物流与配送#0004",
+        "物流与配送#0003",
+        "退款政策#0012"
+      ],
+      "expected": [
+        "物流与配送#0006"
+      ]
+    },
+    {
+      "qid": "TL044",
+      "bucket": "table_lookup",
+      "recall_at_5": 1.0,
+      "mrr": 0.5,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "物流与配送#0005",
+        "物流与配送#0006",
+        "物流与配送#0007",
+        "会员与优惠#0006",
+        "物流与配送#0003"
+      ],
+      "expected": [
+        "物流与配送#0006"
+      ]
+    },
+    {
+      "qid": "TL045",
+      "bucket": "table_lookup",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "物流与配送#0006",
+        "会员与优惠#0011",
+        "会员与优惠#0005",
+        "物流与配送#0001",
+        "会员与优惠#0006"
+      ],
+      "expected": [
+        "物流与配送#0006"
+      ]
+    },
+    {
+      "qid": "TL046",
+      "bucket": "table_lookup",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "物流与配送#0009",
+        "物流与配送#0008",
+        "退货政策#0006",
+        "物流与配送#0001",
+        "发票与售后#0016"
+      ],
+      "expected": [
+        "物流与配送#0009"
+      ]
+    },
+    {
+      "qid": "TL047",
+      "bucket": "table_lookup",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "物流与配送#0009",
+        "发票与售后#0015",
+        "发票与售后#0014",
+        "物流与配送#0008",
+        "物流与配送#0002"
+      ],
+      "expected": [
+        "物流与配送#0009"
+      ]
+    },
+    {
+      "qid": "TL048",
+      "bucket": "table_lookup",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "物流与配送#0009",
+        "物流与配送#0008",
+        "退款政策#0005",
+        "物流与配送#0010",
+        "退款政策#0001"
+      ],
+      "expected": [
+        "物流与配送#0009"
+      ]
+    },
+    {
+      "qid": "TL049",
+      "bucket": "table_lookup",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "退款政策#0004",
+        "退款政策#0003",
+        "退款政策#0002",
+        "退款政策#0005",
+        "退货政策#0002"
+      ],
+      "expected": [
+        "退款政策#0004"
+      ]
+    },
+    {
+      "qid": "TL050",
+      "bucket": "table_lookup",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "退款政策#0004",
+        "退款政策#0003",
+        "退款政策#0005",
+        "退货政策#0007",
+        "物流与配送#0009"
+      ],
+      "expected": [
+        "退款政策#0004"
+      ]
+    },
+    {
+      "qid": "TL051",
+      "bucket": "table_lookup",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "退款政策#0004",
+        "退款政策#0003",
+        "退款政策#0005",
+        "物流与配送#0006",
+        "物流与配送#0003"
+      ],
+      "expected": [
+        "退款政策#0004"
+      ]
+    },
+    {
+      "qid": "TL052",
+      "bucket": "table_lookup",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "退款政策#0007",
+        "退款政策#0006",
+        "退款政策#0008",
+        "退货政策#0004",
+        "退货政策#0002"
+      ],
+      "expected": [
+        "退款政策#0007"
+      ]
+    },
+    {
+      "qid": "TL053",
+      "bucket": "table_lookup",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "退款政策#0007",
+        "退款政策#0006",
+        "退款政策#0008",
+        "退货政策#0002",
+        "退款政策#0010"
+      ],
+      "expected": [
+        "退款政策#0007"
+      ]
+    },
+    {
+      "qid": "TL054",
+      "bucket": "table_lookup",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "退款政策#0007",
+        "退款政策#0008",
+        "退款政策#0006",
+        "退货政策#0004",
+        "发票与售后#0005"
+      ],
+      "expected": [
+        "退款政策#0007"
+      ]
+    },
+    {
+      "qid": "TL055",
+      "bucket": "table_lookup",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "退款政策#0010",
+        "退款政策#0009",
+        "退款政策#0011",
+        "退货政策#0002",
+        "发票与售后#0009"
+      ],
+      "expected": [
+        "退款政策#0010"
+      ]
+    },
+    {
+      "qid": "TL056",
+      "bucket": "table_lookup",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "退款政策#0010",
+        "退款政策#0009",
+        "退款政策#0011",
+        "退款政策#0007",
+        "退款政策#0002"
+      ],
+      "expected": [
+        "退款政策#0010"
+      ]
+    },
+    {
+      "qid": "TL057",
+      "bucket": "table_lookup",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "退货政策#0004",
+        "退货政策#0002",
+        "退货政策#0003",
+        "退货政策#0001",
+        "退货政策#0005"
+      ],
+      "expected": [
+        "退货政策#0004"
+      ]
+    },
+    {
+      "qid": "TL058",
+      "bucket": "table_lookup",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "退货政策#0004",
+        "退货政策#0003",
+        "退货政策#0005",
+        "退货政策#0002",
+        "退货政策#0001"
+      ],
+      "expected": [
+        "退货政策#0004"
+      ]
+    },
+    {
+      "qid": "TL059",
+      "bucket": "table_lookup",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "退货政策#0007",
+        "退货政策#0006",
+        "退货政策#0001",
+        "退货政策#0003",
+        "退货政策#0005"
+      ],
+      "expected": [
+        "退货政策#0007"
+      ]
+    },
+    {
+      "qid": "TL060",
+      "bucket": "table_lookup",
+      "recall_at_5": 1.0,
+      "mrr": 1.0,
+      "hit_rate_at_5": 1.0,
+      "precision_at_5": 0.2,
+      "retrieved": [
+        "退货政策#0007",
+        "退货政策#0006",
+        "退货政策#0001",
+        "退货政策#0008",
+        "退款政策#0001"
+      ],
+      "expected": [
+        "退货政策#0007"
+      ]
+    },
+    {
+      "qid": "NA001",
+      "bucket": "no_answer",
+      "top_score": 0.1,
+      "refused": true,
+      "retrieved": [
+        "退货政策#0002",
+        "发票与售后#0005",
+        "商品与尺码#0002",
+        "会员与优惠#0004",
+        "退款政策#0012"
+      ]
+    },
+    {
+      "qid": "NA002",
+      "bucket": "no_answer",
+      "top_score": 0.1,
+      "refused": true,
+      "retrieved": [
+        "物流与配送#0007",
+        "退货政策#0002",
+        "退款政策#0008",
+        "发票与售后#0016",
+        "物流与配送#0008"
+      ]
+    },
+    {
+      "qid": "NA003",
+      "bucket": "no_answer",
+      "top_score": 0.1,
+      "refused": true,
+      "retrieved": [
+        "商品与尺码#0011",
+        "会员与优惠#0005",
+        "物流与配送#0001",
+        "退款政策#0007",
+        "会员与优惠#0006"
+      ]
+    },
+    {
+      "qid": "NA004",
+      "bucket": "no_answer",
+      "top_score": 0.1,
+      "refused": true,
+      "retrieved": [
+        "发票与售后#0008",
+        "退款政策#0002",
+        "会员与优惠#0007",
+        "退款政策#0011",
+        "商品与尺码#0013"
+      ]
+    },
+    {
+      "qid": "NA005",
+      "bucket": "no_answer",
+      "top_score": 0.1,
+      "refused": true,
+      "retrieved": [
+        "退款政策#0010",
+        "退款政策#0009",
+        "退款政策#0006",
+        "退货政策#0005",
+        "退货政策#0003"
+      ]
+    },
+    {
+      "qid": "NA006",
+      "bucket": "no_answer",
+      "top_score": 0.1,
+      "refused": true,
+      "retrieved": [
+        "会员与优惠#0002",
+        "会员与优惠#0004",
+        "会员与优惠#0003",
+        "物流与配送#0006",
+        "退货政策#0002"
+      ]
+    },
+    {
+      "qid": "NA007",
+      "bucket": "no_answer",
+      "top_score": 0.1,
+      "refused": true,
+      "retrieved": [
+        "退款政策#0002",
+        "物流与配送#0010",
+        "会员与优惠#0002",
+        "物流与配送#0008",
+        "会员与优惠#0004"
+      ]
+    },
+    {
+      "qid": "NA008",
+      "bucket": "no_answer",
+      "top_score": 0.1,
+      "refused": true,
+      "retrieved": [
+        "会员与优惠#0011",
+        "物流与配送#0003",
+        "退货政策#0002",
+        "发票与售后#0012",
+        "发票与售后#0005"
+      ]
+    },
+    {
+      "qid": "NA009",
+      "bucket": "no_answer",
+      "top_score": 0.1,
+      "refused": true,
+      "retrieved": [
+        "商品与尺码#0005",
+        "物流与配送#0005",
+        "物流与配送#0002",
+        "商品与尺码#0003",
+        "商品与尺码#0007"
+      ]
+    },
+    {
+      "qid": "NA010",
+      "bucket": "no_answer",
+      "top_score": 0.1,
+      "refused": true,
+      "retrieved": [
+        "退货政策#0003",
+        "商品与尺码#0012",
+        "商品与尺码#0006",
+        "商品与尺码#0008",
+        "物流与配送#0005"
+      ]
+    },
+    {
+      "qid": "NA011",
+      "bucket": "no_answer",
+      "top_score": 0.1,
+      "refused": true,
+      "retrieved": [
+        "退货政策#0003",
+        "物流与配送#0004",
+        "退货政策#0005",
+        "商品与尺码#0001",
+        "退货政策#0001"
+      ]
+    },
+    {
+      "qid": "NA012",
+      "bucket": "no_answer",
+      "top_score": 0.1,
+      "refused": true,
+      "retrieved": [
+        "退款政策#0012",
+        "退款政策#0008",
+        "发票与售后#0005",
+        "发票与售后#0015",
+        "退货政策#0007"
+      ]
+    },
+    {
+      "qid": "NA013",
+      "bucket": "no_answer",
+      "top_score": 0.1,
+      "refused": true,
+      "retrieved": [
+        "会员与优惠#0011",
+        "会员与优惠#0006",
+        "商品与尺码#0013",
+        "会员与优惠#0010",
+        "退款政策#0012"
+      ]
+    },
+    {
+      "qid": "NA014",
+      "bucket": "no_answer",
+      "top_score": 0.1,
+      "refused": true,
+      "retrieved": [
+        "物流与配送#0002",
+        "商品与尺码#0011",
+        "物流与配送#0008",
+        "发票与售后#0004",
+        "退款政策#0012"
+      ]
+    },
+    {
+      "qid": "NA015",
+      "bucket": "no_answer",
+      "top_score": 0.1,
+      "refused": true,
+      "retrieved": [
+        "商品与尺码#0003",
+        "发票与售后#0008",
+        "物流与配送#0008",
+        "发票与售后#0004",
+        "物流与配送#0007"
+      ]
+    },
+    {
+      "qid": "NA016",
+      "bucket": "no_answer",
+      "top_score": 0.1,
+      "refused": true,
+      "retrieved": [
+        "发票与售后#0007",
+        "会员与优惠#0011",
+        "商品与尺码#0001",
+        "商品与尺码#0004",
+        "商品与尺码#0012"
+      ]
+    },
+    {
+      "qid": "NA017",
+      "bucket": "no_answer",
+      "top_score": 0.1,
+      "refused": true,
+      "retrieved": [
+        "退款政策#0008",
+        "退款政策#0006",
+        "会员与优惠#0004",
+        "物流与配送#0009",
+        "商品与尺码#0006"
+      ]
+    },
+    {
+      "qid": "NA018",
+      "bucket": "no_answer",
+      "top_score": 0.1,
+      "refused": true,
+      "retrieved": [
+        "退款政策#0011",
+        "退款政策#0009",
+        "退货政策#0008",
+        "退货政策#0006",
+        "退款政策#0010"
+      ]
+    },
+    {
+      "qid": "NA019",
+      "bucket": "no_answer",
+      "top_score": 0.1,
+      "refused": true,
+      "retrieved": [
+        "商品与尺码#0004",
+        "会员与优惠#0010",
+        "商品与尺码#0002",
+        "物流与配送#0010",
+        "退款政策#0004"
+      ]
+    },
+    {
+      "qid": "NA020",
+      "bucket": "no_answer",
+      "top_score": 0.1,
+      "refused": true,
+      "retrieved": [
+        "物流与配送#0003",
+        "商品与尺码#0009",
+        "商品与尺码#0004",
+        "发票与售后#0014",
+        "退货政策#0006"
+      ]
+    },
+    {
+      "qid": "NA021",
+      "bucket": "no_answer",
+      "top_score": 0.1,
+      "refused": true,
+      "retrieved": [
+        "会员与优惠#0011",
+        "发票与售后#0005",
+        "商品与尺码#0006",
+        "会员与优惠#0002",
+        "退款政策#0011"
+      ]
+    },
+    {
+      "qid": "NA022",
+      "bucket": "no_answer",
+      "top_score": 0.1,
+      "refused": true,
+      "retrieved": [
+        "物流与配送#0003",
+        "发票与售后#0012",
+        "发票与售后#0007",
+        "退货政策#0008",
+        "会员与优惠#0005"
+      ]
+    },
+    {
+      "qid": "NA023",
+      "bucket": "no_answer",
+      "top_score": 0.1,
+      "refused": true,
+      "retrieved": [
+        "退货政策#0003",
+        "退货政策#0001",
+        "退货政策#0005",
+        "退货政策#0002",
+        "商品与尺码#0001"
+      ]
+    },
+    {
+      "qid": "NA024",
+      "bucket": "no_answer",
+      "top_score": 0.1,
+      "refused": true,
+      "retrieved": [
+        "会员与优惠#0003",
+        "会员与优惠#0001",
+        "会员与优惠#0006",
+        "会员与优惠#0002",
+        "物流与配送#0003"
+      ]
+    },
+    {
+      "qid": "NA025",
+      "bucket": "no_answer",
+      "top_score": 0.1,
+      "refused": true,
+      "retrieved": [
+        "发票与售后#0016",
+        "物流与配送#0010",
+        "会员与优惠#0002",
+        "物流与配送#0006",
+        "会员与优惠#0010"
+      ]
+    },
+    {
+      "qid": "NA026",
+      "bucket": "no_answer",
+      "top_score": 0.1,
+      "refused": true,
+      "retrieved": [
+        "商品与尺码#0002",
+        "物流与配送#0007",
+        "物流与配送#0008",
+        "会员与优惠#0002",
+        "会员与优惠#0003"
+      ]
+    },
+    {
+      "qid": "NA027",
+      "bucket": "no_answer",
+      "top_score": 0.1,
+      "refused": true,
+      "retrieved": [
+        "物流与配送#0004",
+        "会员与优惠#0011",
+        "退款政策#0002",
+        "发票与售后#0006",
+        "发票与售后#0005"
+      ]
+    },
+    {
+      "qid": "NA028",
+      "bucket": "no_answer",
+      "top_score": 0.1,
+      "refused": true,
+      "retrieved": [
+        "会员与优惠#0010",
+        "物流与配送#0009",
+        "发票与售后#0015",
+        "退货政策#0008",
+        "物流与配送#0003"
+      ]
+    },
+    {
+      "qid": "NA029",
+      "bucket": "no_answer",
+      "top_score": 0.1,
+      "refused": true,
+      "retrieved": [
+        "会员与优惠#0007",
+        "退款政策#0009",
+        "会员与优惠#0006",
+        "会员与优惠#0004",
+        "退款政策#0010"
+      ]
+    },
+    {
+      "qid": "NA030",
+      "bucket": "no_answer",
+      "top_score": 0.1,
+      "refused": true,
+      "retrieved": [
+        "退货政策#0004",
+        "退货政策#0003",
+        "发票与售后#0014",
+        "退款政策#0010",
+        "会员与优惠#0003"
+      ]
+    },
+    {
+      "qid": "NA031",
+      "bucket": "no_answer",
+      "top_score": 0.1,
+      "refused": true,
+      "retrieved": [
+        "退款政策#0003",
+        "退货政策#0003",
+        "会员与优惠#0001",
+        "退货政策#0001",
+        "发票与售后#0007"
+      ]
+    },
+    {
+      "qid": "NA032",
+      "bucket": "no_answer",
+      "top_score": 0.1,
+      "refused": true,
+      "retrieved": [
+        "退款政策#0011",
+        "商品与尺码#0008",
+        "发票与售后#0001",
+        "退款政策#0012",
+        "发票与售后#0003"
+      ]
+    },
+    {
+      "qid": "NA033",
+      "bucket": "no_answer",
+      "top_score": 0.1,
+      "refused": true,
+      "retrieved": [
+        "会员与优惠#0008",
+        "发票与售后#0005",
+        "商品与尺码#0006",
+        "退款政策#0011",
+        "退款政策#0012"
+      ]
+    },
+    {
+      "qid": "NA034",
+      "bucket": "no_answer",
+      "top_score": 0.1,
+      "refused": true,
+      "retrieved": [
+        "退货政策#0005",
+        "退款政策#0008",
+        "退款政策#0007",
+        "发票与售后#0005",
+        "退货政策#0003"
+      ]
+    },
+    {
+      "qid": "NA035",
+      "bucket": "no_answer",
+      "top_score": 0.1,
+      "refused": true,
+      "retrieved": [
+        "发票与售后#0006",
+        "发票与售后#0012",
+        "发票与售后#0005",
+        "物流与配送#0003",
+        "退款政策#0002"
+      ]
+    },
+    {
+      "qid": "NA036",
+      "bucket": "no_answer",
+      "top_score": 0.1,
+      "refused": true,
+      "retrieved": [
+        "商品与尺码#0005",
+        "商品与尺码#0003",
+        "商品与尺码#0007",
+        "商品与尺码#0010",
+        "物流与配送#0001"
+      ]
+    },
+    {
+      "qid": "NA037",
+      "bucket": "no_answer",
+      "top_score": 0.1,
+      "refused": true,
+      "retrieved": [
+        "会员与优惠#0010",
+        "会员与优惠#0006",
+        "商品与尺码#0004",
+        "发票与售后#0013",
+        "商品与尺码#0006"
+      ]
+    },
+    {
+      "qid": "NA038",
+      "bucket": "no_answer",
+      "top_score": 0.1,
+      "refused": true,
+      "retrieved": [
+        "发票与售后#0004",
+        "商品与尺码#0012",
+        "物流与配送#0006",
+        "商品与尺码#0008",
+        "商品与尺码#0009"
+      ]
+    },
+    {
+      "qid": "NA039",
+      "bucket": "no_answer",
+      "top_score": 0.1,
+      "refused": true,
+      "retrieved": [
+        "退货政策#0005",
+        "退款政策#0007",
+        "退款政策#0010",
+        "会员与优惠#0010",
+        "会员与优惠#0007"
+      ]
+    },
+    {
+      "qid": "NA040",
+      "bucket": "no_answer",
+      "top_score": 0.1,
+      "refused": true,
+      "retrieved": [
+        "会员与优惠#0004",
+        "物流与配送#0006",
+        "会员与优惠#0007",
+        "物流与配送#0010",
+        "发票与售后#0005"
+      ]
+    },
+    {
+      "qid": "NA041",
+      "bucket": "no_answer",
+      "top_score": 0.1,
+      "refused": true,
+      "retrieved": [
+        "会员与优惠#0009",
+        "物流与配送#0003",
+        "会员与优惠#0008",
+        "发票与售后#0016",
+        "物流与配送#0007"
+      ]
+    },
+    {
+      "qid": "NA042",
+      "bucket": "no_answer",
+      "top_score": 0.1,
+      "refused": true,
+      "retrieved": [
+        "退款政策#0010",
+        "退款政策#0009",
+        "退货政策#0004",
+        "商品与尺码#0003",
+        "物流与配送#0007"
+      ]
+    },
+    {
+      "qid": "NA043",
+      "bucket": "no_answer",
+      "top_score": 0.1,
+      "refused": true,
+      "retrieved": [
+        "会员与优惠#0003",
+        "会员与优惠#0002",
+        "退款政策#0002",
+        "退货政策#0004",
+        "物流与配送#0001"
+      ]
+    },
+    {
+      "qid": "NA044",
+      "bucket": "no_answer",
+      "top_score": 0.1,
+      "refused": true,
+      "retrieved": [
+        "发票与售后#0004",
+        "退款政策#0005",
+        "物流与配送#0005",
+        "发票与售后#0013",
+        "退款政策#0006"
+      ]
+    },
+    {
+      "qid": "NA045",
+      "bucket": "no_answer",
+      "top_score": 0.1,
+      "refused": true,
+      "retrieved": [
+        "会员与优惠#0005",
+        "退货政策#0002",
+        "会员与优惠#0006",
+        "发票与售后#0015",
+        "会员与优惠#0004"
+      ]
+    },
+    {
+      "qid": "NA046",
+      "bucket": "no_answer",
+      "top_score": 0.1,
+      "refused": true,
+      "retrieved": [
+        "物流与配送#0010",
+        "退货政策#0002",
+        "发票与售后#0010",
+        "退货政策#0004",
+        "商品与尺码#0007"
+      ]
+    },
+    {
+      "qid": "NA047",
+      "bucket": "no_answer",
+      "top_score": 0.1,
+      "refused": true,
+      "retrieved": [
+        "物流与配送#0009",
+        "物流与配送#0010",
+        "物流与配送#0008",
+        "退款政策#0011",
+        "会员与优惠#0005"
+      ]
+    },
+    {
+      "qid": "NA048",
+      "bucket": "no_answer",
+      "top_score": 0.1,
+      "refused": true,
+      "retrieved": [
+        "商品与尺码#0004",
+        "发票与售后#0014",
+        "商品与尺码#0009",
+        "商品与尺码#0011",
+        "物流与配送#0006"
+      ]
+    },
+    {
+      "qid": "NA049",
+      "bucket": "no_answer",
+      "top_score": 0.1,
+      "refused": true,
+      "retrieved": [
+        "退款政策#0009",
+        "发票与售后#0011",
+        "商品与尺码#0002",
+        "会员与优惠#0009",
+        "退货政策#0004"
+      ]
+    },
+    {
+      "qid": "NA050",
+      "bucket": "no_answer",
+      "top_score": 0.1,
+      "refused": true,
+      "retrieved": [
+        "商品与尺码#0002",
+        "商品与尺码#0013",
+        "商品与尺码#0012",
+        "会员与优惠#0002",
+        "商品与尺码#0010"
+      ]
+    },
+    {
+      "qid": "NA051",
+      "bucket": "no_answer",
+      "top_score": 0.1,
+      "refused": true,
+      "retrieved": [
+        "退款政策#0011",
+        "退款政策#0012",
+        "商品与尺码#0008",
+        "退款政策#0004",
+        "会员与优惠#0003"
+      ]
+    },
+    {
+      "qid": "NA052",
+      "bucket": "no_answer",
+      "top_score": 0.1,
+      "refused": true,
+      "retrieved": [
+        "会员与优惠#0001",
+        "发票与售后#0012",
+        "物流与配送#0001",
+        "发票与售后#0007",
+        "会员与优惠#0011"
+      ]
+    },
+    {
+      "qid": "NA053",
+      "bucket": "no_answer",
+      "top_score": 0.1,
+      "refused": true,
+      "retrieved": [
+        "会员与优惠#0003",
+        "会员与优惠#0001",
+        "发票与售后#0012",
+        "商品与尺码#0010",
+        "发票与售后#0007"
+      ]
+    },
+    {
+      "qid": "NA054",
+      "bucket": "no_answer",
+      "top_score": 0.1643,
+      "refused": true,
+      "retrieved": [
+        "发票与售后#0002",
+        "退款政策#0002",
+        "发票与售后#0006",
+        "退款政策#0011",
+        "退款政策#0010"
+      ]
+    },
+    {
+      "qid": "NA055",
+      "bucket": "no_answer",
+      "top_score": 0.1,
+      "refused": true,
+      "retrieved": [
+        "发票与售后#0010",
+        "退货政策#0004",
+        "会员与优惠#0001",
+        "会员与优惠#0002",
+        "会员与优惠#0005"
+      ]
+    },
+    {
+      "qid": "NA056",
+      "bucket": "no_answer",
+      "top_score": 0.1,
+      "refused": true,
+      "retrieved": [
+        "退货政策#0001",
+        "退货政策#0003",
+        "商品与尺码#0001",
+        "退货政策#0005",
+        "退货政策#0006"
+      ]
+    },
+    {
+      "qid": "NA057",
+      "bucket": "no_answer",
+      "top_score": 0.1,
+      "refused": true,
+      "retrieved": [
+        "发票与售后#0015",
+        "会员与优惠#0010",
+        "退款政策#0008",
+        "发票与售后#0016",
+        "退货政策#0007"
+      ]
+    },
+    {
+      "qid": "NA058",
+      "bucket": "no_answer",
+      "top_score": 0.1,
+      "refused": true,
+      "retrieved": [
+        "退货政策#0003",
+        "商品与尺码#0001",
+        "商品与尺码#0012",
+        "退货政策#0001",
+        "商品与尺码#0002"
+      ]
+    },
+    {
+      "qid": "NA059",
+      "bucket": "no_answer",
+      "top_score": 0.1,
+      "refused": true,
+      "retrieved": [
+        "会员与优惠#0011",
+        "会员与优惠#0002",
+        "商品与尺码#0003",
+        "会员与优惠#0004",
+        "退货政策#0008"
+      ]
+    },
+    {
+      "qid": "NA060",
+      "bucket": "no_answer",
+      "top_score": 0.1,
+      "refused": true,
+      "retrieved": [
+        "会员与优惠#0007",
+        "会员与优惠#0006",
+        "退款政策#0004",
+        "退款政策#0005",
+        "物流与配送#0005"
+      ]
+    }
+  ],
+  "latency_p50_ms": 4.82,
+  "latency_p95_ms": 6.66,
+  "errors": []
+}

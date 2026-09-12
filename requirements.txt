@@ -1,0 +1,21 @@
+# MewHelp 运行时依赖（不装 bge / finetune 可选依赖时用这个）
+fastapi>=0.115
+uvicorn[standard]>=0.30
+sse-starlette>=2.1
+sqlalchemy>=2.0
+pymysql>=1.1
+python-dotenv>=1.0
+langgraph>=1.0
+langgraph-checkpoint-sqlite>=2.0
+langchain-core>=1.0
+langchain-openai>=1.0
+pymilvus>=2.5
+rank-bm25>=0.2.2
+jieba>=0.42
+numpy>=1.26
+pydantic>=2.7
+pydantic-settings>=2.3
+langfuse>=3.0
+httpx>=0.27
+pytest>=8.0
+pytest-asyncio>=0.23

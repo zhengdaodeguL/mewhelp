@@ -1,0 +1,73 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "mewhelp"
+version = "0.1.0"
+description = "MewHelp — 电商场景 AI 智能客服系统（Workflow + Agent 混合架构）"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+dependencies = [
+  # --- web / service ---
+  "fastapi>=0.115",
+  "uvicorn[standard]>=0.30",
+  "sse-starlette>=2.1",
+  "sqlalchemy>=2.0",
+  "pymysql>=1.1",
+  "python-dotenv>=1.0",
+  # --- orchestration ---
+  "langgraph>=1.0",
+  "langgraph-checkpoint-sqlite>=2.0",
+  "langchain-core>=1.0",
+  "langchain-openai>=1.0",
+  # --- retrieval ---
+  "pymilvus>=2.5",
+  "rank-bm25>=0.2.2",
+  "jieba>=0.42",
+  "numpy>=1.26",
+  # --- config ---
+  "pydantic>=2.7",
+  "pydantic-settings>=2.3",
+  # --- observability ---
+  "langfuse>=3.0",
+  "httpx>=0.27",
+]
+
+[project.optional-dependencies]
+# 真实向量/精排模型（bge-m3 / bge-reranker-v2-m3）。约 2GB 下载。
+bge = [
+  "FlagEmbedding>=1.3",
+  "sentence-transformers>=3.0",
+  "torch>=2.2",
+]
+# 第 10 章：RoBERTa 全参微调
+finetune = [
+  "transformers>=4.40",
+  "torch>=2.2",
+  "scikit-learn>=1.4",
+  "datasets>=2.19",
+]
+dev = [
+  "pytest>=8.0",
+  "pytest-asyncio>=0.23",
+]
+
+[project.scripts]
+mewhelp = "mewhelp.cli:main"
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+mewhelp = ["api/static/*", "data/*.jsonl", "data/*.json"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+asyncio_mode = "auto"
+filterwarnings = ["ignore::DeprecationWarning"]

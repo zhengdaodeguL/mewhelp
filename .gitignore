@@ -1,0 +1,28 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+dist/
+build/
+.pytest_cache/
+.mypy_cache/
+
+# 运行时产物
+mewhelp.db
+mewhelp.db-shm
+mewhelp.db-wal
+mewhelp_checkpoints.db
+*.log
+
+# 微调产物（体积大，不提交）
+finetune/artifacts/
+
+# 环境
+.env
+
+# 编辑器
+.idea/
+.vscode/
+*.swp

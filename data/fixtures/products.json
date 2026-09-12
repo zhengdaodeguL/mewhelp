@@ -1,0 +1,264 @@
+{
+  "note": "商品参数夹具。sku 与 orders.json 里的 items[].sku 严格对齐 —— 否则『订单里的商品查不到参数』这类脏数据会污染商品咨询的评测结果。sizes / material / warranty 三个字段是商品咨询意图（product_faq）最常被问到的槽位。",
+  "currency": "CNY",
+  "categories": ["生鲜", "数码", "服饰", "家居"],
+  "products": [
+    {
+      "sku": "SKU-DIGI-001",
+      "name": "MewSound Air 无线蓝牙耳机",
+      "category": "数码",
+      "brand": "MewSound",
+      "price": 599.0,
+      "material": "ABS 塑料外壳 + 液态硅胶耳塞",
+      "sizes": null,
+      "weight_g": 48,
+      "warranty": "整机 1 年保修，非人为损坏免费换新；耳塞等耗材不在保修范围",
+      "shelf_life_days": null,
+      "return_policy": "7 天无理由退货（需保持包装完整，拆封后不影响二次销售）",
+      "specs": {
+        "连接方式": "蓝牙 5.3",
+        "续航": "单次 6 小时，配合充电盒共 24 小时",
+        "降噪": "主动降噪 42dB",
+        "防水等级": "IPX4"
+      },
+      "highlights": [
+        "佩戴稳固，适合通勤和轻度运动",
+        "支持双设备同时连接",
+        "Type-C 快充 10 分钟可用 2 小时"
+      ]
+    },
+    {
+      "sku": "SKU-DIGI-002",
+      "name": "MewFit 2 智能运动手表",
+      "category": "数码",
+      "brand": "MewFit",
+      "price": 1299.0,
+      "material": "铝合金表壳 + 硅胶表带（可换 20mm 通用表带）",
+      "sizes": ["42mm", "46mm"],
+      "weight_g": 39,
+      "warranty": "整机 2 年保修，屏幕碎裂属于人为损坏不在保修范围；电池衰减超过 20% 免费更换",
+      "shelf_life_days": null,
+      "return_policy": "7 天无理由退货，需未激活表带并保留原包装",
+      "specs": {
+        "屏幕": "1.43 英寸 AMOLED，466×466",
+        "续航": "典型场景 14 天，重度使用 7 天",
+        "防水等级": "5ATM",
+        "健康监测": "心率、血氧、睡眠、压力",
+        "定位": "双频五星定位"
+      },
+      "highlights": [
+        "支持 120+ 种运动模式",
+        "睡眠与心率数据支持导出",
+        "表带为标准 20mm 接口，可自行替换"
+      ]
+    },
+    {
+      "sku": "SKU-DIGI-003",
+      "name": "MewPower 65W 氮化镓充电器",
+      "category": "数码",
+      "brand": "MewPower",
+      "price": 129.0,
+      "material": "阻燃 PC 外壳 + 氮化镓（GaN）功率器件",
+      "sizes": null,
+      "weight_g": 118,
+      "warranty": "18 个月保修，因电压异常或进水导致烧毁不在保修范围",
+      "shelf_life_days": null,
+      "return_policy": "7 天无理由退货，需附件齐全",
+      "specs": {
+        "接口": "2 × USB-C + 1 × USB-A",
+        "最大功率": "单口 65W，三口同时 45W + 18W + 7.5W",
+        "协议": "PD3.0 / QC4+ / PPS",
+        "尺寸": "52 × 52 × 30 mm"
+      },
+      "highlights": [
+        "可给笔记本供电，出差带一个就够",
+        "折叠插脚，不刮包"
+      ]
+    },
+    {
+      "sku": "SKU-DIGI-004",
+      "name": "MewBook 14 轻薄笔记本",
+      "category": "数码",
+      "brand": "MewBook",
+      "price": 4699.0,
+      "material": "镁铝合金一体成型机身",
+      "sizes": ["16GB+512GB", "32GB+1TB"],
+      "weight_g": 1290,
+      "warranty": "整机 2 年保修，第 1 年上门；电池与屏幕各 1 年",
+      "shelf_life_days": null,
+      "return_policy": "7 天无理由退货，需保留原包装且未重装系统",
+      "specs": {
+        "屏幕": "14 英寸 2.8K 120Hz",
+        "处理器": "8 核 16 线程",
+        "接口": "2 × USB-C（全功能）+ 1 × USB-A + HDMI 2.1",
+        "重量": "1.29kg"
+      },
+      "highlights": [
+        "支持 100W PD 充电，可用移动电源补电",
+        "键盘背光三档可调"
+      ]
+    },
+    {
+      "sku": "SKU-HOME-001",
+      "name": "MewHome 记忆棉护颈枕",
+      "category": "家居",
+      "brand": "MewHome",
+      "price": 199.0,
+      "material": "外套：60 支新疆长绒棉；内芯：慢回弹记忆棉",
+      "sizes": ["标准款 60×40cm", "加大款 70×45cm"],
+      "weight_g": 1200,
+      "warranty": "1 年保修，内芯塌陷超过 30% 免费换新",
+      "shelf_life_days": null,
+      "return_policy": "7 天无理由退货；枕套可拆洗，洗过不影响退货（只要内芯无异味）",
+      "specs": {
+        "枕高": "前高 10cm / 后高 8cm",
+        "硬度": "中软",
+        "洗涤": "枕套可机洗，内芯不可水洗"
+      },
+      "highlights": [
+        "中间凹槽设计，仰睡侧睡都有支撑",
+        "慢回弹 5 秒，不闷头"
+      ]
+    },
+    {
+      "sku": "SKU-HOME-002",
+      "name": "MewHome 双层玻璃保鲜盒三件套",
+      "category": "家居",
+      "brand": "MewHome",
+      "price": 79.0,
+      "material": "高硼硅玻璃盒身 + 食品级 PP 密封盖 + 硅胶密封圈",
+      "sizes": ["320ml", "580ml", "1040ml"],
+      "weight_g": 1450,
+      "warranty": "30 天内自爆免费换新（需保留碎片照片）",
+      "shelf_life_days": null,
+      "return_policy": "7 天无理由退货，需未使用且密封圈完好",
+      "specs": {
+        "耐温": "-20℃ ~ 400℃",
+        "可用场景": "微波炉 / 烤箱 / 洗碗机 / 冷冻",
+        "密封方式": "四边卡扣 + 硅胶圈"
+      },
+      "highlights": [
+        "双层结构不烫手，可直接进烤箱",
+        "密封圈可拆下单独清洗"
+      ]
+    },
+    {
+      "sku": "SKU-HOME-003",
+      "name": "MewHome 香薰加湿器 4L",
+      "category": "家居",
+      "brand": "MewHome",
+      "price": 219.0,
+      "material": "ABS 机身 + PP 水箱",
+      "sizes": null,
+      "weight_g": 1450,
+      "warranty": "1 年保修，雾化片属于耗材，超过 6 个月需付费更换",
+      "shelf_life_days": null,
+      "return_policy": "7 天无理由退货，需清洁干净无使用痕迹",
+      "specs": {
+        "水箱容量": "4L",
+        "加湿量": "最大 300ml/h",
+        "适用面积": "20~35 平方米",
+        "噪音": "≤ 32dB",
+        "附加功能": "可滴入精油做香薰，缺水自动断电"
+      },
+      "highlights": [
+        "上加水设计，不用搬水箱",
+        "夜间模式自动熄屏"
+      ]
+    },
+    {
+      "sku": "SKU-CLTH-001",
+      "name": "MewBasic 男士纯棉圆领 T 恤",
+      "category": "服饰",
+      "brand": "MewBasic",
+      "price": 89.0,
+      "material": "100% 精梳棉，克重 220g/㎡",
+      "sizes": ["S 165/88A", "M 170/92A", "L 175/96A", "XL 180/100A", "XXL 185/104A"],
+      "weight_g": 240,
+      "warranty": "无质保；质量问题（如开线、破洞）30 天内可退换",
+      "shelf_life_days": null,
+      "return_policy": "7 天无理由退货，需吊牌完整、未下水洗涤",
+      "specs": {
+        "版型": "标准直筒，偏宽松",
+        "领型": "圆领",
+        "尺码建议": "身高 170cm / 体重 65kg 建议选 M；肩宽超过 46cm 建议大一码",
+        "缩水率": "首水洗涤后 ≤ 3%"
+      },
+      "highlights": [
+        "220g 克重不透，四季可穿",
+        "领口双层螺纹，不易变形"
+      ]
+    },
+    {
+      "sku": "SKU-CLTH-002",
+      "name": "MewSoft 女士针织开衫",
+      "category": "服饰",
+      "brand": "MewSoft",
+      "price": 259.0,
+      "material": "70% 羊毛 + 30% 粘胶纤维",
+      "sizes": ["S", "M", "L", "XL"],
+      "weight_g": 380,
+      "warranty": "无质保；起球属于正常穿着现象不在质量问题范围",
+      "shelf_life_days": null,
+      "return_policy": "7 天无理由退货，需吊牌完整、未下水洗涤；羊毛制品建议干洗",
+      "specs": {
+        "版型": "宽松落肩长款",
+        "衣长": "M 码 68cm",
+        "洗涤方式": "建议干洗，或 30℃ 以下羊毛程序手洗，平铺晾干",
+        "厚度": "中等偏薄，适合春秋"
+      },
+      "highlights": [
+        "落肩设计不挑肩宽",
+        "含羊毛成分，保暖但轻薄"
+      ]
+    },
+    {
+      "sku": "SKU-FRESH-001",
+      "name": "智利车厘子 2kg 礼盒装",
+      "category": "生鲜",
+      "brand": "MewFresh",
+      "price": 268.0,
+      "material": null,
+      "sizes": ["JJ 级 28-30mm", "JJJ 级 30-32mm"],
+      "weight_g": 2000,
+      "warranty": "不适用（生鲜无质保）",
+      "shelf_life_days": 7,
+      "storage": "0~4℃ 冷藏，收到后请尽快食用，建议 7 天内吃完",
+      "return_policy": "生鲜类不支持 7 天无理由退货；签收后 24 小时内发现坏果、软果，按坏果比例赔付（需提供照片）",
+      "specs": {
+        "规格": "2kg 礼盒装，单果 28-32mm",
+        "产地": "智利",
+        "保鲜方式": "全程冷链 + 冰袋",
+        "赔付规则": "坏果超过 10% 按比例退款，超过 50% 全额退款"
+      },
+      "highlights": [
+        "空运到港，冷链直发",
+        "礼盒包装可直接送人"
+      ]
+    },
+    {
+      "sku": "SKU-FRESH-002",
+      "name": "阳澄湖大闸蟹 8 只装",
+      "category": "生鲜",
+      "brand": "MewFresh",
+      "price": 398.0,
+      "material": null,
+      "sizes": ["公 3.5 两 + 母 2.5 两（4 公 4 母）", "公 4.5 两 + 母 3.5 两（4 公 4 母）"],
+      "weight_g": 2400,
+      "warranty": "不适用（生鲜无质保）",
+      "shelf_life_days": 3,
+      "storage": "收到后请勿水洗，放冰箱冷藏室（5℃ 左右）湿毛巾覆盖，建议 3 天内食用",
+      "return_policy": "生鲜类不支持 7 天无理由退货；死蟹按只赔付，签收后 6 小时内拍照联系客服即可",
+      "specs": {
+        "规格": "4 公 4 母，共 8 只",
+        "产地": "江苏苏州阳澄湖",
+        "发货方式": "冷链活体发货，含冰袋与蟹绳",
+        "赔付规则": "死蟹按只退款，整单死亡超过一半全额退款"
+      },
+      "highlights": [
+        "活体现捞，48 小时内发出",
+        "附赠蟹醋与蟹绳"
+      ]
+    }
+  ]
+}

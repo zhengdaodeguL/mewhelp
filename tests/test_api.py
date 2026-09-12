@@ -1,0 +1,568 @@
+"""服务层测试：FastAPI 路由 + SSE 事件流。
+
+这一批测试盯的是"**契约**"，不是"实现"：
+
+  * SSE 的事件名和顺序是前端的解析依据，改了就是破坏性变更；
+  * `handoff` / `refusal_reason` 是"答不上来"这条业务链路的对外口径；
+  * 空输入、超长输入这类脏数据必须被降级成一句人话，而不是 500。
+
+所有用例都跑在临时 sqlite 上（`MEWHELP_DATABASE_URL` 指向 tmp_path），
+不碰仓库里的 mewhelp.db —— 否则"跑一次测试，演示数据就脏了"。
+"""
+
+from __future__ import annotations
+
+import json
+import re
+import shutil
+import subprocess
+from pathlib import Path
+
+import pytest
+from fastapi.testclient import TestClient
+
+from mewhelp.api import create_app
+from mewhelp.api.app import INDEX_HTML
+from mewhelp.api.service import MAX_MESSAGE_CHARS, chunk_text, stream_events
+from mewhelp.config import Settings
+from mewhelp.schemas import ConversationResult
+from mewhelp.workflow.graph import build_deps
+
+
+@pytest.fixture(scope="module")
+def app(tmp_path_factory):
+    """整个模块共用一个应用实例。
+
+    建库 + 灌 70 条 chunk 的索引只做一次（`load_from_dir` 约 0.5s），
+    所以用 module 作用域；代价是飞轮/会话状态在用例之间累积，
+    需要干净状态的用例自己造数据（见 `test_flywheel_pending_lists_refused`）。
+    """
+    db_dir = tmp_path_factory.mktemp("api")
+    settings = Settings(
+        MEWHELP_DATABASE_URL=f"sqlite:///{(db_dir / 'test.db').as_posix()}"
+    )
+    return create_app(build_deps(settings=settings))
+
+
+@pytest.fixture(scope="module")
+def client(app):
+    # 必须用 with：TestClient 只有在上下文管理器里才会跑 lifespan，
+    # 而建表和灌知识库都在 lifespan 里 —— 不进去就会问什么都查不到。
+    with TestClient(app) as c:
+        yield c
+
+
+# ============================================================
+# 辅助：SSE 解析
+# ============================================================
+def parse_sse(text: str) -> list[tuple[str, dict]]:
+    """把 SSE 响应体解析成 [(event, data), ...]。
+
+    先统一换行：sse-starlette 默认用 `\\r\\n` 分行，而事件之间是空行，
+    不归一化的话 `\\n\\n` 永远匹配不上（`\\r\\n\\r\\n` 里没有连续的 `\\n`），
+    解析结果会是"一个事件都没收到"这种最容易误判成后端没推的假象。
+    """
+    events: list[tuple[str, dict]] = []
+    for block in text.replace("\r\n", "\n").split("\n\n"):
+        name, payload = None, ""
+        for line in block.split("\n"):
+            if line.startswith("event:"):
+                name = line[len("event:") :].strip()
+            elif line.startswith("data:"):
+                payload += line[len("data:") :].strip()
+        if name and payload:
+            events.append((name, json.loads(payload)))
+    return events
+
+
+def events_of(events, name):
+    return [d for n, d in events if n == name]
+
+
+def chat(client, message: str, session_id: str = "s-test", user_id: str = "u-test") -> dict:
+    resp = client.post(
+        "/api/chat/sync",
+        json={"user_id": user_id, "session_id": session_id, "message": message},
+    )
+    assert resp.status_code == 200, resp.text
+    return resp.json()
+
+
+# ============================================================
+# 1. 健康检查
+# ============================================================
+def test_health_reports_component_modes(client):
+    resp = client.get("/api/health")
+    assert resp.status_code == 200
+    body = resp.json()
+
+    assert body["status"] == "ok"
+    components = body["components"]
+    # 这三个模式是"当前是不是纯离线"的全部依据，一个都不能少
+    for key in ("llm", "embedding", "vector_store"):
+        assert key in components, f"健康检查缺少组件模式：{key}"
+        assert isinstance(components[key], str) and components[key]
+    assert components["llm"] == "mock"
+    assert body["fully_mocked"] is True
+    assert body["db_ready"] is True
+
+    # 启动时灌进知识库了 —— 没有 chunk 的检索器会让所有知识类问题都被拒答
+    assert body["kb_chunks"] > 0
+    assert body["retriever"]["chunks"] == body["kb_chunks"]
+
+
+# ============================================================
+# 2. 非流式问答
+# ============================================================
+def test_chat_sync_returns_full_contract(client):
+    body = chat(client, "生鲜类可以退款吗", session_id="s-sync-knowledge")
+
+    for key in ("request_id", "session_id", "question", "answer", "intent", "exit", "path"):
+        assert key in body, f"返回体缺少字段：{key}"
+    assert body["intent"] == "policy_faq"
+    assert body["exit"] == "knowledge"
+    assert body["path"][:3] == ["resolve", "classify", "retrieve"]
+    assert body["answer"].strip(), "答复不能是空的"
+    assert body["handoff"] is False
+    assert body["evidences"], "走知识出口的问答应该有检索证据"
+    assert body["usage"]["total_tokens"] >= 0
+
+
+def test_chat_sync_business_tool_goes_through_agent(client):
+    """查订单走 Agent 分支，不是检索分支 —— 这是分流最直观的证据。"""
+    body = chat(client, "帮我查下订单 ORD-1002 到哪了", session_id="s-sync-tool")
+    assert body["intent"] == "order_query"
+    assert body["exit"] == "business_tool"
+    assert "agent" in body["path"]
+    assert "retrieve" not in body["path"]
+    assert body["tool_calls"], "业务工具出口必须留下工具调用记录"
+
+
+# ============================================================
+# 3. SSE 事件流
+# ============================================================
+def test_chat_sse_event_order_and_tokens(client):
+    resp = client.post(
+        "/api/chat",
+        json={"user_id": "u-sse", "session_id": "s-sse", "message": "尺码怎么选"},
+    )
+    assert resp.status_code == 200
+    assert resp.headers["content-type"].startswith("text/event-stream")
+
+    events = parse_sse(resp.text)
+    names = [n for n, _ in events]
+
+    # 顺序是硬约束：meta → evidence → tool* → token* → done
+    assert names[0] == "meta", f"第一个事件必须是 meta，实际 {names[:3]}"
+    assert names[-1] == "done", f"最后一个事件必须是 done，实际 {names[-3:]}"
+    assert "error" not in names
+    assert names.index("meta") < names.index("evidence") < names.index("done")
+    assert names.count("meta") == 1 and names.count("done") == 1
+
+    tokens = events_of(events, "token")
+    assert len(tokens) >= 1, "至少要推一个 token —— 前端靠它逐字渲染"
+    # 逐字拼回去必须和 done 里的完整答复完全一致（推流不能丢字或重复）
+    done = events_of(events, "done")[0]
+    assert "".join(t["text"] for t in tokens) == done["answer"]
+
+    meta = events_of(events, "meta")[0]
+    assert meta["request_id"] and meta["intent"] == "product_faq"
+    assert meta["exit"] == "knowledge"
+    assert meta["path"][0] == "resolve"
+    assert meta["resolved_question"]
+
+    evidence = events_of(events, "evidence")[0]
+    assert evidence["chunks"], "知识出口的 SSE 必须带检索证据"
+    for c in evidence["chunks"]:
+        assert set(c) == {"chunk_id", "title", "score"}
+
+
+def test_chat_sse_tool_events(client):
+    """业务工具出口：tool 事件出现在 token 之前。"""
+    resp = client.post(
+        "/api/chat",
+        json={"user_id": "u-sse2", "session_id": "s-sse2", "message": "帮我查下订单 ORD-1002 到哪了"},
+    )
+    events = parse_sse(resp.text)
+    names = [n for n, _ in events]
+    tools = events_of(events, "tool")
+    assert tools, "应该至少有一次工具调用"
+    assert {"name", "ok", "error"} == set(tools[0])
+    assert any(t["name"] == "track_logistics" for t in tools)
+    assert names.index("tool") < names.index("token")
+
+
+# ============================================================
+# 4. 拒答路径（知识库外 → 转人工 + 落飞轮）
+# ============================================================
+def test_out_of_kb_question_hands_off(client):
+    resp = client.post(
+        "/api/chat",
+        json={"user_id": "u-refuse", "session_id": "s-refuse", "message": "你们卖不卖火箭"},
+    )
+    events = parse_sse(resp.text)
+    done = events_of(events, "done")[0]
+
+    assert done["handoff"] is True, "知识库外的问题必须转人工"
+    assert done["refusal_reason"], "转人工必须给出拒答原因（飞轮分诊要用）"
+    assert done["answer"].strip()
+    # 拒答走的是 retrieve → gate → handoff → flywheel，不是直接放弃
+    names = [n for n, _ in events]
+    assert names[-1] == "done"
+
+
+def test_flywheel_pending_lists_refused_question(client):
+    """拒答的问题必须落进问题池，且带着当时的检索快照。"""
+    question = "你们卖不卖火箭"
+    chat(client, question, session_id="s-refuse-2")
+
+    resp = client.get("/api/flywheel/pending")
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["count"] >= 1
+
+    hit = next((i for i in body["items"] if i["question"] == question), None)
+    assert hit is not None, f"问题池里没找到拒答的题：{[i['question'] for i in body['items']]}"
+    assert hit["status"] == "pending"
+    assert hit["source"] in ("refused", "self_eval", "thumbs_down")
+    assert hit["triage"], "必须给出分诊结论（该补文档还是该调检索）"
+    assert hit["triage_label"]
+    # 快照是飞轮最值钱的字段 —— 没有它，人工没法判断是真缺知识还是没检索到
+    assert hit["snapshot"] is not None
+    assert "top_score" in hit["snapshot"]
+
+
+# ============================================================
+# 5. 高风险中断路径
+# ============================================================
+def test_high_risk_missing_slot_asks_for_order_id(client):
+    resp = client.post(
+        "/api/chat",
+        json={"user_id": "u-risk", "session_id": "s-risk", "message": "我要退款"},
+    )
+    events = parse_sse(resp.text)
+    meta = events_of(events, "meta")[0]
+    done = events_of(events, "done")[0]
+
+    assert meta["intent"] == "refund_request"
+    assert meta["exit"] == "high_risk"
+    assert meta["path"] == ["resolve", "classify", "high_risk_flow", "generate"]
+    # 缺订单号时必须追问，而不是编一个订单号继续（这条是业务铁律）
+    assert "订单号" in done["answer"]
+    assert "ORD-" in done["answer"]
+    assert done["handoff"] is False, "追问是正常答复，不是转人工"
+
+
+def test_high_risk_with_slot_actually_calls_tool(client):
+    """槽位齐备时高风险子流程真的动手，并且答复里带着订单号。"""
+    resp = client.post(
+        "/api/chat/sync",
+        json={"user_id": "u-risk2", "session_id": "s-risk2", "message": "帮我取消订单 ORD-1001"},
+    )
+    body = resp.json()
+    assert body["intent"] == "cancel_order"
+    assert body["exit"] == "high_risk"
+    assert body["tool_calls"], "槽位齐备却没有调工具"
+    assert body["tool_calls"][0]["name"] == "cancel_order"
+    assert "ORD-1001" in body["answer"]
+
+
+# ============================================================
+# 6. 反馈
+# ============================================================
+def test_feedback_is_persisted(client):
+    body = chat(client, "尺码怎么选", session_id="s-feedback")
+    resp = client.post(
+        "/api/feedback",
+        json={
+            "session_id": "s-feedback",
+            "request_id": body["request_id"],
+            "thumbs_down": True,
+            "comment": "答得不对",
+        },
+    )
+    assert resp.status_code == 200
+    out = resp.json()
+    assert out["ok"] is True
+    assert out["feedback_id"] is not None
+    # 点踩不只是记一笔：它是最强信号，应该带着当时的现场落进问题池
+    assert out["flywheel"], "点踩应该落进问题池"
+
+
+def test_feedback_on_unknown_request_does_not_fail(client):
+    """拿不到当时现场时可以少落一条（不硬造），但接口本身不能失败。"""
+    resp = client.post(
+        "/api/feedback",
+        json={"session_id": "s-none", "request_id": "req-不存在", "thumbs_down": True, "comment": ""},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["ok"] is True
+
+
+# ============================================================
+# 7. 飞轮审核
+# ============================================================
+def test_flywheel_review_approves_and_prepares_backfill(client):
+    chat(client, "你们卖不卖服务器机柜", session_id="s-review")
+    items = client.get("/api/flywheel/pending").json()["items"]
+    target = next(i for i in items if i["question"] == "你们卖不卖服务器机柜")
+
+    resp = client.post(
+        "/api/flywheel/review",
+        json={
+            "record_id": target["record_id"],
+            "approved": True,
+            "reviewer": "ops-1",
+            "answer": "抱歉，平台暂不销售服务器机柜。",
+        },
+    )
+    assert resp.status_code == 200
+    out = resp.json()
+    assert out["ok"] is True
+    assert out["record"]["status"] == "approved"
+    assert out["record"]["reviewer"] == "ops-1"
+    # 回灌所需的 chunk 必须当场准备好（但不由这个接口直接写向量库）
+    assert out["backfill_chunk_id"], "审核通过却没给出可回灌的 chunk"
+
+
+def test_flywheel_review_unknown_record_does_not_500(client):
+    resp = client.post(
+        "/api/flywheel/review",
+        json={"record_id": "fw_不存在", "approved": False, "reviewer": "ops"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["ok"] is True
+
+
+# ============================================================
+# 8. 脏输入
+# ============================================================
+@pytest.mark.parametrize(
+    "message",
+    [
+        "",                       # 空消息
+        "   ",                    # 只有空白
+        "？" * 1,                 # 极短
+        "很长的问题" * 500,        # 超过 2000 字上限
+    ],
+)
+def test_bad_input_never_returns_500(client, message):
+    resp = client.post(
+        "/api/chat/sync",
+        json={"user_id": "u-bad", "session_id": "s-bad", "message": message},
+    )
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    assert body.get("answer", "").strip(), "任何输入都要给一句人话"
+
+
+def test_bad_input_sse_still_streams_meta_and_done(client):
+    resp = client.post(
+        "/api/chat",
+        json={"user_id": "u-bad", "session_id": "s-bad2", "message": ""},
+    )
+    assert resp.status_code == 200
+    events = parse_sse(resp.text)
+    names = [n for n, _ in events]
+    assert names[0] == "meta" and names[-1] == "done"
+    assert "error" not in names
+
+
+def test_missing_fields_use_defaults(client):
+    """少传 user_id / session_id 不该 422 —— 演示页和 curl 都不爱写全。"""
+    resp = client.post("/api/chat/sync", json={"message": "尺码怎么选"})
+    assert resp.status_code == 200
+
+
+def test_oversized_message_is_capped_not_forwarded(client):
+    """超长消息只回一句"太长了"，而不是把它整段丢进图（那才是真正的风险）。"""
+    body = chat(client, "退款" * (MAX_MESSAGE_CHARS // 2 + 100), session_id="s-too-long")
+    assert "太长" in body["answer"]
+    assert body["path"] == [], "护栏路径不该伪造一条分流路径"
+
+
+# ============================================================
+# 9. trace / 演示页
+# ============================================================
+def test_trace_returns_call_tree(client):
+    body = chat(client, "生鲜类可以退款吗", session_id="s-trace")
+    resp = client.get(f"/api/trace/{body['request_id']}")
+    assert resp.status_code == 200
+    trace = resp.json()
+    assert trace["count"] >= 4
+    nodes = [s["node"] for s in trace["steps"]]
+    assert nodes[0] == "resolve" and "classify" in nodes and "gate" in nodes
+
+
+def test_trace_unknown_request_returns_empty(client):
+    resp = client.get("/api/trace/req-根本不存在")
+    assert resp.status_code == 200
+    assert resp.json() == {"request_id": "req-根本不存在", "count": 0, "steps": []}
+
+
+def test_index_page_is_served_offline(client):
+    resp = client.get("/")
+    assert resp.status_code == 200
+    assert resp.headers["content-type"].startswith("text/html")
+    html = resp.text
+    assert "api/chat" in html
+    # 不引任何 CDN —— 断网也得能打开
+    assert "http://cdn" not in html and "https://cdn" not in html
+    assert "unpkg.com" not in html and "jsdelivr" not in html
+    for event_name in ("meta", "evidence", "tool", "token", "done"):
+        assert f'"{event_name}"' in html, f"演示页没有处理 {event_name} 事件"
+
+
+def test_index_page_wiring_matches_js(client):
+    """页面里的 id 与 JS 里 `$("...")` 的引用必须一一对上。
+
+    这类不一致的后果很具体：少一个 id，页面在浏览器里第一行就抛 TypeError
+    然后白屏 —— 而所有后端用例仍然全绿。用 HTMLParser 静态对一遍，
+    比"打开浏览器看一眼"可靠得多（也才能在 CI 里跑）。
+    """
+    html = client.get("/").text
+    refs = set(re.findall(r'\$\("([^"]+)"\)', html)) | set(
+        re.findall(r'getElementById\("([^"]+)"\)', html)
+    )
+    assert refs, "演示页里没找到任何 DOM 引用，选择器写法是不是变了？"
+    assert not [r for r in refs if f'id="{r}"' not in html], (
+        f"JS 引用了不存在的 id：{sorted(r for r in refs if f'id="{r}"' not in html)}"
+    )
+
+
+# ============================================================
+# 10. 会话历史（多轮）
+# ============================================================
+def test_session_history_is_persisted_and_reused(client):
+    """第二轮要能看见第一轮 —— 历史没落库，多轮指代就永远是坏的。"""
+    chat(client, "我要退款", session_id="s-multi")
+    chat(client, "订单号是 ORD-1002", session_id="s-multi")
+
+    # 从库里直接读回来核对（不信任内存态）
+    store = client.app.state.service.sessions
+    history = store.load("s-multi")
+    assert [t.role for t in history] == ["user", "assistant", "user", "assistant"]
+    assert history[0].content == "我要退款"
+    assert history[1].metadata["intent"] == "refund_request"
+    assert history[2].content == "订单号是 ORD-1002"
+
+
+# ============================================================
+# 11. 纯逻辑单测（不起 HTTP）
+# ============================================================
+def test_chunk_text_covers_answer_exactly():
+    """切块必须不丢字、不重复，且块长在 2~4 之间。"""
+    for text in ["", "短", "0123456789", "退款政策：生鲜类不适用七天无理由退款，请知悉。"]:
+        pieces = list(chunk_text(text))
+        assert "".join(pieces) == text
+        assert all(1 <= len(p) <= 4 for p in pieces)
+    assert list(chunk_text("")) == []
+
+
+def test_chunk_text_is_deterministic():
+    text = "同一句话每次切出来的块必须完全一致，否则前端快照和回放对不上。"
+    assert list(chunk_text(text)) == list(chunk_text(text))
+
+
+@pytest.mark.asyncio
+async def test_stream_events_on_short_answer():
+    """事件流的顺序与内容（sleep=0，不真的等）。"""
+    result = ConversationResult(
+        request_id="req-x",
+        session_id="s-x",
+        user_id="u-x",
+        question="问",
+        answer="答",
+        path=["resolve", "classify"],
+    )
+    events = [e async for e in stream_events(result, sleep=0)]
+    assert [e["event"] for e in events] == ["meta", "evidence", "token", "done"]
+    assert json.loads(events[2]["data"]) == {"text": "答"}
+    assert json.loads(events[3]["data"])["answer"] == "答"
+    # 中文在流里保持可读（ensure_ascii=False），调试时肉眼能看懂
+    assert "答" in events[3]["data"]
+
+
+# ============================================================
+# 12. 前后端一致性：用 node 跑演示页里那段真实的 SSE 解析代码
+# ============================================================
+_SSE_PARSER_REGION = "sse-parser"
+
+_NODE_HARNESS = """
+import { normalizeSse, drainEvents } from './sse_parser.mjs';
+import fs from 'node:fs';
+
+// 把真实的 SSE 响应体按很碎的字节边界切开再喂进去 —— 为的是逼出
+// "一个事件被 TCP 切成几段"和"多字节字符被切开"这两种真实场景。
+const raw = fs.readFileSync(process.argv[2]);
+const size = Number(process.argv[3] || 7);
+const dec = new TextDecoder('utf-8');
+let buf = '', events = [];
+for (let i = 0; i < raw.length; i += size) {
+  buf = normalizeSse(buf + dec.decode(raw.subarray(i, i + size), { stream: true }));
+  const d = drainEvents(buf);
+  buf = d.rest;
+  events.push(...d.events);
+}
+buf = buf + dec.decode();
+console.log(JSON.stringify({ events, rest: buf }));
+"""
+
+
+def _extract_sse_parser(html: str) -> str:
+    """从演示页里抠出 `#region sse-parser` 里的纯函数。
+
+    直接跑页面里的那段代码，而不是在 Python 里重写一遍解析逻辑 ——
+    重写的版本只能证明"我理解得对"，证明不了"页面写得对"。
+    """
+    start = html.index(f"/* #region {_SSE_PARSER_REGION}")
+    body_start = html.index("*/", start) + 2
+    end = html.index(f"/* #endregion {_SSE_PARSER_REGION} */")
+    return html[body_start:end]
+
+
+def test_frontend_sse_parser_matches_server_bytes(client, tmp_path):
+    """服务端推的字节 → 演示页的解析器 → 事件序列必须和 Python 侧一致。
+
+    这条用例守的是**跨语言的契约**：事件名、事件顺序、data 结构一旦改动，
+    后端测试全绿而页面悄悄白屏，是最容易漏掉的一类回归。
+    """
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("环境里没有 node，跳过前端解析器校验")
+
+    resp = client.post(
+        "/api/chat",
+        json={"user_id": "u-js", "session_id": "s-js", "message": "帮我查下订单 ORD-1002 到哪了"},
+    )
+    assert resp.status_code == 200
+    raw_bytes = resp.content
+    assert b"event: meta" in raw_bytes
+
+    parser = _extract_sse_parser(Path(INDEX_HTML).read_text(encoding="utf-8"))
+    (tmp_path / "sse_parser.mjs").write_text(
+        parser + "\nexport { normalizeSse, parseEvent, drainEvents };\n", encoding="utf-8"
+    )
+    (tmp_path / "harness.mjs").write_text(_NODE_HARNESS, encoding="utf-8")
+    (tmp_path / "stream.bin").write_bytes(raw_bytes)
+
+    proc = subprocess.run(
+        [node, str(tmp_path / "harness.mjs"), str(tmp_path / "stream.bin"), "7"],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=60,
+    )
+    assert proc.returncode == 0, proc.stderr
+    got = json.loads(proc.stdout)
+
+    assert got["rest"] == "", "有半截事件没被消费掉 —— 前端会永远等下去"
+    js_events = [(e["event"], e["data"]) for e in got["events"]]
+    py_events = parse_sse(resp.text)
+    assert [n for n, _ in js_events] == [n for n, _ in py_events]
+
+    # 逐字拼回去也必须一致：这是"流式推送不丢字"的最终判据
+    js_answer = "".join(d["text"] for n, d in js_events if n == "token")
+    js_done = [d for n, d in js_events if n == "done"][0]
+    assert js_answer == js_done["answer"]
+    assert len([n for n, _ in js_events if n == "token"]) > 1

@@ -1,0 +1,413 @@
+{
+  "note": "订单夹具。as_of 是这套数据的『今天』—— 30 天退款时效、生鲜 24 小时窗口都以它为基准计算，这样『正好第 30 天可退 / 第 31 天不可退』这类边界用例不会随真实时间漂移。真实系统里应传真实日期（工具支持 today 参数注入）。",
+  "as_of": "2026-08-20",
+  "currency": "CNY",
+  "statuses": ["pending", "processing", "shipped", "delivered", "cancelled"],
+  "refund_statuses": ["none", "refunding", "refunded"],
+  "orders": [
+    {
+      "order_id": "ORD-1001",
+      "user_id": "U1001",
+      "status": "pending",
+      "shipping_address": "浙江省杭州市西湖区文三路 100 号 3 幢 502 室",
+      "delivered_on": null,
+      "refund_status": "none",
+      "created_at": "2026-08-19T09:12:00+08:00",
+      "logistics": null,
+      "items": [
+        {
+          "sku": "SKU-DIGI-001",
+          "name": "MewSound Air 无线蓝牙耳机",
+          "category": "数码",
+          "price": 599.0,
+          "qty": 1
+        },
+        {
+          "sku": "SKU-DIGI-003",
+          "name": "MewPower 65W 氮化镓充电器",
+          "category": "数码",
+          "price": 129.0,
+          "qty": 1
+        }
+      ]
+    },
+    {
+      "order_id": "ORD-1002",
+      "user_id": "U1001",
+      "status": "processing",
+      "shipping_address": "江苏省南京市鼓楼区中山北路 88 号 A 座 1201",
+      "delivered_on": null,
+      "refund_status": "none",
+      "created_at": "2026-08-18T21:40:00+08:00",
+      "logistics": null,
+      "items": [
+        {
+          "sku": "SKU-HOME-003",
+          "name": "MewHome 香薰加湿器 4L",
+          "category": "家居",
+          "price": 219.0,
+          "qty": 1
+        }
+      ]
+    },
+    {
+      "order_id": "ORD-1003",
+      "user_id": "U1002",
+      "status": "shipped",
+      "shipping_address": "广东省深圳市南山区科技园科苑路 15 号 2 栋 801",
+      "delivered_on": null,
+      "refund_status": "none",
+      "created_at": "2026-08-16T14:05:00+08:00",
+      "logistics": {
+        "carrier": "顺丰速运",
+        "tracking_no": "SF1234567890123",
+        "eta": "2026-08-22",
+        "events": [
+          {
+            "time": "2026-08-17T10:20:00+08:00",
+            "status": "已揽收",
+            "desc": "快件已由顺丰速运揽收"
+          },
+          {
+            "time": "2026-08-18T03:40:00+08:00",
+            "status": "运输中",
+            "desc": "快件已到达深圳转运中心"
+          },
+          {
+            "time": "2026-08-19T08:15:00+08:00",
+            "status": "派送中",
+            "desc": "快递员正在派送，请保持电话畅通"
+          }
+        ]
+      },
+      "items": [
+        {
+          "sku": "SKU-DIGI-002",
+          "name": "MewFit 2 智能运动手表",
+          "category": "数码",
+          "price": 1299.0,
+          "qty": 1
+        }
+      ]
+    },
+    {
+      "order_id": "ORD-1004",
+      "user_id": "U1002",
+      "status": "delivered",
+      "shipping_address": "广东省深圳市南山区科技园科苑路 15 号 2 栋 801",
+      "delivered_on": "2026-08-10",
+      "refund_status": "none",
+      "created_at": "2026-08-07T11:30:00+08:00",
+      "logistics": {
+        "carrier": "顺丰速运",
+        "tracking_no": "SF1234567890456",
+        "eta": "2026-08-10",
+        "events": [
+          {
+            "time": "2026-08-08T09:05:00+08:00",
+            "status": "已揽收",
+            "desc": "快件已由顺丰速运揽收"
+          },
+          {
+            "time": "2026-08-09T02:30:00+08:00",
+            "status": "运输中",
+            "desc": "快件已到达深圳转运中心"
+          },
+          {
+            "time": "2026-08-10T09:00:00+08:00",
+            "status": "派送中",
+            "desc": "快递员正在派送，请保持电话畅通"
+          },
+          {
+            "time": "2026-08-10T15:22:00+08:00",
+            "status": "已签收",
+            "desc": "快件已签收，签收人：本人"
+          }
+        ]
+      },
+      "items": [
+        {
+          "sku": "SKU-DIGI-001",
+          "name": "MewSound Air 无线蓝牙耳机",
+          "category": "数码",
+          "price": 599.0,
+          "qty": 1
+        },
+        {
+          "sku": "SKU-DIGI-003",
+          "name": "MewPower 65W 氮化镓充电器",
+          "category": "数码",
+          "price": 129.0,
+          "qty": 2
+        }
+      ]
+    },
+    {
+      "order_id": "ORD-1005",
+      "user_id": "U1003",
+      "status": "delivered",
+      "shipping_address": "北京市朝阳区望京东路 6 号院 5 号楼 1803",
+      "delivered_on": "2026-07-21",
+      "refund_status": "none",
+      "created_at": "2026-07-18T16:20:00+08:00",
+      "logistics": {
+        "carrier": "京东物流",
+        "tracking_no": "JD9876543210987",
+        "eta": "2026-07-21",
+        "events": [
+          {
+            "time": "2026-07-19T08:40:00+08:00",
+            "status": "已揽收",
+            "desc": "快件已由京东物流揽收"
+          },
+          {
+            "time": "2026-07-20T05:10:00+08:00",
+            "status": "运输中",
+            "desc": "快件已到达北京亦庄分拣中心"
+          },
+          {
+            "time": "2026-07-21T11:05:00+08:00",
+            "status": "已签收",
+            "desc": "快件已签收，签收人：前台代收"
+          }
+        ]
+      },
+      "items": [
+        {
+          "sku": "SKU-CLTH-001",
+          "name": "MewBasic 男士纯棉圆领 T 恤",
+          "category": "服饰",
+          "price": 89.0,
+          "qty": 2
+        }
+      ]
+    },
+    {
+      "order_id": "ORD-1006",
+      "user_id": "U1003",
+      "status": "delivered",
+      "shipping_address": "北京市朝阳区望京东路 6 号院 5 号楼 1803",
+      "delivered_on": "2026-07-20",
+      "refund_status": "none",
+      "created_at": "2026-07-17T20:55:00+08:00",
+      "logistics": {
+        "carrier": "京东物流",
+        "tracking_no": "JD9876543210432",
+        "eta": "2026-07-20",
+        "events": [
+          {
+            "time": "2026-07-18T10:00:00+08:00",
+            "status": "已揽收",
+            "desc": "快件已由京东物流揽收"
+          },
+          {
+            "time": "2026-07-20T17:48:00+08:00",
+            "status": "已签收",
+            "desc": "快件已签收，签收人：本人"
+          }
+        ]
+      },
+      "items": [
+        {
+          "sku": "SKU-DIGI-003",
+          "name": "MewPower 65W 氮化镓充电器",
+          "category": "数码",
+          "price": 129.0,
+          "qty": 1
+        }
+      ]
+    },
+    {
+      "order_id": "ORD-1007",
+      "user_id": "U1003",
+      "status": "delivered",
+      "shipping_address": "北京市朝阳区望京东路 6 号院 5 号楼 1803",
+      "delivered_on": "2026-08-14",
+      "refund_status": "none",
+      "created_at": "2026-08-12T10:05:00+08:00",
+      "logistics": {
+        "carrier": "顺丰冷链",
+        "tracking_no": "SFCOLD2026081401",
+        "eta": "2026-08-14",
+        "events": [
+          {
+            "time": "2026-08-13T06:30:00+08:00",
+            "status": "已揽收",
+            "desc": "冷链快件已揽收，全程温控运输"
+          },
+          {
+            "time": "2026-08-14T09:30:00+08:00",
+            "status": "已签收",
+            "desc": "快件已签收，签收人：本人"
+          }
+        ]
+      },
+      "items": [
+        {
+          "sku": "SKU-FRESH-001",
+          "name": "智利车厘子 2kg 礼盒装",
+          "category": "生鲜",
+          "price": 268.0,
+          "qty": 1
+        },
+        {
+          "sku": "SKU-HOME-002",
+          "name": "MewHome 双层玻璃保鲜盒三件套",
+          "category": "家居",
+          "price": 79.0,
+          "qty": 1
+        }
+      ]
+    },
+    {
+      "order_id": "ORD-1008",
+      "user_id": "U1004",
+      "status": "delivered",
+      "shipping_address": "上海市浦东新区张江路 368 号 6 号楼 1102",
+      "delivered_on": "2026-08-19",
+      "refund_status": "none",
+      "created_at": "2026-08-17T13:45:00+08:00",
+      "logistics": {
+        "carrier": "顺丰冷链",
+        "tracking_no": "SFCOLD2026081902",
+        "eta": "2026-08-19",
+        "events": [
+          {
+            "time": "2026-08-18T07:10:00+08:00",
+            "status": "已揽收",
+            "desc": "冷链快件已揽收，全程温控运输"
+          },
+          {
+            "time": "2026-08-19T18:10:00+08:00",
+            "status": "已签收",
+            "desc": "快件已签收，签收人：本人"
+          }
+        ]
+      },
+      "items": [
+        {
+          "sku": "SKU-FRESH-002",
+          "name": "阳澄湖大闸蟹 8 只装",
+          "category": "生鲜",
+          "price": 398.0,
+          "qty": 1
+        },
+        {
+          "sku": "SKU-DIGI-003",
+          "name": "MewPower 65W 氮化镓充电器",
+          "category": "数码",
+          "price": 129.0,
+          "qty": 1
+        }
+      ]
+    },
+    {
+      "order_id": "ORD-1009",
+      "user_id": "U1004",
+      "status": "cancelled",
+      "shipping_address": "上海市浦东新区张江路 368 号 6 号楼 1102",
+      "delivered_on": null,
+      "refund_status": "none",
+      "created_at": "2026-08-15T19:25:00+08:00",
+      "logistics": null,
+      "items": [
+        {
+          "sku": "SKU-CLTH-002",
+          "name": "MewSoft 女士针织开衫",
+          "category": "服饰",
+          "price": 259.0,
+          "qty": 1
+        }
+      ]
+    },
+    {
+      "order_id": "ORD-1010",
+      "user_id": "U1005",
+      "status": "delivered",
+      "shipping_address": "四川省成都市武侯区天府大道北段 1700 号 3 栋 2204",
+      "delivered_on": "2026-08-01",
+      "refund_status": "refunded",
+      "created_at": "2026-07-29T08:50:00+08:00",
+      "logistics": {
+        "carrier": "中通快递",
+        "tracking_no": "ZT5566778899001",
+        "eta": "2026-08-01",
+        "events": [
+          {
+            "time": "2026-07-30T11:15:00+08:00",
+            "status": "已揽收",
+            "desc": "快件已由中通快递揽收"
+          },
+          {
+            "time": "2026-08-01T14:02:00+08:00",
+            "status": "已签收",
+            "desc": "快件已签收，签收人：本人"
+          }
+        ]
+      },
+      "items": [
+        {
+          "sku": "SKU-HOME-001",
+          "name": "MewHome 记忆棉护颈枕",
+          "category": "家居",
+          "price": 199.0,
+          "qty": 1
+        }
+      ]
+    },
+    {
+      "order_id": "ORD-1011",
+      "user_id": "U1005",
+      "status": "delivered",
+      "shipping_address": "四川省成都市武侯区天府大道北段 1700 号 3 栋 2204",
+      "delivered_on": "2026-07-21",
+      "refund_status": "refunding",
+      "created_at": "2026-07-18T09:35:00+08:00",
+      "logistics": {
+        "carrier": "中通快递",
+        "tracking_no": "ZT5566778899112",
+        "eta": "2026-07-21",
+        "events": [
+          {
+            "time": "2026-07-19T10:45:00+08:00",
+            "status": "已揽收",
+            "desc": "快件已由中通快递揽收"
+          },
+          {
+            "time": "2026-07-21T16:30:00+08:00",
+            "status": "已签收",
+            "desc": "快件已签收，签收人：本人"
+          }
+        ]
+      },
+      "items": [
+        {
+          "sku": "SKU-DIGI-002",
+          "name": "MewFit 2 智能运动手表",
+          "category": "数码",
+          "price": 1299.0,
+          "qty": 1
+        }
+      ]
+    },
+    {
+      "order_id": "ORD-1012",
+      "user_id": "U1006",
+      "status": "processing",
+      "shipping_address": "湖北省武汉市洪山区珞喻路 1037 号 12 栋 305",
+      "delivered_on": null,
+      "refund_status": "none",
+      "created_at": "2026-08-19T07:15:00+08:00",
+      "logistics": null,
+      "items": [
+        {
+          "sku": "SKU-FRESH-002",
+          "name": "阳澄湖大闸蟹 8 只装",
+          "category": "生鲜",
+          "price": 398.0,
+          "qty": 1
+        }
+      ]
+    }
+  ]
+}
