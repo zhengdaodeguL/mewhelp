@@ -105,7 +105,7 @@ PYTHONPATH=src python -m mewhelp.cli demo
 PYTHONPATH=src python -m mewhelp.cli index              # 重建知识库索引并打印 chunk 统计
 PYTHONPATH=src python -m mewhelp.cli chat "运费怎么算"    # 单轮问答，打印证据、tokens、耗时
 PYTHONPATH=src python -m mewhelp.cli flywheel           # 问题池统计与待审列表
-PYTHONPATH=src python -m mewhelp.cli serve              # 启动 FastAPI 服务（含演示页）
+PYTHONPATH=src python -m mewhelp.cli serve              # 启动 FastAPI 服务（含用户界面）
 ```
 
 不想带 argparse 的最小入口是 `examples/smoke_demo.py`（四个问题，四条不同的边）。
@@ -114,8 +114,29 @@ PYTHONPATH=src python -m mewhelp.cli serve              # 启动 FastAPI 服务�
 
 ```bash
 PYTHONPATH=src python -m mewhelp.cli serve --port 8123
-# 演示页：GET /        接口文档：GET /docs        健康检查：GET /api/health
+# 用户界面：GET /      接口文档：GET /docs      健康检查：GET /api/health
 ```
+
+> **请求体字段是 `message`，不是 `question`**；接口都在 `/api` 前缀下
+> （`/api/chat` 流式、`/api/chat/sync` 非流式）。这两点是实际踩过的坑。
+
+### 前端（React）
+
+界面是 React 19 + TypeScript + Vite 写的，源码在 `web/`。**产物已提交**，
+所以上面的 `serve` 不需要 Node —— 断网、没装 Node 都能打开。
+
+```bash
+cd web
+npm install          # 只在首次 / 改依赖时需要（需联网）
+npm run build        # 产物输出到 src/mewhelp/api/static/
+```
+
+开发时用 `npm run dev`（5173 端口，`/api` 自动代理到 8000），改完记得
+`npm run build` 重新产出提交 —— 否则线上跑的还是旧界面。
+
+**界面只呈现用户该看的东西**：意图、节点路径、证据块、工具名、置信度这些
+内部信息一律不渲染（开发者走 `/docs` 和 `/api/trace/{request_id}`）。
+这条约束有测试守着：`test_frontend_does_not_render_internal_fields`。
 
 实测（本机真实运行）：
 
@@ -337,7 +358,10 @@ src/mewhelp/
   storage/           SQLAlchemy 2.0 模型与引擎（SQLite / MySQL）
   finetune/          RoBERTa 全参微调的旁路主题分类（含不训练的基线对照）
   eval/              评估体系：5 个桶、4 种检索策略、Recall@5 / MRR / HitRate / 拒答准确率
-  api/               FastAPI + SSE 服务层：app.py（路由）/ service.py（编排）/ static/index.html（演示页）
+  api/               FastAPI + SSE 服务层：app.py（路由）/ service.py（编排）/ static/（前端构建产物）
+
+web/                 前端源码（React 19 + TypeScript + Vite）。只在开发/构建时需要 Node；
+                     产物输出到 src/mewhelp/api/static/，所以**运行时不装 Node 也能跑**。
 
 data/knowledge/      6 篇知识库原文（按标题层级 + 表格写，共切出 70 个 chunk，其中 21 个表格）
 data/fixtures/       12 笔模拟订单（状态覆盖 5 种）+ 11 个商品参数
@@ -345,7 +369,7 @@ data/eval/           300 题评估集 golden.jsonl + 消融结果 ablation.json
 eval/                build_golden.py（造题）/ run_eval.py（跑四策略对照）/ artifacts/（每策略一份报告）
 examples/smoke_demo.py   最小离线冒烟：建库 → 跑图 → 打印路径
 docs/                ARCHITECTURE.md（架构详解）/ INTERVIEW.md（面试问答）
-tests/               456 项 pytest，全部离线可跑
+tests/               459 项 pytest，全部离线可跑
 finetune/            RoBERTa 微调产物目录
 ```
 

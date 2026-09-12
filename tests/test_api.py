@@ -400,34 +400,74 @@ def test_trace_unknown_request_returns_empty(client):
     assert resp.json() == {"request_id": "req-根本不存在", "count": 0, "steps": []}
 
 
+def _asset_paths(html: str) -> list[str]:
+    """从入口页里取出它引用的静态资源路径（React 构建产物）。"""
+    return sorted(set(re.findall(r'(?:src|href)="(/assets/[^"]+)"', html)))
+
+
+def _bundle(client) -> str:
+    """把前端 JS 产物拼起来 —— 用于静态检查"页面里到底写了什么"。"""
+    return "".join(p for p in (client.get(x).text for x in _asset_paths(client.get("/").text) if x.endswith(".js")))
+
+
 def test_index_page_is_served_offline(client):
+    """入口页 + 它引用的静态资源，都必须由服务端自己发得出来。
+
+    前端换成 React 之后，「断网也能打开」这条约束没有变，反而更要盯紧：
+    构建产物漏提交、或者忘了挂载 /assets，页面会返回 200 但白屏 ——
+    而后端用例照样全绿。
+    """
     resp = client.get("/")
     assert resp.status_code == 200
     assert resp.headers["content-type"].startswith("text/html")
+
     html = resp.text
-    assert "api/chat" in html
+    assert 'id="root"' in html, "React 挂载点丢了"
+
+    assets = _asset_paths(html)
+    assert any(a.endswith(".js") for a in assets), "入口页没有引用 JS 产物"
+    assert any(a.endswith(".css") for a in assets), "入口页没有引用 CSS 产物"
+
     # 不引任何 CDN —— 断网也得能打开
     assert "http://cdn" not in html and "https://cdn" not in html
     assert "unpkg.com" not in html and "jsdelivr" not in html
-    for event_name in ("meta", "evidence", "tool", "token", "done"):
-        assert f'"{event_name}"' in html, f"演示页没有处理 {event_name} 事件"
+
+    # 引用到的资源必须真的发得出来（漏挂载 /assets 是最常见的一种失误）
+    for path in assets:
+        asset = client.get(path)
+        assert asset.status_code == 200, f"{path} 取不到，页面会白屏"
+        assert asset.content, f"{path} 是空的"
 
 
-def test_index_page_wiring_matches_js(client):
-    """页面里的 id 与 JS 里 `$("...")` 的引用必须一一对上。
+def test_index_page_wires_to_real_api_routes(client):
+    """前端调用到的每个接口，后端必须真的注册了。
 
-    这类不一致的后果很具体：少一个 id，页面在浏览器里第一行就抛 TypeError
-    然后白屏 —— 而所有后端用例仍然全绿。用 HTMLParser 静态对一遍，
-    比"打开浏览器看一眼"可靠得多（也才能在 CI 里跑）。
+    这条替代了旧版"页面 id 与 JS 选择器一一对应"的检查。React 里没有手写
+    选择器了，但同类风险还在，甚至更隐蔽：前端写 `/api/chat` 而后端叫
+    `/api/chat/sync`，页面照样渲染得漂漂亮亮，只在用户点发送时才静默失败。
     """
-    html = client.get("/").text
-    refs = set(re.findall(r'\$\("([^"]+)"\)', html)) | set(
-        re.findall(r'getElementById\("([^"]+)"\)', html)
-    )
-    assert refs, "演示页里没找到任何 DOM 引用，选择器写法是不是变了？"
-    assert not [r for r in refs if f'id="{r}"' not in html], (
-        f"JS 引用了不存在的 id：{sorted(r for r in refs if f'id="{r}"' not in html)}"
-    )
+    bundle = _bundle(client)
+    assert bundle, "没取到 JS 产物"
+
+    # 产物里是 fetch(`${base}/api/chat`) 这种形态，所以直接扫 /api/ 开头的路径
+    called = set(re.findall(r"/api/[a-zA-Z0-9/_-]+", bundle))
+    assert called, "产物里没有任何 /api/ 调用，客户端是不是没被打进去？"
+
+    registered = {getattr(r, "path", "") for r in client.app.routes}
+    missing = sorted(p for p in called if p not in registered)
+    assert not missing, f"前端调了后端并不存在的接口：{missing}"
+
+
+def test_frontend_does_not_render_internal_fields(client):
+    """用户界面上不能出现内部信息。
+
+    意图、节点路径、证据块、工具名、置信度这些都是**开发者视角**的东西。
+    后端照常推它们（开发者走 /docs 和 /api/trace/{request_id} 看），
+    但前端产物里不该有把它们渲染出去的字样 —— 这条就是那道界线本身。
+    """
+    bundle = _bundle(client)
+    for leaked in ("refusal_reason", "latency_ms", "置信", "意图", "证据", "节点路径"):
+        assert leaked not in bundle, f"前端产物里出现了内部字段：{leaked}"
 
 
 # ============================================================
@@ -484,12 +524,16 @@ async def test_stream_events_on_short_answer():
 
 
 # ============================================================
-# 12. 前后端一致性：用 node 跑演示页里那段真实的 SSE 解析代码
+# 12. 前后端一致性：用 node 跑前端真实的 SSE 解析代码
 # ============================================================
-_SSE_PARSER_REGION = "sse-parser"
+#: 前端解析器所在文件。它刻意只放纯函数（不碰 DOM、不碰 fetch），
+#: 因此能被 node 直接加载 —— Node 24 原生支持擦除 TS 类型标注。
+#: INDEX_HTML = <repo>/src/mewhelp/api/static/index.html，往上 4 层即仓库根。
+_REPO_ROOT = INDEX_HTML.parents[4]
+FRONTEND_SSE_PARSER = _REPO_ROOT / "web" / "src" / "api" / "sse.ts"
 
 _NODE_HARNESS = """
-import { normalizeSse, drainEvents } from './sse_parser.mjs';
+import { normalizeSse, drainEvents } from './sse.ts';
 import fs from 'node:fs';
 
 // 把真实的 SSE 响应体按很碎的字节边界切开再喂进去 —— 为的是逼出
@@ -509,27 +553,27 @@ console.log(JSON.stringify({ events, rest: buf }));
 """
 
 
-def _extract_sse_parser(html: str) -> str:
-    """从演示页里抠出 `#region sse-parser` 里的纯函数。
-
-    直接跑页面里的那段代码，而不是在 Python 里重写一遍解析逻辑 ——
-    重写的版本只能证明"我理解得对"，证明不了"页面写得对"。
-    """
-    start = html.index(f"/* #region {_SSE_PARSER_REGION}")
-    body_start = html.index("*/", start) + 2
-    end = html.index(f"/* #endregion {_SSE_PARSER_REGION} */")
-    return html[body_start:end]
-
-
 def test_frontend_sse_parser_matches_server_bytes(client, tmp_path):
-    """服务端推的字节 → 演示页的解析器 → 事件序列必须和 Python 侧一致。
+    """服务端推的字节 → 前端解析器 → 事件序列必须和 Python 侧一致。
 
     这条用例守的是**跨语言的契约**：事件名、事件顺序、data 结构一旦改动，
     后端测试全绿而页面悄悄白屏，是最容易漏掉的一类回归。
+
+    跑的是 `web/src/api/sse.ts` 里那份**真实代码**，不是在 Python 里重写
+    一遍解析逻辑 —— 重写的版本只能证明"我理解得对"，证明不了"前端写得对"。
     """
     node = shutil.which("node")
     if not node:
         pytest.skip("环境里没有 node，跳过前端解析器校验")
+    if not FRONTEND_SSE_PARSER.is_file():
+        pytest.fail(f"前端解析器不见了：{FRONTEND_SSE_PARSER}")
+
+    # 拷到临时目录用相对路径 import —— Windows 上绝对路径（E:/…）会被
+    # Node 当成 URL scheme 而报 ERR_UNSUPPORTED_ESM_URL_SCHEME
+    (tmp_path / "sse.ts").write_text(
+        FRONTEND_SSE_PARSER.read_text(encoding="utf-8"), encoding="utf-8"
+    )
+    (tmp_path / "harness.mjs").write_text(_NODE_HARNESS, encoding="utf-8")
 
     resp = client.post(
         "/api/chat",
@@ -538,12 +582,6 @@ def test_frontend_sse_parser_matches_server_bytes(client, tmp_path):
     assert resp.status_code == 200
     raw_bytes = resp.content
     assert b"event: meta" in raw_bytes
-
-    parser = _extract_sse_parser(Path(INDEX_HTML).read_text(encoding="utf-8"))
-    (tmp_path / "sse_parser.mjs").write_text(
-        parser + "\nexport { normalizeSse, parseEvent, drainEvents };\n", encoding="utf-8"
-    )
-    (tmp_path / "harness.mjs").write_text(_NODE_HARNESS, encoding="utf-8")
     (tmp_path / "stream.bin").write_bytes(raw_bytes)
 
     proc = subprocess.run(
@@ -566,3 +604,5 @@ def test_frontend_sse_parser_matches_server_bytes(client, tmp_path):
     js_done = [d for n, d in js_events if n == "done"][0]
     assert js_answer == js_done["answer"]
     assert len([n for n, _ in js_events if n == "token"]) > 1
+    # handoff 是前端唯一消费的 done 字段：它决定要不要显示"已转人工"提示条
+    assert "handoff" in js_done

@@ -1,0 +1,432 @@
+/* ============================================================
+   MewHelp 客服前端样式
+   面向终端用户：只呈现对话本身，不出现任何内部调试信息。
+   ============================================================ */
+
+:root {
+  --bg: #eef1f7;
+  --surface: #ffffff;
+  --surface-soft: #f4f6fb;
+  --border: #e3e7f0;
+  --text: #1c2333;
+  --text-muted: #7c869c;
+  --accent: #3b6ef6;
+  --accent-strong: #2f5be0;
+  --accent-soft: #e8efff;
+  --notice-bg: #f0f1f5;
+  --notice-text: #6b7488;
+  --radius: 16px;
+  --shadow-sm: 0 1px 2px rgba(24, 34, 62, 0.06);
+  --shadow-md: 0 8px 28px rgba(24, 34, 62, 0.08);
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0e1117;
+    --surface: #161b25;
+    --surface-soft: #1c2230;
+    --border: #262d3d;
+    --text: #e7ebf3;
+    --text-muted: #8b96ad;
+    --accent: #5b86ff;
+    --accent-strong: #7aa0ff;
+    --accent-soft: #1d2946;
+    --notice-bg: #1e2431;
+    --notice-text: #98a2b8;
+    --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+    --shadow-md: 0 10px 30px rgba(0, 0, 0, 0.45);
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
+    'Hiragino Sans GB', 'Microsoft YaHei', 'Helvetica Neue', Arial, sans-serif;
+  font-size: 15px;
+  line-height: 1.6;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* ---------------- 布局 ---------------- */
+
+.app {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  max-width: 880px;
+  margin: 0 auto;
+  background: var(--surface);
+  box-shadow: var(--shadow-md);
+}
+
+@media (min-width: 900px) {
+  .app {
+    margin: 24px auto;
+    height: calc(100% - 48px);
+    border-radius: 20px;
+    overflow: hidden;
+  }
+}
+
+/* ---------------- 页头 ---------------- */
+
+.header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 20px;
+  border-bottom: 1px solid var(--border);
+  background: var(--surface);
+  flex-shrink: 0;
+}
+
+.header-left {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.brand-mark,
+.avatar {
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: linear-gradient(135deg, #4d7cff, #7b5cff);
+  color: #fff;
+  font-weight: 700;
+  flex-shrink: 0;
+  user-select: none;
+}
+
+.brand-mark {
+  width: 38px;
+  height: 38px;
+  font-size: 17px;
+}
+
+.avatar {
+  width: 30px;
+  height: 30px;
+  font-size: 13px;
+}
+
+.brand-text {
+  display: flex;
+  flex-direction: column;
+}
+
+.brand-title {
+  margin: 0;
+  font-size: 15px;
+  font-weight: 650;
+  letter-spacing: 0.2px;
+}
+
+.brand-status {
+  margin: 0;
+  font-size: 12px;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.status-dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  display: inline-block;
+}
+
+.status-dot--online {
+  background: #34c759;
+  box-shadow: 0 0 0 3px rgba(52, 199, 89, 0.16);
+}
+
+.status-dot--offline {
+  background: #c9ced9;
+}
+
+.ghost-btn {
+  border: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-muted);
+  border-radius: 10px;
+  padding: 6px 12px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.ghost-btn:hover {
+  background: var(--surface-soft);
+  color: var(--text);
+}
+
+/* ---------------- 消息区 ---------------- */
+
+.messages {
+  flex: 1;
+  overflow-y: auto;
+  background: var(--surface);
+  scroll-behavior: smooth;
+}
+
+.messages-inner {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 20px 20px 8px;
+}
+
+.row {
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  max-width: 100%;
+}
+
+.row--user {
+  justify-content: flex-end;
+}
+
+.row--assistant {
+  justify-content: flex-start;
+}
+
+.bubble {
+  max-width: min(76%, 560px);
+  padding: 11px 15px;
+  border-radius: var(--radius);
+  white-space: pre-wrap;
+  word-break: break-word;
+  box-shadow: var(--shadow-sm);
+}
+
+.bubble--assistant {
+  background: var(--surface-soft);
+  border: 1px solid var(--border);
+  border-bottom-left-radius: 6px;
+}
+
+.bubble--user {
+  background: linear-gradient(135deg, var(--accent), var(--accent-strong));
+  color: #fff;
+  border-bottom-right-radius: 6px;
+}
+
+/* 打字中的三点 */
+.bubble--typing {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 15px;
+}
+
+.dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  animation: bounce 1.3s infinite ease-in-out;
+}
+
+.dot:nth-child(2) {
+  animation-delay: 0.16s;
+}
+
+.dot:nth-child(3) {
+  animation-delay: 0.32s;
+}
+
+@keyframes bounce {
+  0%,
+  60%,
+  100% {
+    transform: translateY(0);
+    opacity: 0.45;
+  }
+  30% {
+    transform: translateY(-4px);
+    opacity: 1;
+  }
+}
+
+/* 流式光标 */
+.cursor {
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  margin-left: 2px;
+  vertical-align: text-bottom;
+  background: currentColor;
+  animation: blink 1s steps(2, start) infinite;
+}
+
+@keyframes blink {
+  50% {
+    opacity: 0;
+  }
+}
+
+/* 转人工等系统提示：居中、弱化，不抢对话正文 */
+.notice-row {
+  display: flex;
+  justify-content: center;
+  padding: 2px 0;
+}
+
+.notice {
+  background: var(--notice-bg);
+  color: var(--notice-text);
+  font-size: 12.5px;
+  padding: 6px 14px;
+  border-radius: 999px;
+  text-align: center;
+  max-width: 88%;
+}
+
+/* ---------------- 输入区 ---------------- */
+
+.composer {
+  flex-shrink: 0;
+  border-top: 1px solid var(--border);
+  background: var(--surface);
+  padding: 12px 20px calc(12px + env(safe-area-inset-bottom));
+}
+
+.quick-replies {
+  display: flex;
+  gap: 8px;
+  overflow-x: auto;
+  padding-bottom: 10px;
+  scrollbar-width: none;
+}
+
+.quick-replies::-webkit-scrollbar {
+  display: none;
+}
+
+.chip {
+  flex-shrink: 0;
+  border: 1px solid var(--border);
+  background: var(--surface-soft);
+  color: var(--text);
+  border-radius: 999px;
+  padding: 6px 14px;
+  font-size: 13px;
+  cursor: pointer;
+  transition: background 0.15s, border-color 0.15s, transform 0.1s;
+}
+
+.chip:hover:not(:disabled) {
+  background: var(--accent-soft);
+  border-color: var(--accent);
+}
+
+.chip:active:not(:disabled) {
+  transform: scale(0.97);
+}
+
+.chip:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.composer-box {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  border: 1px solid var(--border);
+  border-radius: 14px;
+  background: var(--surface-soft);
+  padding: 8px 8px 8px 14px;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.composer-box:focus-within {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.composer-input {
+  flex: 1;
+  border: none;
+  background: transparent;
+  resize: none;
+  outline: none;
+  color: var(--text);
+  font: inherit;
+  line-height: 1.5;
+  padding: 6px 0;
+  max-height: 160px;
+}
+
+.composer-input::placeholder {
+  color: var(--text-muted);
+}
+
+.send {
+  flex-shrink: 0;
+  border: none;
+  border-radius: 10px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 14px;
+  font-weight: 600;
+  padding: 9px 18px;
+  cursor: pointer;
+  transition: background 0.15s, opacity 0.15s;
+}
+
+.send:hover:not(:disabled) {
+  background: var(--accent-strong);
+}
+
+.send:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.send--stop {
+  background: transparent;
+  color: var(--text-muted);
+  border: 1px solid var(--border);
+}
+
+.send--stop:hover {
+  background: var(--surface);
+  color: var(--text);
+}
+
+.composer-hint {
+  margin: 8px 0 0;
+  font-size: 11.5px;
+  color: var(--text-muted);
+  text-align: right;
+}
+
+/* 尊重"减少动效"的系统设置 */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}

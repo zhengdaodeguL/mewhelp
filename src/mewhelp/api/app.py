@@ -26,6 +26,7 @@ from typing import Any
 from fastapi import FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from sse_starlette.sse import EventSourceResponse
 from starlette.concurrency import run_in_threadpool
@@ -431,13 +432,29 @@ def create_app(deps: GraphDeps | None = None) -> FastAPI:
         }
 
     # ------------------------------------------------------------
-    # 演示页
+    # 前端（React 构建产物）
     # ------------------------------------------------------------
     @app.get("/")
     async def index() -> Any:
+        """用户界面入口。
+
+        页面只呈现对话本身：意图、节点路径、证据块、工具名这些内部信息
+        一律不出现在这里（开发者需要的话走 /docs 与 /api/trace/{request_id}）。
+        """
         if not INDEX_HTML.is_file():
-            return JSONResponse(status_code=404, content={"error": "演示页缺失", "path": str(INDEX_HTML)})
+            return JSONResponse(
+                status_code=404,
+                content={
+                    "error": "前端资源缺失，请先在 web/ 目录执行 npm install && npm run build",
+                    "expected": str(INDEX_HTML),
+                },
+            )
         return FileResponse(INDEX_HTML, media_type="text/html; charset=utf-8")
+
+    # 构建产物带 hash 的静态资源（/assets/*.js、/assets/*.css）
+    assets_dir = STATIC_DIR / "assets"
+    if assets_dir.is_dir():
+        app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
 
     return app
 
