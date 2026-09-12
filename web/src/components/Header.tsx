@@ -1,9 +1,21 @@
 interface Props {
   online: boolean
   onReset: () => void
+  /** 窄屏下工作区是抽屉，靠这个按钮开合 */
+  showWorkspaceToggle: boolean
+  workspaceOpen: boolean
+  workspaceCount: number
+  onToggleWorkspace: () => void
 }
 
-export function Header({ online, onReset }: Props) {
+export function Header({
+  online,
+  onReset,
+  showWorkspaceToggle,
+  workspaceOpen,
+  workspaceCount,
+  onToggleWorkspace,
+}: Props) {
   return (
     <header className="header">
       <div className="header-left">
@@ -18,9 +30,23 @@ export function Header({ online, onReset }: Props) {
           </p>
         </div>
       </div>
-      <button type="button" className="ghost-btn" onClick={onReset}>
-        新会话
-      </button>
+
+      <div className="header-actions">
+        {showWorkspaceToggle && (
+          <button
+            type="button"
+            className="ghost-btn"
+            aria-expanded={workspaceOpen}
+            onClick={onToggleWorkspace}
+          >
+            工作区
+            {workspaceCount > 0 && <span className="badge">{workspaceCount}</span>}
+          </button>
+        )}
+        <button type="button" className="ghost-btn" onClick={onReset}>
+          新会话
+        </button>
+      </div>
     </header>
   )
 }

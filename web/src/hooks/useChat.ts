@@ -8,6 +8,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { streamChat } from '../api/client'
 import type { ChatMessage } from '../types'
+import { mergeCards, type WorkspaceCard } from '../workspace'
 
 /** 会话 id 存在 localStorage：刷新页面后上下文还在，多轮追问才成立。 */
 const SESSION_KEY = 'mewhelp.session_id'
@@ -44,6 +45,7 @@ const GREETING: ChatMessage = {
 
 export function useChat() {
   const [messages, setMessages] = useState<ChatMessage[]>([GREETING])
+  const [cards, setCards] = useState<WorkspaceCard[]>([])
   const [isStreaming, setIsStreaming] = useState(false)
   const sessionIdRef = useRef<string>('')
   const userIdRef = useRef<string>('')
@@ -96,6 +98,9 @@ export function useChat() {
           onToken: (piece) => {
             patchReply((m) => ({ ...m, content: m.content + piece }))
           },
+          onCards: (incoming) => {
+            setCards((prev) => mergeCards(prev, incoming))
+          },
           onDone: ({ handoff }) => {
             if (handoff) {
               // 转人工是真实业务结果，用户必须知道 —— 用一个独立提示条，不混进答复正文
@@ -146,7 +151,11 @@ export function useChat() {
     }
     sessionIdRef.current = readOrCreate(SESSION_KEY, 'sess')
     setMessages([GREETING])
+    setCards([])
   }, [])
 
-  return { messages, isStreaming, send, stop, reset }
+  /** 只清工作区，不动对话 —— 卡片是参考资料，用户可能想边聊边清。 */
+  const clearCards = useCallback(() => setCards([]), [])
+
+  return { messages, cards, isStreaming, send, stop, reset, clearCards }
 }

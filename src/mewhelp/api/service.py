@@ -19,6 +19,7 @@ import asyncio
 import hashlib
 import json
 import logging
+import re
 import time
 from collections import OrderedDict
 from collections.abc import AsyncIterator, Iterator, Sequence
@@ -26,7 +27,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from ..config import Settings, get_settings
-from ..schemas import ConversationResult, RetrievalResult, TokenUsage, Turn
+from ..schemas import ConversationResult, KbChunk, RetrievalResult, TokenUsage, Turn
 from ..storage import SessionRow, session_scope
 from ..workflow.state import AgentState, new_state
 
@@ -494,6 +495,40 @@ class ChatService:
 # ============================================================
 # SSE 事件流
 # ============================================================
+#: Markdown 表格行（含 `| - | - |` 这种分隔行）
+_MD_TABLE_ROW = re.compile(r"^\s*\|.*\|\s*$")
+#: `**加粗**` / `__加粗__`
+_MD_EMPHASIS = re.compile(r"\*\*(.+?)\*\*|__(.+?)__")
+
+
+def _user_snippet(chunk: KbChunk, limit: int = 140) -> str:
+    """把知识片段收拾成**用户读得懂**的一小段。
+
+    知识库是 Markdown 写的，整段搬上界面会把 `**加粗**` 的星号、表格分隔行
+    （`| - | - |`）原样露出来 —— 那些是写给渲染器看的记号，不是给人看的内容。
+    表格片段则只取表头当摘要，比把整张表拍在卡片上清楚得多。
+    """
+    if chunk.is_table and chunk.table:
+        head = [c.strip() for c in chunk.table[0] if c.strip()]
+        if head:
+            return "表格：" + "、".join(head)
+
+    lines: list[str] = []
+    for raw in (chunk.text or "").splitlines():
+        line = raw.strip()
+        if not line or _MD_TABLE_ROW.match(line):
+            continue
+        line = _MD_EMPHASIS.sub(lambda m: m.group(1) or m.group(2), line.lstrip("#").strip())
+        if line:
+            lines.append(line)
+
+    text = " ".join(lines)
+    if not text:
+        # 整段都被过滤掉了（比如内容本身就是一张表）—— 退回标题，至少不是空白
+        return chunk.title
+    return text[:limit] + ("…" if len(text) > limit else "")
+
+
 def meta_payload(result: ConversationResult) -> dict[str, Any]:
     return {
         "request_id": result.request_id,
@@ -505,22 +540,40 @@ def meta_payload(result: ConversationResult) -> dict[str, Any]:
 
 
 def evidence_payload(result: ConversationResult) -> dict[str, Any]:
-    return {
-        "chunks": [
+    """检索依据。
+
+    `snippet` 是给**用户看**的原文摘录，右侧工作区据此渲染「依据」卡片。
+    `score` / `chunk_id` 是我们自己的口径，界面不展示（但保留在事件里，
+    开发者排查"答错了"时要用）。
+    """
+    chunks: list[dict[str, Any]] = []
+    for e in result.evidences:
+        chunks.append(
             {
                 "chunk_id": e.chunk_id,
                 "title": e.chunk.title,
                 "score": round(float(e.score), 4),
+                "snippet": _user_snippet(e.chunk),
             }
-            for e in result.evidences
-        ]
-    }
+        )
+    return {"chunks": chunks}
 
 
 def tool_payload(result: ConversationResult) -> list[dict[str, Any]]:
-    return [
-        {"name": tc.name, "ok": bool(tc.ok), "error": tc.error} for tc in result.tool_calls
-    ]
+    """工具调用及其结果。
+
+    `result` 一并推给前端 —— 右侧工作区要拿它渲染订单卡、物流轨迹。
+    旧版刻意不发这份数据（那时界面只有一串对话），工作区需要它才发出来。
+
+    `name` 依然只是**前端内部**的分派依据，不展示给用户。
+    """
+    payload: list[dict[str, Any]] = []
+    for tc in result.tool_calls:
+        item: dict[str, Any] = {"name": tc.name, "ok": bool(tc.ok), "error": tc.error}
+        if tc.ok and isinstance(tc.result, (dict, list)):
+            item["result"] = tc.result
+        payload.append(item)
+    return payload
 
 
 def done_payload(result: ConversationResult) -> dict[str, Any]:

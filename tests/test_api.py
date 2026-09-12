@@ -174,7 +174,9 @@ def test_chat_sse_event_order_and_tokens(client):
     evidence = events_of(events, "evidence")[0]
     assert evidence["chunks"], "知识出口的 SSE 必须带检索证据"
     for c in evidence["chunks"]:
-        assert set(c) == {"chunk_id", "title", "score"}
+        # snippet 是给用户看的原文摘录（工作区的"依据"卡片）；
+        # chunk_id / score 是我们的口径，塞在事件里给开发者排查用，界面不展示
+        assert set(c) == {"chunk_id", "title", "score", "snippet"}
 
 
 def test_chat_sse_tool_events(client):
@@ -187,7 +189,10 @@ def test_chat_sse_tool_events(client):
     names = [n for n, _ in events]
     tools = events_of(events, "tool")
     assert tools, "应该至少有一次工具调用"
-    assert {"name", "ok", "error"} == set(tools[0])
+    # 键集就是契约。成功的调用多带一份 result —— 右侧工作区靠它渲染订单卡；
+    # 失败的没有可展示的内容，就不推（否则工作区会多一张空卡片）。
+    assert all(set(t) == {"name", "ok", "error", "result"} for t in tools if t["ok"])
+    assert all(set(t) == {"name", "ok", "error"} for t in tools if not t["ok"])
     assert any(t["name"] == "track_logistics" for t in tools)
     assert names.index("tool") < names.index("token")
 
@@ -524,6 +529,69 @@ async def test_stream_events_on_short_answer():
 
 
 # ============================================================
+# 11b. 工作区依赖的字段：工具结果 + 依据摘录
+# ============================================================
+def _sse(client, message: str, session_id: str = "s-ws") -> list[tuple[str, dict]]:
+    resp = client.post(
+        "/api/chat", json={"user_id": "u-ws", "session_id": session_id, "message": message}
+    )
+    assert resp.status_code == 200
+    return parse_sse(resp.text)
+
+
+def test_tool_event_carries_result_for_workspace(client):
+    """工具结果要一并推给前端 —— 右侧工作区靠它渲染订单卡、物流轨迹。
+
+    旧版只推 {name, ok, error}（那时界面只有一串对话）。工作区需要真实数据，
+    这条钉住它别再被顺手删掉：删了界面不会报错，只会永远空着。
+    """
+    tools = events_of(_sse(client, "帮我查下订单 ORD-1001 的状态"), "tool")
+    assert tools, "查订单应该产生 tool 事件"
+
+    entry = next(t for t in tools if t["ok"])
+    assert "result" in entry, "成功的结果没推给前端，工作区会是空的"
+    assert entry["result"]["order_id"] == "ORD-1001"
+    assert entry["result"]["items"], "订单明细丢了，订单卡渲染不出商品"
+
+
+def test_failed_tool_does_not_push_a_result(client):
+    """失败的结果没有可展示的内容，不该往工作区塞。
+
+    界面上也做了同样的过滤，但契约层面先拦一道：两边各守一半，
+    漏一边都只是"多一张空卡片"这种不痛不痒、极难发现的错。
+    """
+    tools = events_of(_sse(client, "帮我查下订单 ORD-9999 的状态"), "tool")
+    assert tools, "查不存在的订单也该留下调用记录"
+    assert all(not t["ok"] for t in tools)
+    assert all("result" not in t for t in tools)
+
+
+def test_evidence_event_carries_snippet(client):
+    """依据要带原文摘录 —— 只给标题的话工作区那一栏等于没写。"""
+    payload = events_of(_sse(client, "生鲜类可以退款吗"), "evidence")[0]
+    chunks = payload["chunks"]
+    assert chunks
+    assert chunks[0]["snippet"].strip(), "依据卡片没有正文可展示"
+    # 摘录要截断，不能把整篇塞进事件里
+    assert len(chunks[0]["snippet"]) <= 141
+
+
+def test_evidence_snippet_is_clean_markdown(client):
+    """摘录必须是**给人看**的，不能把 Markdown 记号原样丢出去。
+
+    知识库是 Markdown 写的：`**加粗**` 的星号、表格分隔行（`| - | - |`）
+    都是写给渲染器的记号。整段截断搬上卡片，用户看到的就是一串符号。
+    表格片段则只取表头当摘要 —— 把整张表拍在卡片上没人看得下去。
+    """
+    payload = events_of(_sse(client, "生鲜类可以退款吗"), "evidence")[0]
+    for c in payload["chunks"]:
+        snippet = c["snippet"]
+        assert "**" not in snippet, f"加粗记号漏到界面上了：{snippet[:60]}"
+        assert "|" not in snippet, f"表格行漏到界面上了：{snippet[:60]}"
+        assert not snippet.strip().startswith("#")
+
+
+# ============================================================
 # 12. 前后端一致性：用 node 跑前端真实的 SSE 解析代码
 # ============================================================
 #: 前端解析器所在文件。它刻意只放纯函数（不碰 DOM、不碰 fetch），
@@ -531,6 +599,8 @@ async def test_stream_events_on_short_answer():
 #: INDEX_HTML = <repo>/src/mewhelp/api/static/index.html，往上 4 层即仓库根。
 _REPO_ROOT = INDEX_HTML.parents[4]
 FRONTEND_SSE_PARSER = _REPO_ROOT / "web" / "src" / "api" / "sse.ts"
+#: 工作区卡片的构建器（同样是纯函数，同样能被 node 直接跑）
+FRONTEND_WORKSPACE = _REPO_ROOT / "web" / "src" / "workspace.ts"
 
 _NODE_HARNESS = """
 import { normalizeSse, drainEvents } from './sse.ts';
@@ -606,3 +676,81 @@ def test_frontend_sse_parser_matches_server_bytes(client, tmp_path):
     assert len([n for n, _ in js_events if n == "token"]) > 1
     # handoff 是前端唯一消费的 done 字段：它决定要不要显示"已转人工"提示条
     assert "handoff" in js_done
+
+
+# ============================================================
+# 13. 工作区卡片：用后端真实推的数据验证前端构建器
+# ============================================================
+_WORKSPACE_HARNESS = """
+import { cardFromToolResult, cardsFromEvidence, mergeCards } from './workspace.ts';
+import fs from 'node:fs';
+
+const payload = JSON.parse(fs.readFileSync(process.argv[2], 'utf-8'));
+const toolCards = payload.tools.map((t) => cardFromToolResult(t.name, t.result));
+// 同一个订单问两遍，工作区不该堆出两张一样的卡
+const merged = mergeCards(mergeCards([], toolCards.filter(Boolean)), toolCards.filter(Boolean));
+console.log(JSON.stringify({
+  toolCards,
+  sourceCards: cardsFromEvidence(payload.chunks),
+  mergedCount: merged.length,
+}));
+"""
+
+
+def test_frontend_builds_workspace_cards_from_real_payloads(client, tmp_path):
+    """后端真实推的数据 → 前端卡片构建器 → 必须认得出是什么。
+
+    和 SSE 解析那条同理，这是**跨语言契约**。工作区最怕的不是报错，而是
+    **静默为空**：后端改了个字段名，卡片构建器认不出来，界面不报错、
+    只是右边那一栏永远空着 —— 这种错能活很久。
+    """
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("环境里没有 node，跳过前端卡片构建校验")
+    if not FRONTEND_WORKSPACE.is_file():
+        pytest.fail(f"前端卡片构建器不见了：{FRONTEND_WORKSPACE}")
+
+    (tmp_path / "workspace.ts").write_text(
+        FRONTEND_WORKSPACE.read_text(encoding="utf-8"), encoding="utf-8"
+    )
+    (tmp_path / "harness.mjs").write_text(_WORKSPACE_HARNESS, encoding="utf-8")
+
+    # 一次问出「订单」和「物流」两种工具结果，再问一次知识库
+    tools = events_of(_sse(client, "帮我查下订单 ORD-1001 的状态", "s-ws1"), "tool")
+    tools += events_of(_sse(client, "帮我查下订单 ORD-1002 的物流", "s-ws2"), "tool")
+    evidence = events_of(_sse(client, "生鲜类可以退款吗", "s-ws3"), "evidence")
+
+    payload = {"tools": tools, "chunks": evidence[0]["chunks"] if evidence else []}
+    (tmp_path / "payload.json").write_text(
+        json.dumps(payload, ensure_ascii=False), encoding="utf-8"
+    )
+
+    proc = subprocess.run(
+        [node, str(tmp_path / "harness.mjs"), str(tmp_path / "payload.json")],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=60,
+    )
+    assert proc.returncode == 0, proc.stderr
+    got = json.loads(proc.stdout)
+
+    cards = [c for c in got["toolCards"] if c]
+    kinds = [c["kind"] for c in cards]
+    assert "order" in kinds, f"订单结果没被识别成订单卡：{got['toolCards']}"
+    assert "logistics" in kinds, f"物流结果没被识别成物流卡：{got['toolCards']}"
+
+    order = next(c for c in cards if c["kind"] == "order")
+    assert order["orderId"] == "ORD-1001"
+    assert order["items"], "订单卡里没有商品明细"
+    assert order["statusLabel"] != "—", "订单卡没拿到可读的状态文案"
+
+    logi = next(c for c in cards if c["kind"] == "logistics")
+    assert logi["orderId"] == "ORD-1002"
+
+    sources = got["sourceCards"]
+    assert sources, "依据没被识别成卡片"
+    assert sources[0]["title"] and sources[0]["snippet"]
+
+    # 卡片 id 稳定 —— 否则同一单问两遍会堆出一摞重复卡片
+    assert got["mergedCount"] == len(cards), "同一批卡片合并后不该变多或变少"

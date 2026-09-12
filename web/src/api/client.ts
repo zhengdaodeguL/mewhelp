@@ -10,6 +10,7 @@
  */
 
 import type { TurnOutcome } from '../types'
+import { cardsFromEvidence, cardsFromTools, type WorkspaceCard } from '../workspace'
 import { drainEvents, normalizeSse } from './sse'
 
 const API_BASE = ''
@@ -17,6 +18,8 @@ const API_BASE = ''
 export interface StreamCallbacks {
   /** 收到一段正文（逐字） */
   onToken: (text: string) => void
+  /** 本轮新增的工作区卡片（订单 / 物流 / 依据） */
+  onCards: (cards: WorkspaceCard[]) => void
   /** 本轮结束 */
   onDone: (outcome: TurnOutcome) => void
   /** 出错（网络/服务端），message 已是可直接展示给用户的人话 */
@@ -75,6 +78,13 @@ export async function streamChat(
         if (event === 'token') {
           const text = (data as { text?: string })?.text
           if (text) callbacks.onToken(text)
+        } else if (event === 'evidence') {
+          // 只取标题与原文摘录进工作区；分数/chunk_id 是内部口径，不渲染
+          const cards = cardsFromEvidence((data as { chunks?: unknown })?.chunks)
+          if (cards.length) callbacks.onCards(cards)
+        } else if (event === 'tool') {
+          const cards = cardsFromTools(data)
+          if (cards.length) callbacks.onCards(cards)
         } else if (event === 'done') {
           finished = true
           callbacks.onDone({ handoff: Boolean((data as { handoff?: boolean })?.handoff) })
@@ -82,7 +92,7 @@ export async function streamChat(
           finished = true
           callbacks.onError('服务出了点小问题，已为你转接人工，请稍候。')
         }
-        // meta / evidence / tool：开发者内部信息，前端刻意不消费
+        // meta：意图/节点路径，纯内部信息，前端刻意不消费
       }
     }
   } catch (err) {

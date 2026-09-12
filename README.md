@@ -134,9 +134,19 @@ npm run build        # 产物输出到 src/mewhelp/api/static/
 开发时用 `npm run dev`（5173 端口，`/api` 自动代理到 8000），改完记得
 `npm run build` 重新产出提交 —— 否则线上跑的还是旧界面。
 
-**界面只呈现用户该看的东西**：意图、节点路径、证据块、工具名、置信度这些
+**布局是左右分栏**：左边对话，右边工作区。工作区把这一轮"办的事"陈列出来 ——
+订单卡（商品明细 / 合计 / 收货地址）、物流轨迹、政策依据、操作结果。
+窄屏（≤1024px）下工作区收成抽屉，由页头按钮开合。
+
+工作区的卡片是**按数据形状**认出来的（有 `items` 就是订单、有 `events` 就是
+物流），不依赖工具名 —— 工具改名不该让界面塌掉。这份逻辑在
+`web/src/workspace.ts`，是纯函数，测试会用后端真实推的数据跑它
+（`test_frontend_builds_workspace_cards_from_real_payloads`）。
+
+**界面只呈现用户该看的东西**：意图、节点路径、证据分数、工具名、耗时这些
 内部信息一律不渲染（开发者走 `/docs` 和 `/api/trace/{request_id}`）。
-这条约束有测试守着：`test_frontend_does_not_render_internal_fields`。
+知识库里的 Markdown 记号（`**加粗**`、表格分隔行）也会在推给前端前收拾干净，
+不会原样露在卡片上。这几条约束都有测试守着。
 
 实测（本机真实运行）：
 
@@ -369,7 +379,7 @@ data/eval/           300 题评估集 golden.jsonl + 消融结果 ablation.json
 eval/                build_golden.py（造题）/ run_eval.py（跑四策略对照）/ artifacts/（每策略一份报告）
 examples/smoke_demo.py   最小离线冒烟：建库 → 跑图 → 打印路径
 docs/                ARCHITECTURE.md（架构详解）/ INTERVIEW.md（面试问答）
-tests/               459 项 pytest，全部离线可跑
+tests/               464 项 pytest，全部离线可跑
 finetune/            RoBERTa 微调产物目录
 ```
 
