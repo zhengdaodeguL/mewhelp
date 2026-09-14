@@ -141,6 +141,16 @@ export function useChat() {
     setIsStreaming(false)
   }, [])
 
+  /** 重问上一条：把最后一条用户消息之后的对话丢掉，再原样问一次。 */
+  const retryLast = useCallback(() => {
+    if (isStreaming) return
+    const lastUser = messages.map((m) => m.role).lastIndexOf('user')
+    if (lastUser === -1) return
+    const text = messages[lastUser].content
+    setMessages((prev) => prev.slice(0, lastUser))
+    void send(text)
+  }, [isStreaming, messages, send])
+
   const reset = useCallback(() => {
     abortRef.current?.abort()
     setIsStreaming(false)
@@ -157,5 +167,15 @@ export function useChat() {
   /** 只清工作区，不动对话 —— 卡片是参考资料，用户可能想边聊边清。 */
   const clearCards = useCallback(() => setCards([]), [])
 
-  return { messages, cards, isStreaming, send, stop, reset, clearCards }
+  return {
+    messages,
+    cards,
+    isStreaming,
+    canRetry: messages.some((m) => m.role === 'user'),
+    send,
+    stop,
+    retryLast,
+    reset,
+    clearCards,
+  }
 }

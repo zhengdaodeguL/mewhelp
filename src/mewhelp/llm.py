@@ -365,16 +365,52 @@ def _mock_self_eval(client: MockLLMClient, messages, tools) -> str:
     )
 
 
+#: Markdown 表格的分隔行，如 `- | - | -`；只表达结构，没有信息量
+_TABLE_SEP = re.compile(r"^\s*[-:|][-:|\s]*$")
+
+
+def _is_table_sep(line: str) -> bool:
+    return "|" in line and bool(_TABLE_SEP.match(line))
+
+
+def _looks_like_table(lines: list[str]) -> bool:
+    """判断一组行是不是表格。
+
+    注意**不能**用"行首是不是 |"来判：知识库里的表格首行是
+    `商品状态 | 申请时间窗 | …`（没有首尾竖线），按行首判会整个漏掉，
+    最后表格被压成一行竖线塞进答复里。
+    """
+    if sum(1 for ln in lines if "|" in ln) >= 2:
+        return True
+    return any(_is_table_sep(ln) for ln in lines)
+
+
+def _render_evidence_block(title: str, body: str) -> str:
+    """把一条证据渲染成**人读得下去**的一段。
+
+    关键是别把换行全压掉：表格逐行才有结构，压成一行之后用户看到的
+    就是一串竖线。表格保持成块，散文才压成一行。
+    """
+    kept = [ln.rstrip() for ln in body.strip().splitlines() if ln.strip()]
+    if _looks_like_table(kept):
+        # 去掉 |---|---| 分隔行：表头和数据行已经足够表达结构
+        rows = [ln for ln in kept if not _is_table_sep(ln)]
+        return f"{title}：\n" + "\n".join(rows)
+    return f"{title}：" + " ".join(" ".join(kept).split())
+
+
 def _mock_generate(client: MockLLMClient, messages, tools) -> str:
-    """生成回答：把证据块抽出来，按模板组织成有依据的答复。"""
+    """生成回答：把证据块抽出来，按模板组织成有依据的答复。
+
+    输出刻意用**空行分块** —— 前端按块渲染成段落与表格，而不是一面文字墙。
+    这也是真模型该遵守的形态：让模型直接吐一段没有结构的长文，
+    界面上就没法把它排好看。
+    """
     blob = " ".join(_msg_text(m) for m in messages)
     blocks = re.findall(r"\[(\d+)\]\s*\[([^\]]+)\]\n(.+?)(?=\n\n\[\d+\]|\Z)", blob, re.S)
     if blocks:
-        parts = []
-        for idx, title, body in blocks[:3]:
-            body = " ".join(body.split())
-            parts.append(f"{title}：{body}")
-        return "根据平台规则，" + "；".join(parts) + "。如需进一步处理，可以告诉我订单号。"
+        parts = [_render_evidence_block(title, body) for _, title, body in blocks[:3]]
+        return "根据平台规则：\n\n" + "\n\n".join(parts) + "\n\n如需进一步处理，可以告诉我订单号。"
     return "抱歉，我暂时没有找到可以回答这个问题的依据。"
 
 

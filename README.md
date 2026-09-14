@@ -118,7 +118,8 @@ PYTHONPATH=src python -m mewhelp.cli serve --port 8123
 ```
 
 > **请求体字段是 `message`，不是 `question`**；接口都在 `/api` 前缀下
-> （`/api/chat` 流式、`/api/chat/sync` 非流式）。这两点是实际踩过的坑。
+> （`/api/chat` 流式、`/api/chat/sync` 非流式、`/api/orders` 订单快捷选择）。
+> 这两点是实际踩过的坑。
 
 ### 前端（React）
 
@@ -143,6 +144,25 @@ npm run build        # 产物输出到 src/mewhelp/api/static/
 `web/src/workspace.ts`，是纯函数，测试会用后端真实推的数据跑它
 （`test_frontend_builds_workspace_cards_from_real_payloads`）。
 
+### 界面上的快捷功能
+
+| 功能 | 为什么有它 |
+| --- | --- |
+| **订单快捷选择**（输入框上方一排订单 chip） | 订单号是用户最记不住的东西。让他为了查物流去翻订单号再手打 `ORD-1007`，是把系统的记忆成本转嫁给用户。点一下填进输入框（**只填不发** —— 他多半还想补一句"这单能退吗"） |
+| **右上角计数** | 工作区里有什么、有几条，不用切过去看 |
+| **复制答复 / 复制卡片** | 拿到订单信息的下一步多半是粘到聊天窗口或工单系统。让他用鼠标划选一张带排版的卡片是折磨 |
+| **重问一次** | 只给最后一条答复 —— 中间那些重问没有意义 |
+| **回到底部** | 往上翻历史时才浮出来。用户翻历史时被拽回底部，是聊天界面里最恼人的一类交互 |
+| **主题切换**（跟随系统 / 浅色 / 深色） | 选择记在 localStorage；`data-theme` 由 `index.html` 里的内联脚本在**首次绘制前**写好，否则每次进页面都会先闪一下白 |
+| **快捷键** `Enter` 发送 / `Shift+Enter` 换行 / `Esc` 停止 / `Ctrl+K` 聚焦 | 中文输入法选词时的回车不算发送（判 `isComposing`） |
+
+答复正文按**轻量 Markdown** 排版（段落 / 表格 / `**加粗**`），实现在
+`web/src/RichText.tsx`：走"拆成 React 元素"而不是 `dangerouslySetInnerHTML`，
+答复里就算混进 HTML 也只会被当字面量显示。刻意不引 markdown 库 ——
+一个客服答复用不到完整语法，少一份依赖就少一处断网风险。
+配套地，`_mock_generate` 也改成**空行分块**输出（表格保持成块），
+否则整张表会被压成一行竖线塞进气泡。
+
 **界面只呈现用户该看的东西**：意图、节点路径、证据分数、工具名、耗时这些
 内部信息一律不渲染（开发者走 `/docs` 和 `/api/trace/{request_id}`）。
 知识库里的 Markdown 记号（`**加粗**`、表格分隔行）也会在推给前端前收拾干净，
@@ -158,8 +178,14 @@ GET /api/health → 200
 
 POST /api/chat/sync {"user_id":"u1","session_id":"s1","message":"运费怎么算"} → 200
   intent policy_faq | exit knowledge | path ['resolve','classify','retrieve','gate','generate']
-  answer 根据平台规则，运费与损失承担：无理由退货的往返运费由用户承担…
-  usage  {'input_tokens': 524, 'output_tokens': 367, 'total_tokens': 891, 'cost_usd': 0.0}
+  answer 根据平台规则：\n\n运费与损失承担：无理由退货的往返运费由用户承担…
+  （**空行分块**：段落之间空一行，表格逐行保留 —— 前端据此渲染成段落与表格）
+  usage  {'input_tokens': 524, 'output_tokens': 363, 'total_tokens': 887, 'cost_usd': 0.0}
+
+GET /api/orders → 200
+  {"count":2,"demo":true,"orders":[{"order_id":"ORD-1001","status_label":"待付款/待处理",
+   "title":"MewSound Air 无线蓝牙耳机","total_amount":728.0,"item_count":2}, …]}
+  （界面上的订单快捷选择用它 —— 没传 user_id 时 demo 为 true，标明是演示数据）
 ```
 
 SSE 事件流在 `POST /api/chat`，事件名按契约冻结：`meta` / `token` / `tool` / `evidence` / `done` / `error`。
@@ -187,8 +213,16 @@ SSE 事件流在 `POST /api/chat`，事件名按契约冻结：`meta` / `token` 
     [2] 0.998  生鲜类  (退款政策#0005)
     [3] 0.993  生鲜类  (退款政策#0004)
   答复（已答复）：
-    根据平台规则，生鲜类：生鲜类商品（蔬果、肉禽、水产、乳品、冷冻食品）不适用七天无理由退款，
-    只受理品质问题退款，且必须在签收后 24 小时内提交，同时上传商品照片。…
+    根据平台规则：
+
+    生鲜类：生鲜类商品（蔬果、肉禽、水产、乳品、冷冻食品）不适用七天无理由退款，
+    只受理**品质问题**退款，且必须在签收后 24 小时内提交，同时上传商品照片。
+
+    生鲜类：
+    商品状态 | 申请时间窗 | 退款比例 | 是否需要寄回
+    未发货 | 支付后任意时间 | 100% | 否
+    已发货未签收 | 拦截成功后 | 95% | 否
+    …（表格逐行保留，前端渲染成真正的表格，而不是一行竖线）
 
 【高风险（槽位齐备）】帮我取消订单 ORD-1001
   意图 cancel_order → 出口 high_risk
@@ -379,7 +413,7 @@ data/eval/           300 题评估集 golden.jsonl + 消融结果 ablation.json
 eval/                build_golden.py（造题）/ run_eval.py（跑四策略对照）/ artifacts/（每策略一份报告）
 examples/smoke_demo.py   最小离线冒烟：建库 → 跑图 → 打印路径
 docs/                ARCHITECTURE.md（架构详解）/ INTERVIEW.md（面试问答）
-tests/               464 项 pytest，全部离线可跑
+tests/               466 项 pytest，全部离线可跑
 finetune/            RoBERTa 微调产物目录
 ```
 

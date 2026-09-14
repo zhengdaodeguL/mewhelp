@@ -98,6 +98,34 @@ export function formatAmount(amount: number | null, currency: string): string | 
 }
 
 // ---------------------------------------------------------------
+// 状态色阶
+// ---------------------------------------------------------------
+
+/** 状态标签的语义色。同一件事在不同单上长得一样，用户才不用重读。 */
+export type StatusTone = 'warn' | 'info' | 'active' | 'ok' | 'muted'
+
+const TONE_RULES: ReadonlyArray<readonly [readonly string[], StatusTone]> = [
+  [['待付款', '待处理', '待发货'], 'warn'],
+  [['备货', '处理中', '拦截'], 'info'],
+  [['已发货', '运输', '派送', '已揽收'], 'active'],
+  [['已签收', '已完成', '成功'], 'ok'],
+  [['已取消', '已关闭', '失败'], 'muted'],
+]
+
+/**
+ * 由中文状态文案推出色阶。
+ *
+ * 刻意按**文案**而不是英文 status 判断：界面拿到的就是文案，
+ * 英文状态码是后端实现细节，不该为了配色再漏一份到前端。
+ */
+export function statusTone(label: string): StatusTone {
+  for (const [keywords, tone] of TONE_RULES) {
+    if (keywords.some((k) => label.includes(k))) return tone
+  }
+  return 'muted'
+}
+
+// ---------------------------------------------------------------
 // 构建
 // ---------------------------------------------------------------
 
@@ -212,4 +240,40 @@ export function mergeCards(existing: WorkspaceCard[], incoming: WorkspaceCard[])
   const fresh = new Map(incoming.map((c) => [c.id, c]))
   const kept = existing.filter((c) => !fresh.has(c.id))
   return [...fresh.values(), ...kept].slice(0, 20)
+}
+
+/**
+ * 把卡片拍成一段纯文本。
+ *
+ * 给"复制"用 —— 用户拿到订单信息后的下一步，多半是粘到聊天窗口、
+ * 工单系统或者备忘录里。让他用鼠标划选一张带排版的卡片是折磨。
+ */
+export function cardToText(card: WorkspaceCard): string {
+  switch (card.kind) {
+    case 'order': {
+      const lines = [`订单 ${card.orderId}（${card.statusLabel}）`]
+      for (const item of card.items) {
+        const price = formatAmount(item.price, card.currency) ?? ''
+        lines.push(`  ${item.name} ×${item.qty}  ${price}`.trimEnd())
+      }
+      const total = formatAmount(card.totalAmount, card.currency)
+      if (total) lines.push(`  合计 ${total}`)
+      if (card.address) lines.push(`  收货地址 ${card.address}`)
+      return lines.join('\n')
+    }
+    case 'logistics': {
+      const lines = [`物流 ${card.orderId}（${card.statusLabel}）`]
+      if (card.carrier) lines.push(`  承运 ${card.carrier}`)
+      if (card.trackingNo) lines.push(`  运单号 ${card.trackingNo}`)
+      for (const step of card.steps) {
+        lines.push(`  ${step.time ? `${step.time} ` : ''}${step.text}`)
+      }
+      if (card.note) lines.push(`  ${card.note}`)
+      return lines.join('\n')
+    }
+    case 'source':
+      return `${card.title}\n${card.snippet}`
+    case 'action':
+      return `${card.orderId ? `${card.orderId} ` : ''}${card.text}`
+  }
 }

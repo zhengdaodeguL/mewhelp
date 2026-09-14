@@ -37,6 +37,7 @@ from ..flywheel.feedback import triage_hint, triage_label
 from ..observability.tracing import build_tracer
 from ..schemas import FlywheelRecord
 from ..storage import FeedbackRow, init_db, session_scope
+from ..tools.business import list_orders
 from ..workflow.graph import GraphDeps, build_deps, build_graph
 from .service import (
     EVENT_ERROR,
@@ -396,6 +397,27 @@ def create_app(deps: GraphDeps | None = None) -> FastAPI:
             "record": rec.model_dump(mode="json"),
             "backfill_chunk_id": chunk.chunk_id if chunk else None,
         }
+
+    # ------------------------------------------------------------
+    # 订单快捷选择
+    # ------------------------------------------------------------
+    @app.get("/api/orders")
+    async def orders(user_id: str | None = Query(default=None)) -> dict[str, Any]:
+        """当前用户的订单摘要 —— 给界面的"订单快捷选择"用。
+
+        订单号是用户最不可能记住的东西，让他手打 ORD-1007 是把系统的记忆
+        成本转嫁给用户。这里让他点一下就行。
+
+        注意：真实系统里 user_id 必须来自登录态，而不是查询参数 ——
+        否则谁都能读别人的单。演示环境没有登录，所以没传时回落到夹具用户，
+        并在返回里用 `demo: true` 说明这批数据不是"他的"。
+        """
+        try:
+            rows = list_orders(user_id)
+        except Exception as exc:  # noqa: BLE001 — 夹具坏了不该让界面打不开
+            logger.warning("[api] /api/orders 查询失败: %s", exc)
+            return {"count": 0, "orders": [], "demo": True, "error": f"{type(exc).__name__}"}
+        return {"count": len(rows), "orders": rows, "demo": user_id is None}
 
     # ------------------------------------------------------------
     # 运维 / 可观测

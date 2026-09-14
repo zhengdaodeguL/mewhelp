@@ -239,6 +239,42 @@ def order_summary(order: dict[str, Any], *, today: date | None = None) -> dict[s
     }
 
 
+def list_orders(
+    user_id: str | None = None, *, today: date | None = None, limit: int = 8
+) -> list[dict[str, Any]]:
+    """某个用户名下的订单摘要，按创建时间倒序。
+
+    用途是**订单快捷选择**：用户问"我那单到哪了"时不必手打 ORD-1007，
+    点一下就行。这里刻意返回精简摘要（订单号 / 状态 / 首件商品 / 金额），
+    而不是整单 —— 一个选择器只需要够用户认出"是哪一单"。
+
+    `user_id` 为空时回落到夹具里的第一个用户。真实系统里这个参数必须来自
+    登录态，而不是让调用方随便传 —— 否则这就是个越权读单的洞。
+    """
+    rows = load_order_rows()
+    target = user_id or (rows[0].get("user_id") if rows else None)
+    mine = [o for o in rows if o.get("user_id") == target]
+    mine.sort(key=lambda o: str(o.get("created_at") or ""), reverse=True)
+
+    out: list[dict[str, Any]] = []
+    for order in mine[:limit]:
+        summary = order_summary(order, today=today)
+        items = summary["items"]
+        out.append(
+            {
+                "order_id": summary["order_id"],
+                "status": summary["status"],
+                "status_label": summary["status_label"],
+                "total_amount": summary["total_amount"],
+                "currency": summary["currency"],
+                "item_count": sum(int(i["qty"]) for i in items),
+                "title": items[0]["name"] if items else "",
+                "created_at": summary["created_at"],
+            }
+        )
+    return out
+
+
 #: 状态 → 中文。模型面对 "shipped" 容易自造成"已发货"以外的说法，
 #: 给出标准译名能让它保持口径一致，也让前端不用自己维护一张表。
 STATUS_LABELS: dict[str, str] = {

@@ -119,3 +119,43 @@ export async function checkHealth(signal?: AbortSignal): Promise<HealthInfo> {
     return { ok: false }
   }
 }
+
+// ---------------------------------------------------------------
+// 订单快捷选择
+// ---------------------------------------------------------------
+
+export interface OrderBrief {
+  order_id: string
+  status: string
+  status_label: string
+  total_amount: number
+  currency: string
+  item_count: number
+  title: string
+  created_at: string | null
+}
+
+export interface OrderList {
+  orders: OrderBrief[]
+  /** 这批单是不是"演示数据"（没有登录态时后端会标记） */
+  demo: boolean
+}
+
+/**
+ * 取当前用户的订单摘要，给快捷选择用。
+ *
+ * 拿不到就返回空列表 —— 选择器消失即可，不该因为它没加载出来就挡住整个对话。
+ */
+export async function fetchOrders(signal?: AbortSignal): Promise<OrderList> {
+  try {
+    const res = await fetch(`${API_BASE}/api/orders`, { signal })
+    if (!res.ok) return { orders: [], demo: true }
+    const body = (await res.json()) as Partial<OrderList>
+    return {
+      orders: Array.isArray(body.orders) ? body.orders : [],
+      demo: body.demo !== false,
+    }
+  } catch {
+    return { orders: [], demo: true }
+  }
+}

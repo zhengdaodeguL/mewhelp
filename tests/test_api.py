@@ -405,6 +405,44 @@ def test_trace_unknown_request_returns_empty(client):
     assert resp.json() == {"request_id": "req-根本不存在", "count": 0, "steps": []}
 
 
+# ============================================================
+# 9b. 订单快捷选择
+# ============================================================
+def test_orders_endpoint_powers_the_quick_picker(client):
+    """订单快捷选择的数据源 —— 订单号是用户最记不住的东西，不该让他手打。"""
+    resp = client.get("/api/orders")
+    assert resp.status_code == 200
+    body = resp.json()
+
+    assert body["count"] > 0, "没有可选订单，选择器就是个摆设"
+    assert body["demo"] is True, "没传 user_id 时必须标明这是演示数据"
+
+    first = body["orders"][0]
+    assert first["order_id"].startswith("ORD-")
+    # 选择器只需要够用户认出"是哪一单"：状态 + 首件商品 + 金额
+    assert first["status_label"]
+    assert first["title"]
+    assert first["total_amount"] > 0
+    assert first["item_count"] >= 1
+
+
+def test_orders_endpoint_scopes_to_the_given_user(client):
+    """指定用户时只能看到他自己的单 —— 越权读单是这类接口最典型的洞。"""
+    from mewhelp.tools.business import load_order_rows
+
+    expected = {o["order_id"] for o in load_order_rows() if o["user_id"] == "U1002"}
+    assert expected, "夹具里应该有 U1002 的订单"
+
+    body = client.get("/api/orders", params={"user_id": "U1002"}).json()
+    assert body["demo"] is False
+    got = {o["order_id"] for o in body["orders"]}
+    assert got and got <= expected, f"读到了别人的单：{got - expected}"
+
+    # 查无此人时返回空列表，而不是回落到演示用户 —— 静默降级会让人以为
+    # "这就是我的单"，比报错更危险
+    assert client.get("/api/orders", params={"user_id": "U9999"}).json()["count"] == 0
+
+
 def _asset_paths(html: str) -> list[str]:
     """从入口页里取出它引用的静态资源路径（React 构建产物）。"""
     return sorted(set(re.findall(r'(?:src|href)="(/assets/[^"]+)"', html)))

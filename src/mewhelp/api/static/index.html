@@ -1,12 +1,28 @@
 <!doctype html>
-<html lang="zh-CN">
+<html lang="zh-CN" data-theme="light">
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <meta name="theme-color" content="#f6f7fb" />
     <title>MewHelp 智能客服</title>
-    <script type="module" crossorigin src="/assets/index-BI6j3H71.js"></script>
-    <link rel="stylesheet" crossorigin href="/assets/index-BD2Tkpap.css">
+    <script>
+      // 首次绘制之前把主题定下来，避免"先闪一下白再变深色"。
+      // 这段必须内联在 head 里：任何异步的模块都来不及。
+      (function () {
+        try {
+          var saved = localStorage.getItem('mewhelp.theme') || 'system'
+          var dark =
+            saved === 'dark' ||
+            (saved === 'system' &&
+              window.matchMedia('(prefers-color-scheme: dark)').matches)
+          document.documentElement.dataset.theme = dark ? 'dark' : 'light'
+        } catch (e) {
+          document.documentElement.dataset.theme = 'light'
+        }
+      })()
+    </script>
+    <script type="module" crossorigin src="/assets/index-EGvXPfZM.js"></script>
+    <link rel="stylesheet" crossorigin href="/assets/index-Az8_vrRc.css">
   </head>
   <body>
     <div id="root"></div>

@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { checkHealth } from './api/client'
 import { Composer } from './components/Composer'
 import { Header } from './components/Header'
@@ -6,15 +6,19 @@ import { MessageList } from './components/MessageList'
 import { Workspace } from './components/Workspace'
 import { useChat } from './hooks/useChat'
 import { useMediaQuery } from './hooks/useMediaQuery'
+import { useTheme } from './hooks/useTheme'
 
 /** 断点与 CSS 里的保持一致：宽屏右栏常驻，窄屏变抽屉。 */
 const NARROW = '(max-width: 1024px)'
 
 export default function App() {
-  const { messages, cards, isStreaming, send, stop, reset, clearCards } = useChat()
+  const { messages, cards, isStreaming, canRetry, send, stop, retryLast, reset, clearCards } =
+    useChat()
   const [online, setOnline] = useState(false)
   const [drawerOpen, setDrawerOpen] = useState(false)
   const isNarrow = useMediaQuery(NARROW)
+  const { choice: themeChoice, cycle: cycleTheme } = useTheme()
+  const inputRef = useRef<HTMLTextAreaElement>(null)
 
   // 只用来点亮页头的状态灯；拿不到就当离线，不打扰用户
   useEffect(() => {
@@ -34,10 +38,22 @@ export default function App() {
     }
   }, [])
 
-  // 抽屉只在窄屏存在；转回宽屏时把它复位，免得下次变窄又莫名其妙弹开
+  // 抽屉只在窄屏存在；转回宽屏时复位，免得下次变窄又莫名其妙弹开
   useEffect(() => {
     if (!isNarrow) setDrawerOpen(false)
   }, [isNarrow])
+
+  // Ctrl/⌘+K 聚焦输入框 —— 用得最多的一个动作，值得有个键
+  useEffect(() => {
+    const onKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'k') {
+        e.preventDefault()
+        inputRef.current?.focus()
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [])
 
   return (
     <div className={`app${isNarrow && drawerOpen ? ' app--drawer-open' : ''}`}>
@@ -52,9 +68,17 @@ export default function App() {
           workspaceOpen={drawerOpen}
           workspaceCount={cards.length}
           onToggleWorkspace={() => setDrawerOpen((v) => !v)}
+          themeChoice={themeChoice}
+          onCycleTheme={cycleTheme}
         />
-        <MessageList messages={messages} />
-        <Composer isStreaming={isStreaming} onSend={send} onStop={stop} />
+        <MessageList messages={messages} canRetry={canRetry} onRetry={retryLast} />
+        <Composer
+          isStreaming={isStreaming}
+          onSend={send}
+          onStop={stop}
+          inputRef={inputRef}
+          showQuickReplies={!messages.some((m) => m.role === 'user')}
+        />
       </div>
 
       {/* 窄屏抽屉打开时的遮罩：点空白处收起 */}
