@@ -3,6 +3,7 @@ import { useCopy } from '../hooks/useCopy'
 import {
   IconCheck,
   IconCopy,
+  IconQuote,
   IconRefresh,
   IconStar,
   IconThumbDown,
@@ -24,9 +25,12 @@ interface Props {
   query?: string
   /** 被查找定位到的那一条，闪一下 */
   flash?: boolean
+  /** 正在被引用 */
+  quoted?: boolean
   starred: boolean
   onRate: (message: ChatMessage, rating: Rating) => void
   onStar: (message: ChatMessage) => void
+  onQuote: (message: ChatMessage) => void
 }
 
 export function MessageBubble({
@@ -35,9 +39,11 @@ export function MessageBubble({
   onRetry,
   query = '',
   flash = false,
+  quoted = false,
   starred,
   onRate,
   onStar,
+  onQuote,
 }: Props) {
   const isUser = message.role === 'user'
   const { copied, copy } = useCopy()
@@ -51,15 +57,17 @@ export function MessageBubble({
   }
 
   // 反馈和收藏都要靠这个句柄（后端叫 request_id）。没有它的消息
-  // （开场白、正在生成的那条）就只给复制和重问。
-  const ratable = Boolean(message.turnId) && !message.streaming
+  // （开场白、正在生成的那条）就只给复制、引用和重问。
+  const actionable = Boolean(message.turnId) && !message.streaming
 
   return (
     <div
       // 查找跳转要能滚到这一条，所以需要一个稳定的锚点。
       // 用消息 id 而不是下标：下标会随新消息插入整体错位。
       id={`msg-${message.id}`}
-      className={`row ${isUser ? 'row--user' : 'row--assistant'}${flash ? ' row--flash' : ''}`}
+      className={`row ${isUser ? 'row--user' : 'row--assistant'}${flash ? ' row--flash' : ''}${
+        quoted ? ' row--quoted' : ''
+      }`}
     >
       {!isUser && (
         <div className="avatar" aria-hidden="true">
@@ -68,7 +76,11 @@ export function MessageBubble({
       )}
 
       <div className="bubble-wrap">
-        <div className={`bubble ${isUser ? 'bubble--user' : 'bubble--assistant'}`}>
+        <div
+          className={`bubble ${isUser ? 'bubble--user' : 'bubble--assistant'}${
+            message.streaming ? ' bubble--streaming' : ''
+          }`}
+        >
           {/* 用户输入原样显示（他打什么就是什么）；
               助手答复按轻量 Markdown 排版 —— 段落、表格、加粗 */}
           {isUser ? highlight(message.content, query) : <RichText text={message.content} query={query} />}
@@ -80,7 +92,7 @@ export function MessageBubble({
           <div className={`msg-actions ${isUser ? 'msg-actions--user' : ''}`}>
             <button
               type="button"
-              className="icon-btn"
+              className={`icon-btn${copied ? ' icon-btn--pulse' : ''}`}
               title={copied ? '已复制' : '复制'}
               aria-label={copied ? '已复制' : '复制这条消息'}
               onClick={() => void copy(message.content)}
@@ -88,12 +100,23 @@ export function MessageBubble({
               {copied ? <IconCheck /> : <IconCopy />}
             </button>
 
+            <button
+              type="button"
+              className={`icon-btn${quoted ? ' icon-btn--on' : ''}`}
+              title={quoted ? '取消引用' : '引用这条再提问'}
+              aria-label={quoted ? '取消引用' : '引用这条消息'}
+              aria-pressed={quoted}
+              onClick={() => onQuote(message)}
+            >
+              <IconQuote />
+            </button>
+
             {/* 收藏是本地视图，对用户和助手的消息都开放 —— 一句话和一句答复
                 都可能是"我想回头再看一眼"的那条 */}
-            {ratable && (
+            {actionable && (
               <button
                 type="button"
-                className="icon-btn"
+                className={`icon-btn${starred ? ' icon-btn--on' : ''}`}
                 title={starred ? '取消收藏' : '收藏这条'}
                 aria-label={starred ? '取消收藏' : '收藏这条消息'}
                 aria-pressed={starred}
@@ -104,7 +127,7 @@ export function MessageBubble({
             )}
 
             {/* 赞/踩只给助手答复：用户不需要给自己的话打分 */}
-            {ratable && !isUser && (
+            {actionable && !isUser && (
               <>
                 <button
                   type="button"

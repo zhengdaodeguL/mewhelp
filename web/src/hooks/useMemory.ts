@@ -18,6 +18,9 @@ import type { MemoryItem } from '../types'
 export function useMemory(userId: string) {
   const [items, setItems] = useState<MemoryItem[]>([])
   const [busy, setBusy] = useState(false)
+  //: 还没拿到过第一批数据。用来决定显示骨架屏还是"还没有记住任何事" ——
+  //: 两者差一个字，但对用户的意义完全相反（"在加载"vs"是空的"）。
+  const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
   const inflight = useRef<AbortController | null>(null)
 
@@ -28,7 +31,10 @@ export function useMemory(userId: string) {
     inflight.current = controller
     try {
       const rows = await fetchMemories(userId, controller.signal)
-      if (!controller.signal.aborted) setItems(rows)
+      if (!controller.signal.aborted) {
+        setItems(rows)
+        setLoading(false)
+      }
     } finally {
       /* 取消时不动状态：新的一次请求会填上 */
     }
@@ -40,7 +46,10 @@ export function useMemory(userId: string) {
   }, [refresh])
 
   /** 服务端推来的全量档案 —— 直接替换，不做合并。 */
-  const replace = useCallback((next: MemoryItem[]) => setItems(next), [])
+  const replace = useCallback((next: MemoryItem[]) => {
+    setItems(next)
+    setLoading(false)
+  }, [])
 
   const add = useCallback(
     async (text: string) => {
@@ -88,9 +97,10 @@ export function useMemory(userId: string) {
         void refresh() // 删失败就把真实状态拉回来
         setError('删除没成功，稍后再试')
       }
+      return ok
     },
     [userId, refresh],
   )
 
-  return { items, busy, error, refresh, replace, add, togglePin, remove }
+  return { items, loading, busy, error, refresh, replace, add, togglePin, remove }
 }

@@ -1,5 +1,7 @@
+import { useEffect, useRef, useState } from 'react'
 import type { ThemeChoice } from '../hooks/useTheme'
 import {
+  IconCommand,
   IconDownload,
   IconHistory,
   IconMonitor,
@@ -30,6 +32,8 @@ interface Props {
   /** 会话内查找 */
   findOpen: boolean
   onToggleFind: () => void
+  /** 打开命令面板 */
+  onPalette: () => void
   /** 导出本次对话 */
   onExport: () => void
   canExport: boolean
@@ -48,6 +52,7 @@ export function Header({
   onToggleRail,
   findOpen,
   onToggleFind,
+  onPalette,
   onExport,
   canExport,
   onNewSession,
@@ -58,6 +63,16 @@ export function Header({
   onCycleTheme,
 }: Props) {
   const ThemeIcon = THEME_ICON[themeChoice]
+  // 计数变化时让徽标弹一下：切会话、发消息之后"哪里变了"要能一眼看到
+  const [bump, setBump] = useState(false)
+  const prevCount = useRef(workspaceCount)
+  useEffect(() => {
+    if (prevCount.current === workspaceCount) return
+    prevCount.current = workspaceCount
+    setBump(true)
+    const timer = window.setTimeout(() => setBump(false), 320)
+    return () => window.clearTimeout(timer)
+  }, [workspaceCount])
 
   return (
     <header className="header">
@@ -85,6 +100,16 @@ export function Header({
       </div>
 
       <div className="header-actions">
+        <button
+          type="button"
+          className="icon-btn"
+          title="命令面板（Ctrl+K）"
+          aria-label="命令面板"
+          onClick={onPalette}
+        >
+          <IconCommand />
+        </button>
+
         <button
           type="button"
           className={`icon-btn${findOpen ? ' icon-btn--on' : ''}`}
@@ -126,7 +151,9 @@ export function Header({
           onClick={onToggleWorkspace}
         >
           <IconPanel />
-          {workspaceCount > 0 && <span className="badge">{workspaceCount}</span>}
+          {workspaceCount > 0 && (
+            <span className={`badge${bump ? ' badge--bump' : ''}`}>{workspaceCount}</span>
+          )}
         </button>
 
         <button

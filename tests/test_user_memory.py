@@ -335,6 +335,48 @@ def test_order_question_without_any_order_asks_instead_of_failing(client):
     assert "agent" in body["path"]
 
 
+def test_quote_brings_an_early_message_back_into_context(client):
+    """引用提问：被引用的那一句必须真的进这一轮的上下文。
+
+    引用的都是**较早**的消息，而它们很可能已经滑出 `window_turns` 了 ——
+    只靠会话历史，服务端根本看不到那一句。所以 `quote` 必须跟着这一次请求
+    显式发出去，而不是"界面上的装饰"。
+
+    判据用**指代消解的结果**：引用的那句里有单号，而这一轮的问题里没有，
+    补全后的问题里应当出现它 —— 这条链路只有 quote 真的进了上下文才成立。
+    """
+    user = "u-quote"
+    # 先铺垫几轮，把第一句挤出滑窗（window_turns = 3）
+    client.post(
+        "/api/chat/sync",
+        json={"user_id": user, "session_id": "s-quote", "message": "帮我查下订单 ORD-1007 的状态"},
+    )
+    for i in range(4):
+        client.post(
+            "/api/chat/sync",
+            json={"user_id": user, "session_id": "s-quote", "message": f"运费怎么算{i}"},
+        )
+
+    body = client.post(
+        "/api/chat/sync",
+        json={
+            "user_id": user,
+            "session_id": "s-quote",
+            "message": "那它现在怎么样了",
+            "quote": "帮我查下订单 ORD-1007 的状态",
+        },
+    ).json()
+    assert "ORD-1007" in body["resolved_question"], (
+        f"引用没有进上下文：{body['resolved_question']}"
+    )
+    assert any(t["name"] == "get_order" for t in body["tool_calls"]), "补出单号后应当去查这一单"
+
+    # 引用不落库：被引用的消息本来就在会话历史里，存两遍会让它下次出现两次
+    detail = client.get("/api/sessions/s-quote", params={"user_id": user}).json()
+    contents = [m["content"] for m in detail["messages"]]
+    assert contents.count("帮我查下订单 ORD-1007 的状态") == 1, "引用被写进会话历史了"
+
+
 def test_memory_event_is_pushed_only_when_the_user_has_a_profile(client):
     """有档案才推 memory 事件 —— 前端因此可以把"收到事件"当成"面板该更新了"。"""
     user = "u-memo-event"

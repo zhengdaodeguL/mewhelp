@@ -62,13 +62,15 @@ function fromHistory(rows: Array<{ role: string; content: string; handoff: boole
 interface Options {
   userId: string
   sessionId: string
+  /** 当前正在引用的那条消息的正文（引用提问） */
+  quote?: string
   /** 每轮结束后回调（用来刷新历史列表） */
   onTurnEnd?: () => void
   /** 服务端推来全量档案（用来更新记忆面板） */
   onMemory?: (items: MemoryItem[]) => void
 }
 
-export function useChat({ userId, sessionId, onTurnEnd, onMemory }: Options) {
+export function useChat({ userId, sessionId, quote, onTurnEnd, onMemory }: Options) {
   const [messages, setMessages] = useState<ChatMessage[]>([GREETING])
   const [cards, setCards] = useState<WorkspaceCard[]>([])
   const [isStreaming, setIsStreaming] = useState(false)
@@ -147,7 +149,7 @@ export function useChat({ userId, sessionId, onTurnEnd, onMemory }: Options) {
 
       await streamChat(
         text,
-        { sessionId, userId, signal: controller.signal },
+        { sessionId, userId, quote, signal: controller.signal },
         {
           onToken: (piece) => {
             patchReply((m) => ({ ...m, content: m.content + piece }))
@@ -187,7 +189,7 @@ export function useChat({ userId, sessionId, onTurnEnd, onMemory }: Options) {
         },
       )
     },
-    [isStreaming, sessionId, userId],
+    [isStreaming, sessionId, userId, quote],
   )
 
   /** 停止当前生成：把已收到的内容定格为最终答复，不再继续等。 */

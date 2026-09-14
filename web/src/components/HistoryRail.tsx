@@ -1,6 +1,8 @@
-import { useMemo, useState } from 'react'
-import { relativeTime, turnsToRounds } from '../format'
+import { Fragment, useMemo, useState } from 'react'
+import { dayGroup, relativeTime, turnsToRounds } from '../format'
+import { useNow } from '../hooks/useNow'
 import type { SessionBrief } from '../types'
+import { SessionSkeleton } from './Skeleton'
 import { IconClose, IconPencil, IconPlus, IconSearch, IconTrash } from './icons'
 
 /**
@@ -10,8 +12,10 @@ import { IconClose, IconPencil, IconPlus, IconSearch, IconTrash } from './icons'
  * 所以每条给的是标题（第一句原话）、轮数、相对时间、最后一句答复的开头，
  * 而不是摘要、意图、命中率这些 —— 后者是给人分析用的，不是给人找东西用的。
  *
- * 两个交互细节值得单说：
+ * 三个交互细节值得单说：
  *
+ *   * **按自然日分组**（今天 / 昨天 / 本周 / 更早）。分组的价值是定位：
+ *     "昨天那通"比"列表第 7 条"好找得多。
  *   * **删除要二次确认，而且是就地确认**，不用 `window.confirm`：
  *     原生弹窗在演示/嵌入式场景里经常被浏览器拦掉，点一下什么都不发生，
  *     用户会以为"删不掉"。就地确认还顺带告诉了他删的是哪一条。
@@ -45,6 +49,8 @@ export function HistoryRail({
   const [editing, setEditing] = useState<string>('')
   const [draft, setDraft] = useState('')
   const [confirming, setConfirming] = useState<string>('')
+  // 相对时间要自己往前走。不重新渲染的话，开着页面十分钟，"刚刚"还是"刚刚"。
+  const now = useNow()
 
   // 搜索在**本地**过滤：一次最多几十条，服务端往返换不来什么，
   // 却会让每敲一个字都闪一下加载态。
@@ -52,8 +58,7 @@ export function HistoryRail({
     const q = query.trim().toLowerCase()
     if (!q) return sessions
     return sessions.filter(
-      (s) =>
-        s.title.toLowerCase().includes(q) || s.preview.toLowerCase().includes(q),
+      (s) => s.title.toLowerCase().includes(q) || s.preview.toLowerCase().includes(q),
     )
   }, [sessions, query])
 
@@ -67,6 +72,8 @@ export function HistoryRail({
     if (editing) onRename(editing, draft.trim())
     setEditing('')
   }
+
+  let lastGroup = ''
 
   return (
     <section className="rail" aria-label="历史对话">
@@ -111,109 +118,117 @@ export function HistoryRail({
       </div>
 
       <div className="rail-list">
-        {visible.length === 0 ? (
+        {loading && sessions.length === 0 ? (
+          // 第一次加载：先画出"将有四行"的轮廓，数据回来时位置不跳
+          <>
+            <SessionSkeleton />
+            <SessionSkeleton />
+            <SessionSkeleton />
+            <SessionSkeleton />
+          </>
+        ) : visible.length === 0 ? (
           <p className="rail-empty">
             {sessions.length === 0
-              ? loading
-                ? '加载中…'
-                : '还没有历史对话。聊几句就会出现在这里。'
+              ? '还没有历史对话。聊几句就会出现在这里。'
               : '没有匹配的对话'}
           </p>
         ) : (
-          visible.map((s) => {
+          visible.map((s, i) => {
             const active = s.sessionId === activeId
+            const group = dayGroup(s.updatedAt, now)
+            const showGroup = group !== lastGroup
+            lastGroup = group
             return (
-              <div
-                key={s.sessionId}
-                className={`session${active ? ' session--active' : ''}`}
-                // 整块可点：会话条目里最常做的动作就是"切过去"，
-                // 只让标题可点会让点击热区小得反直觉
-                onClick={() => {
-                  if (!editing && !confirming) onSelect(s.sessionId)
-                }}
-              >
-                {editing === s.sessionId ? (
-                  <input
-                    className="session-rename"
-                    value={draft}
-                    autoFocus
-                    aria-label="会话标题"
-                    onChange={(e) => setDraft(e.target.value)}
-                    onBlur={commitRename}
-                    onClick={(e) => e.stopPropagation()}
-                    onKeyDown={(e) => {
-                      if (e.key === 'Enter') commitRename()
-                      if (e.key === 'Escape') setEditing('')
-                    }}
-                  />
-                ) : (
-                  <div className="session-title" title={s.title}>
-                    {s.title}
-                  </div>
-                )}
-
-                <div className="session-meta">
-                  <span>{turnsToRounds(s.turns)}</span>
-                  <span className="session-dot" aria-hidden="true" />
-                  <time dateTime={s.updatedAt}>{relativeTime(s.updatedAt)}</time>
-                </div>
-
-                {s.preview && editing !== s.sessionId && (
-                  <p className="session-preview">{s.preview}</p>
-                )}
-
-                {confirming === s.sessionId ? (
-                  <div className="session-confirm" onClick={(e) => e.stopPropagation()}>
-                    <span>删除这次对话？</span>
-                    <button
-                      type="button"
-                      className="mini-btn mini-btn--danger"
-                      onClick={() => {
-                        onDelete(s.sessionId)
-                        setConfirming('')
+              <Fragment key={s.sessionId}>
+                {showGroup && <div className="session-group">{group}</div>}
+                <div
+                  className={`session${active ? ' session--active' : ''}`}
+                  style={{ '--i': i } as React.CSSProperties}
+                  // 整块可点：会话条目里最常做的动作就是"切过去"，
+                  // 只让标题可点会让点击热区小得反直觉
+                  onClick={() => {
+                    if (!editing && !confirming) onSelect(s.sessionId)
+                  }}
+                >
+                  {editing === s.sessionId ? (
+                    <input
+                      className="session-rename"
+                      value={draft}
+                      autoFocus
+                      aria-label="会话标题"
+                      onChange={(e) => setDraft(e.target.value)}
+                      onBlur={commitRename}
+                      onClick={(e) => e.stopPropagation()}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter') commitRename()
+                        if (e.key === 'Escape') setEditing('')
                       }}
-                    >
-                      删除
-                    </button>
-                    <button
-                      type="button"
-                      className="mini-btn"
-                      onClick={() => setConfirming('')}
-                    >
-                      取消
-                    </button>
+                    />
+                  ) : (
+                    <div className="session-title" title={s.title}>
+                      {s.title}
+                    </div>
+                  )}
+
+                  <div className="session-meta">
+                    <span>{turnsToRounds(s.turns)}</span>
+                    <span className="session-dot" aria-hidden="true" />
+                    <time dateTime={s.updatedAt}>{relativeTime(s.updatedAt, now)}</time>
                   </div>
-                ) : (
-                  editing !== s.sessionId && (
-                    <div className="session-actions">
+
+                  {s.preview && editing !== s.sessionId && (
+                    <p className="session-preview">{s.preview}</p>
+                  )}
+
+                  {confirming === s.sessionId ? (
+                    <div className="session-confirm" onClick={(e) => e.stopPropagation()}>
+                      <span>删除这次对话？</span>
                       <button
                         type="button"
-                        className="icon-btn"
-                        title="重命名"
-                        aria-label={`重命名「${s.title}」`}
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          startRename(s)
+                        className="mini-btn mini-btn--danger"
+                        onClick={() => {
+                          onDelete(s.sessionId)
+                          setConfirming('')
                         }}
                       >
-                        <IconPencil width={13} height={13} />
+                        删除
                       </button>
-                      <button
-                        type="button"
-                        className="icon-btn"
-                        title="删除"
-                        aria-label={`删除「${s.title}」`}
-                        onClick={(e) => {
-                          e.stopPropagation()
-                          setConfirming(s.sessionId)
-                        }}
-                      >
-                        <IconTrash width={13} height={13} />
+                      <button type="button" className="mini-btn" onClick={() => setConfirming('')}>
+                        取消
                       </button>
                     </div>
-                  )
-                )}
-              </div>
+                  ) : (
+                    editing !== s.sessionId && (
+                      <div className="session-actions">
+                        <button
+                          type="button"
+                          className="icon-btn"
+                          title="重命名"
+                          aria-label={`重命名「${s.title}」`}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            startRename(s)
+                          }}
+                        >
+                          <IconPencil width={13} height={13} />
+                        </button>
+                        <button
+                          type="button"
+                          className="icon-btn"
+                          title="删除"
+                          aria-label={`删除「${s.title}」`}
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            setConfirming(s.sessionId)
+                          }}
+                        >
+                          <IconTrash width={13} height={13} />
+                        </button>
+                      </div>
+                    )
+                  )}
+                </div>
+              </Fragment>
             )
           })
         )}

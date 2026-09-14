@@ -41,3 +41,27 @@ export function turnsToRounds(turns: number): string {
   const rounds = Math.max(1, Math.ceil((turns || 0) / 2))
   return `${rounds} 轮`
 }
+
+/** 当地时间的当天零点。 */
+function startOfDay(ms: number): number {
+  const d = new Date(ms)
+  d.setHours(0, 0, 0, 0)
+  return d.getTime()
+}
+
+/**
+ * 历史列表的时间分组。
+ *
+ * 分组的意义是**定位**，不是分类学："昨天那通"比"列表第 7 条"好找得多。
+ * 所以只分四档，而且分界按**自然日**而不是"24 小时前" ——
+ * 用户嘴里的"昨天"是日历上的昨天，不是 86400 秒之前。
+ */
+export function dayGroup(iso: string, now: number = Date.now()): string {
+  const d = parse(iso)
+  if (!d) return '更早'
+  const days = Math.round((startOfDay(now) - startOfDay(d.getTime())) / 86_400_000)
+  if (days <= 0) return '今天'
+  if (days === 1) return '昨天'
+  if (days < 7) return '本周'
+  return '更早'
+}

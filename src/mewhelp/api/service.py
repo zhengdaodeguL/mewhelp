@@ -577,9 +577,36 @@ class ChatService:
         self.llm = llm
 
     # ------------------------------------------------------------------
-    def ask(self, *, user_id: str, session_id: str, message: str) -> ConversationResult:
+    def ask(
+        self,
+        *,
+        user_id: str,
+        session_id: str,
+        message: str,
+        quote: str = "",
+    ) -> ConversationResult:
         text = (message or "").strip()
         history = self.sessions.load(session_id)
+
+        # 引用提问：用户在界面上明确指向的那一句，要**显式**带进这一轮的上下文。
+        #
+        # 这不是"多给点信息"。被引用的往往是较早的消息 —— 轮到它的时候很可能
+        # 已经滑出 `window_turns` 了，只靠会话历史根本看不见。挂成一条 user 轮次
+        # 放在**最后**：指代消解找"最近实体"时会因此指向被引用的那一句，
+        # 这正是"关于这句再问一句"该有的行为。
+        #
+        # 它只活在这一次请求里，不落库（`_persist` 只写 question 和 answer）——
+        # 被引用的消息本身就在会话历史里，再存一遍会让它下次出现两次。
+        quoted = (quote or "").strip()
+        if quoted:
+            history = list(history) + [
+                Turn(
+                    role="user",
+                    content=f"（我引用了自己先前说过的一句）{quoted}",
+                    metadata={"quoted": True},
+                )
+            ]
+
         # 用户档案在跑图之前取一次：指代消解要靠它认出"我的订单"是哪一单。
         # 失败时返回空列表（读不到记忆 = 没有记忆），不影响这一轮的任何流程。
         memories = self.memory.for_prompt(user_id) if self.memory else []

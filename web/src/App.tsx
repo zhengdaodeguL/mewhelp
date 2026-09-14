@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import { checkHealth } from './api/client'
+import { CommandPalette, type PaletteAction } from './components/CommandPalette'
 import { Composer } from './components/Composer'
 import { FindBar } from './components/FindBar'
 import { Header } from './components/Header'
 import { HistoryRail } from './components/HistoryRail'
 import { MessageList } from './components/MessageList'
 import { SplitHandle } from './components/SplitHandle'
+import { Toaster } from './components/Toaster'
 import { Workspace, type WorkspaceTab } from './components/Workspace'
 import { useChat } from './hooks/useChat'
 import { useHistory } from './hooks/useHistory'
@@ -16,7 +18,8 @@ import { useSplit } from './hooks/useSplit'
 import { useStars } from './hooks/useStars'
 import { useTheme } from './hooks/useTheme'
 import { downloadText, exportFileName, sessionToMarkdown } from './session-export'
-import type { ChatMessage, Rating } from './types'
+import { toast } from './toast'
+import type { ChatMessage, MemoryItem, Rating } from './types'
 import { cardToText } from './workspace'
 
 /** 断点与 CSS 里的保持一致：宽屏三栏常驻，窄屏左右两栏变抽屉。 */
@@ -28,7 +31,7 @@ const FLASH_MS = 1400
 export default function App() {
   const isNarrow = useMediaQuery(NARROW)
   const { userId, sessionId, setSessionId, startNewSession } = useIdentity()
-  const { choice: themeChoice, cycle: cycleTheme } = useTheme()
+  const { choice: themeChoice, cycle: cycleTheme, setChoice: setThemeChoice } = useTheme()
   const { ratio, setRatio, nudge, reset: resetRatio } = useSplit()
   const history = useHistory(userId)
   const memory = useMemory(userId)
@@ -44,16 +47,20 @@ export default function App() {
   const [findQuery, setFindQuery] = useState('')
   const [findIndex, setFindIndex] = useState(0)
   const [flashId, setFlashId] = useState('')
+  const [paletteOpen, setPaletteOpen] = useState(false)
+  const [quote, setQuote] = useState<ChatMessage | null>(null)
+  const [resizing, setResizing] = useState(false)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const flashTimer = useRef<number | undefined>(undefined)
 
   const chat = useChat({
     userId,
     sessionId,
+    quote: quote?.content ?? '',
     onTurnEnd: () => void history.refresh(),
     onMemory: memory.replace,
   })
-  const { rate } = chat
+  const { rate, send } = chat
   const starsToggle = stars.toggle
 
   // 只用来点亮页头的状态灯；拿不到就当离线，不打扰用户
@@ -73,14 +80,17 @@ export default function App() {
     if (!isNarrow) setDrawer(null)
   }, [isNarrow])
 
-  useEffect(() => () => {
-    if (flashTimer.current) window.clearTimeout(flashTimer.current)
-  }, [])
+  useEffect(
+    () => () => {
+      if (flashTimer.current) window.clearTimeout(flashTimer.current)
+    },
+    [],
+  )
 
   // ---------------- 会话内查找 ----------------
 
   // 命中的是**消息**而不是字符位置：用户说的是"我记得它说过那么一句"，
-  // 他需要定位到那一条，而不是定位到某一段文本里的第 37 个字。
+  // 他需要定位到那一条，而不是定位到某段文本里的第 37 个字。
   const matches = useMemo(() => {
     const q = findQuery.trim().toLowerCase()
     if (!q) return []
@@ -122,17 +132,20 @@ export default function App() {
     })
   }, [])
 
-  // Ctrl/⌘+K 聚焦输入框、Ctrl/⌘+F 查找 —— 用得最多的两个动作，值得有键
+  // Ctrl/⌘+K 命令面板、Ctrl/⌘+F 查找、Ctrl/⌘+B 收起历史栏
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (!(e.ctrlKey || e.metaKey)) return
       const key = e.key.toLowerCase()
       if (key === 'k') {
         e.preventDefault()
-        inputRef.current?.focus()
+        setPaletteOpen(true)
       } else if (key === 'f') {
         e.preventDefault()
         setFindOpen(true)
+      } else if (key === 'b') {
+        e.preventDefault()
+        setRailOpen((v) => !v)
       }
     }
     window.addEventListener('keydown', onKeyDown)
@@ -146,6 +159,7 @@ export default function App() {
     setDrawer(null)
     setTab('cards')
     setFindQuery('')
+    setQuote(null)
     inputRef.current?.focus()
   }, [startNewSession])
 
@@ -154,6 +168,7 @@ export default function App() {
       setSessionId(id)
       setDrawer(null)
       setFindQuery('')
+      setQuote(null)
     },
     [setSessionId],
   )
@@ -164,6 +179,7 @@ export default function App() {
       // 删掉的正好是当前会话时，立刻开一个新的 —— 否则界面还停在一条
       // 已经不存在的会话上，下一次发言会把它又凭空建回来
       if (ok && id === sessionId) startNewSession()
+      toast(ok ? '已删除这次对话' : '删除没成功，稍后再试', ok ? 'ok' : 'error')
     },
     [history, sessionId, startNewSession],
   )
@@ -174,15 +190,34 @@ export default function App() {
   )
 
   const onRate = useCallback(
-    (message: ChatMessage, rating: Rating) => rate(message, rating),
+    (message: ChatMessage, rating: Rating) => {
+      rate(message, rating)
+      // 点踩是要被认真对待的：它落到问题池，运营据此改知识或改检索。
+      // 告诉用户"你的反馈有人看"，是让下一次点踩还愿意发生的前提。
+      if (message.rating !== 'down' && rating === 'down') {
+        toast('已记录反馈，会同步给运营', 'ok')
+      }
+    },
     [rate],
+  )
+
+  const onQuote = useCallback(
+    (message: ChatMessage) => setQuote((prev) => (prev?.id === message.id ? null : message)),
+    [],
+  )
+
+  /** 发送：把引用条一起清掉，并让它只作用于这一轮。 */
+  const sendWithQuote = useCallback(
+    (text: string) => {
+      void send(text)
+      setQuote(null)
+    },
+    [send],
   )
 
   const starred = useMemo(() => {
     const byTurn = new Map(chat.messages.map((m) => [m.turnId, m]))
-    return stars.ids
-      .map((id) => byTurn.get(id))
-      .filter((m): m is ChatMessage => Boolean(m))
+    return stars.ids.map((id) => byTurn.get(id)).filter((m): m is ChatMessage => Boolean(m))
   }, [chat.messages, stars.ids])
 
   const canExport = chat.messages.some((m) => m.role === 'user' && m.kind === 'normal')
@@ -196,11 +231,26 @@ export default function App() {
     const notes = [...new Map(chat.cards.map((c) => [c.id, c])).values()]
       .map(cardToText)
       .join('\n\n')
-    downloadText(
-      exportFileName(title, iso),
-      sessionToMarkdown(chat.messages, { title, exportedAt: iso, notes }),
-    )
+    const name = exportFileName(title, iso)
+    downloadText(name, sessionToMarkdown(chat.messages, { title, exportedAt: iso, notes }))
+    toast(`已导出 ${name}`, 'ok')
   }, [chat.cards, chat.messages, history.sessions, sessionId])
+
+  const addMemory = useCallback(
+    async (text: string) => {
+      const ok = await memory.add(text)
+      toast(ok ? '记住了，以后会记得' : '没记住，稍后再试', ok ? 'ok' : 'error')
+    },
+    [memory],
+  )
+
+  const removeMemory = useCallback(
+    async (item: MemoryItem) => {
+      const ok = await memory.remove(item)
+      toast(ok ? '已忘记这条' : '删除没成功，稍后再试', ok ? 'ok' : 'error')
+    },
+    [memory],
+  )
 
   // ---------------- 布局 ----------------
 
@@ -226,6 +276,131 @@ export default function App() {
 
   const wsCount = chat.cards.length + memory.items.length + starred.length
 
+  // ---------------- 命令面板的动作清单 ----------------
+  // 在这里组装，而不是写死在 CommandPalette 里：那个组件只负责"筛 + 选 + 键盘"，
+  // 新增一个动作不用改它的代码。
+  const actions = useMemo<PaletteAction[]>(() => {
+    const list: PaletteAction[] = [
+      {
+        id: 'focus',
+        label: '聚焦到输入框',
+        hint: '说点什么',
+        group: '动作',
+        icon: 'chat',
+        run: () => inputRef.current?.focus(),
+      },
+      { id: 'new', label: '开一次新对话', group: '动作', icon: 'plus', run: newSession },
+      { id: 'find', label: '在本次对话里查找', hint: 'Ctrl+F', group: '动作', icon: 'search', run: () => setFindOpen(true) },
+      {
+        id: 'export',
+        label: '导出这次对话（Markdown）',
+        group: '动作',
+        icon: 'download',
+        run: exportSession,
+      },
+      {
+        id: 'railtoggle',
+        label: railOpen ? '收起历史栏' : '展开历史栏',
+        hint: 'Ctrl+B',
+        group: '动作',
+        icon: 'history',
+        run: () => setRailOpen((v) => !v),
+      },
+      {
+        id: 'wstoggle',
+        label: workspaceOpen ? '收起工作区' : '展开工作区',
+        group: '动作',
+        icon: 'panel',
+        run: toggleWorkspace,
+      },
+      {
+        id: 'theme',
+        label: `切换主题（当前：${themeChoice === 'system' ? '跟随系统' : themeChoice === 'light' ? '浅色' : '深色'}）`,
+        group: '外观',
+        icon: 'theme',
+        run: cycleTheme,
+      },
+      {
+        id: 'theme-light',
+        label: '浅色主题',
+        group: '外观',
+        icon: 'theme',
+        run: () => setThemeChoice('light'),
+      },
+      {
+        id: 'theme-dark',
+        label: '深色主题',
+        group: '外观',
+        icon: 'theme',
+        run: () => setThemeChoice('dark'),
+      },
+      {
+        id: 'tab-memory',
+        label: '看系统记住了我什么',
+        hint: `${memory.items.length} 条`,
+        group: '跳到',
+        icon: 'memory',
+        run: () => {
+          setTab('memory')
+          if (!isNarrow && !wsOpen) setWsOpen(true)
+        },
+      },
+      {
+        id: 'tab-stars',
+        label: '看我收藏的消息',
+        hint: `${starred.length} 条`,
+        group: '跳到',
+        icon: 'star',
+        run: () => {
+          setTab('stars')
+          if (!isNarrow && !wsOpen) setWsOpen(true)
+        },
+      },
+      {
+        id: 'tab-cards',
+        label: '看这次查到的订单与依据',
+        hint: `${chat.cards.length} 张`,
+        group: '跳到',
+        icon: 'panel',
+        run: () => {
+          setTab('cards')
+          if (!isNarrow && !wsOpen) setWsOpen(true)
+        },
+      },
+    ]
+
+    // 最近的历史对话也进面板：切会话是"用得多、但每次都要去左边找"的动作，
+    // 值得有一条直达路径
+    for (const s of history.sessions.slice(0, 8)) {
+      list.push({
+        id: `session-${s.sessionId}`,
+        label: s.title,
+        hint: s.sessionId === sessionId ? '当前' : '历史对话',
+        group: '最近对话',
+        icon: 'history',
+        run: () => pickSession(s.sessionId),
+      })
+    }
+    return list
+  }, [
+    chat.cards.length,
+    cycleTheme,
+    exportSession,
+    history.sessions,
+    isNarrow,
+    memory.items.length,
+    newSession,
+    pickSession,
+    railOpen,
+    sessionId,
+    setThemeChoice,
+    starred.length,
+    themeChoice,
+    toggleWorkspace,
+    workspaceOpen,
+    wsOpen,
+  ])
+
   return (
     <div className="app">
       <div className={`rail-slot${railClass}`}>
@@ -242,16 +417,19 @@ export default function App() {
       </div>
 
       <div
-        className="panes"
+        className={`panes${resizing ? ' panes--dragging' : ''}`}
         style={{ '--chat-grow': ratio, '--ws-grow': 1 - ratio } as CSSProperties}
       >
         <div className="pane-chat">
           <Header
             online={online}
             railOpen={isNarrow ? drawer === 'rail' : railOpen}
-            onToggleRail={() => (isNarrow ? setDrawer((d) => (d === 'rail' ? null : 'rail')) : setRailOpen((v) => !v))}
+            onToggleRail={() =>
+              isNarrow ? setDrawer((d) => (d === 'rail' ? null : 'rail')) : setRailOpen((v) => !v)
+            }
             findOpen={findOpen}
             onToggleFind={toggleFind}
+            onPalette={() => setPaletteOpen(true)}
             onExport={exportSession}
             canExport={canExport}
             onNewSession={newSession}
@@ -279,24 +457,35 @@ export default function App() {
             onRetry={chat.retryLast}
             query={findQuery}
             flashId={flashId}
+            quotedId={quote?.id ?? ''}
             starredIds={stars.ids}
             onRate={onRate}
             onStar={onStar}
+            onQuote={onQuote}
+            streaming={chat.isStreaming}
           />
 
           <Composer
             isStreaming={chat.isStreaming}
-            onSend={chat.send}
+            onSend={sendWithQuote}
             onStop={chat.stop}
             inputRef={inputRef}
             showQuickReplies={!chat.messages.some((m) => m.role === 'user')}
+            quote={quote}
+            onClearQuote={() => setQuote(null)}
           />
         </div>
 
         {/* 分隔条只在工作区可见、且不是窄屏时才有意义 ——
             窄屏下两栏是抽屉，中间根本没有一条可以拖的缝 */}
         {!isNarrow && wsOpen && (
-          <SplitHandle ratio={ratio} onRatio={setRatio} onNudge={nudge} onReset={resetRatio} />
+          <SplitHandle
+            ratio={ratio}
+            onRatio={setRatio}
+            onNudge={nudge}
+            onReset={resetRatio}
+            onDraggingChange={setResizing}
+          />
         )}
 
         <div className={`pane-workspace${wsClass}`}>
@@ -306,14 +495,15 @@ export default function App() {
             cards={chat.cards}
             onClearCards={chat.clearCards}
             memories={memory.items}
+            memoryLoading={memory.loading}
             memoryBusy={memory.busy}
             memoryError={memory.error}
-            onAddMemory={(text) => void memory.add(text)}
+            onAddMemory={(text) => void addMemory(text)}
             onToggleMemoryPin={(item) => void memory.togglePin(item)}
-            onDeleteMemory={(item) => void memory.remove(item)}
+            onDeleteMemory={(item) => void removeMemory(item)}
             starred={starred}
             onJumpTo={jumpTo}
-            onUnstar={(m) => stars.toggle(m.turnId)}
+            onUnstar={(m) => starsToggle(m.turnId)}
             onClose={isNarrow ? () => setDrawer(null) : undefined}
           />
         </div>
@@ -328,6 +518,16 @@ export default function App() {
           onClick={() => setDrawer(null)}
         />
       )}
+
+      {paletteOpen && (
+        <CommandPalette
+          actions={actions}
+          themeChoice={themeChoice}
+          onClose={() => setPaletteOpen(false)}
+        />
+      )}
+
+      <Toaster />
     </div>
   )
 }

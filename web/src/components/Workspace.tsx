@@ -1,4 +1,4 @@
-import { useRef, type ReactNode } from 'react'
+import { useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { useCopy } from '../hooks/useCopy'
 import type { ChatMessage, MemoryItem } from '../types'
 import { cardToText, formatAmount, statusTone, type WorkspaceCard } from '../workspace'
@@ -207,17 +207,26 @@ function ActionView({ card }: { card: Extract<WorkspaceCard, { kind: 'action' }>
   )
 }
 
-function Card({ card }: { card: WorkspaceCard }) {
-  switch (card.kind) {
-    case 'order':
-      return <OrderView card={card} />
-    case 'logistics':
-      return <LogisticsView card={card} />
-    case 'source':
-      return <SourceView card={card} />
-    case 'action':
-      return <ActionView card={card} />
-  }
+function Card({ card, index }: { card: WorkspaceCard; index: number }) {
+  const inner = (() => {
+    switch (card.kind) {
+      case 'order':
+        return <OrderView card={card} />
+      case 'logistics':
+        return <LogisticsView card={card} />
+      case 'source':
+        return <SourceView card={card} />
+      case 'action':
+        return <ActionView card={card} />
+    }
+  })()
+  // 卡片按 index 依次入场：一次推出三张时，错开的那几十毫秒让"一起来"
+  // 和"有先后"同时成立 —— 顺序信息是白送的
+  return (
+    <div className="card-slot" style={{ '--i': index } as React.CSSProperties}>
+      {inner}
+    </div>
+  )
 }
 
 function CardsView({ cards }: { cards: WorkspaceCard[] }) {
@@ -230,6 +239,7 @@ function CardsView({ cards }: { cards: WorkspaceCard[] }) {
     return (
       <div className="workspace-empty">
         <div className="grid-canvas" aria-hidden="true" />
+        <div className="grid-scan" aria-hidden="true" />
         <p className="workspace-empty-text">
           对话里查到的订单、物流轨迹和政策依据
           <br />
@@ -251,8 +261,8 @@ function CardsView({ cards }: { cards: WorkspaceCard[] }) {
           ))}
       </div>
       <div className="card-stack">
-        {cards.map((c) => (
-          <Card key={c.id} card={c} />
+        {cards.map((c, i) => (
+          <Card key={c.id} card={c} index={i} />
         ))}
       </div>
     </>
@@ -265,6 +275,7 @@ interface Props {
   cards: WorkspaceCard[]
   onClearCards: () => void
   memories: MemoryItem[]
+  memoryLoading: boolean
   memoryBusy: boolean
   memoryError: string
   onAddMemory: (text: string) => void
@@ -283,6 +294,7 @@ export function Workspace({
   cards,
   onClearCards,
   memories,
+  memoryLoading,
   memoryBusy,
   memoryError,
   onAddMemory,
@@ -294,6 +306,27 @@ export function Workspace({
   onClose,
 }: Props) {
   const tabRefs = useRef<Array<HTMLButtonElement | null>>([])
+  //: 活动标签底块的几何（x / 宽）。测出来，而不是"每个标签自己画背景"：
+  //: 切换时看到的是同一块底色挪过去，而不是两个元素一灭一亮 —— 连续性。
+  const [indicator, setIndicator] = useState({ x: 0, w: 0 })
+
+  const activeIndex = TABS.findIndex((t) => t.key === tab)
+
+  useLayoutEffect(() => {
+    const el = tabRefs.current[activeIndex]
+    if (el) setIndicator({ x: el.offsetLeft, w: el.offsetWidth })
+  }, [activeIndex])
+
+  // 窗口尺寸变了、或者计数从个位数变成两位数，标签的实际位置都会变 ——
+  // 不重测的话底块会停在旧位置上，看起来像"选错了标签"
+  useLayoutEffect(() => {
+    const remeasure = () => {
+      const el = tabRefs.current[activeIndex]
+      if (el) setIndicator({ x: el.offsetLeft, w: el.offsetWidth })
+    }
+    window.addEventListener('resize', remeasure)
+    return () => window.removeEventListener('resize', remeasure)
+  }, [activeIndex, cards.length, memories.length, starred.length])
 
   const counts: Record<WorkspaceTab, number> = {
     cards: cards.length,
@@ -314,6 +347,16 @@ export function Workspace({
     <section className="workspace" aria-label="工作区">
       <header className="workspace-head">
         <div className="tabs" role="tablist" aria-label="右侧面板">
+          {indicator.w > 0 && (
+            <span
+              className="tab-indicator"
+              aria-hidden="true"
+              style={{
+                width: indicator.w,
+                transform: `translateX(${indicator.x}px)`,
+              }}
+            />
+          )}
           {TABS.map(({ key, label, Icon }, i) => (
             <button
               key={key}
@@ -361,6 +404,7 @@ export function Workspace({
         {tab === 'memory' && (
           <MemoryPanel
             items={memories}
+            loading={memoryLoading}
             busy={memoryBusy}
             error={memoryError}
             onAdd={onAddMemory}

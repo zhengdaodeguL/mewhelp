@@ -69,13 +69,17 @@ DEFAULT_KB_DIR = Path("data/knowledge")
 class ChatRequest(BaseModel):
     """对话入参。
 
-    三个字段都给了默认值：少传一个字段应该是"用默认值继续"，而不是 422。
+    四个字段都给了默认值：少传一个字段应该是"用默认值继续"，而不是 422。
     演示页、curl、CLI 都受益于这个宽松度，而真正的输入校验在 service 层。
     """
 
     user_id: str = "u-anonymous"
     session_id: str = "s-default"
     message: str = ""
+    #: 引用提问：用户在界面上明确指向的那一句原话。
+    #: 它进的是**当轮上下文**，不落库 —— 引用的消息本身已经在会话历史里了，
+    #: 再存一遍会让它在下一次提问时出现两次。
+    quote: str = ""
 
 
 class FeedbackRequest(BaseModel):
@@ -370,6 +374,7 @@ def create_app(deps: GraphDeps | None = None) -> FastAPI:
                     user_id=payload.user_id,
                     session_id=payload.session_id,
                     message=payload.message,
+                    quote=payload.quote,
                 )
             except Exception as exc:  # noqa: BLE001 — 第一道兜底
                 logger.exception("[api] /api/chat 执行失败")
@@ -393,6 +398,7 @@ def create_app(deps: GraphDeps | None = None) -> FastAPI:
                 user_id=payload.user_id,
                 session_id=payload.session_id,
                 message=payload.message,
+                quote=payload.quote,
             )
         except Exception as exc:  # noqa: BLE001
             logger.exception("[api] /api/chat/sync 执行失败")

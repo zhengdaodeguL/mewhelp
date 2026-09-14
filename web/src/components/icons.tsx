@@ -290,3 +290,42 @@ export function IconArrowLeft(props: IconProps) {
     </Base>
   )
 }
+
+/** 提醒：三角形 + 感叹号。用于提示条的"出错了"。 */
+export function IconAlert(props: IconProps) {
+  return (
+    <Base {...props}>
+      <path d="M12 4.5 2.8 20h18.4Z" />
+      <path d="M12 10v4M12 17.2v.1" />
+    </Base>
+  )
+}
+
+/** 命令面板：⌘ 的简化形状 */
+export function IconCommand(props: IconProps) {
+  return (
+    <Base {...props}>
+      <path d="M9 6a3 3 0 1 0-3 3h12a3 3 0 1 0-3-3v12a3 3 0 1 0 3-3H6a3 3 0 1 0 3 3Z" />
+    </Base>
+  )
+}
+
+/** 引用：带引号的文本块 */
+export function IconQuote(props: IconProps) {
+  return (
+    <Base {...props}>
+      <path d="M5 6h14v12H5z" />
+      <path d="M9 10v4M15 10v4" />
+    </Base>
+  )
+}
+
+/** 对话气泡 */
+export function IconChat(props: IconProps) {
+  return (
+    <Base {...props}>
+      <path d="M21 12a8 8 0 0 1-8 8H4l1.6-3.2A8 8 0 1 1 21 12Z" />
+      <path d="M9 11.5h6M9 15h3.5" />
+    </Base>
+  )
+}

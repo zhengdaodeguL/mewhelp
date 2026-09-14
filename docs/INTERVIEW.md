@@ -756,6 +756,9 @@ if merged.status in (APPROVED, REJECTED, MERGED):
 | `workflow/nodes.py::_missing_slots` 为什么用 `resolved_question` 再抽一次单号 | 用原话判会让记忆刚补上的单号被当成"缺失"，把正确答案换成一句反问 |
 | `storage/db.py::_add_missing_columns` 为什么不用 Alembic | 一个进程一个 SQLite 文件，为"加列"引迁移框架和版本表，维护成本大于它挡住的风险；真要改列名/拆表时再上 |
 | `storage/db.py::ensure_utc` 补的是什么 | SQLite 不存时区，读出来是朴素 datetime；`isoformat()` 出来的字符串没有时区标记时，JS 会按**本地**解析 → "3 分钟前"变成"8 小时前"，而且同一个列表里有的是 `Z`、有的没有 |
+| 「引用提问」为什么要把引用文本显式发出去 | 被引用的都是**较早**的消息，很可能已经滑出 `window_turns` —— 只靠会话历史服务端根本看不到。它挂成一条 `user` 轮次放在历史**末尾**，让指代消解的"最近实体"指向它 |
+| 「引用」为什么不落库 | 被引用的消息本身就在会话历史里，再存一遍会让它下次提问时出现两次（`test_quote_brings_an_early_message_back_into_context` 钉住了这一条） |
+| `web/src/hooks/useNow.ts` 为什么存在 | 相对时间只在数据变化时算一次的话，"刚刚"会一直显示"刚刚"——一个慢慢变成谎话的相对时间比绝对时间更糟 |
 | `flywheel/store.py::_stable` 和 `hash()` 的区别 | 同上第一条，但后果是"飞轮每次重启多一堆重复条目" |
 | `workflow/nodes.py` 里 Agent 拦住高风险工具后做了什么 | 写一条 `ToolCall(ok=False, error="HIGH_RISK_REQUIRES_FLOW")` 并 `break` |
 | `workflow/graph.py::build_graph` 为什么把 checkpointer 写回 `deps` | 高风险节点要知道"这次编译有没有持久化"，决定挂起还是追问收尾 |

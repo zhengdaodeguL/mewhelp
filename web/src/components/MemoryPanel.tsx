@@ -1,6 +1,8 @@
 import { useState } from 'react'
 import { relativeTime } from '../format'
+import { useNow } from '../hooks/useNow'
 import type { MemoryItem } from '../types'
+import { MemorySkeleton } from './Skeleton'
 import { IconPin, IconPlus, IconTrash } from './icons'
 
 /**
@@ -16,6 +18,8 @@ import { IconPin, IconPlus, IconTrash } from './icons'
 
 interface Props {
   items: MemoryItem[]
+  /** 还没拿到第一批数据（用来决定显示骨架还是空状态） */
+  loading: boolean
   busy: boolean
   error: string
   onAdd: (text: string) => void
@@ -23,8 +27,17 @@ interface Props {
   onDelete: (item: MemoryItem) => void
 }
 
-export function MemoryPanel({ items, busy, error, onAdd, onTogglePin, onDelete }: Props) {
+export function MemoryPanel({
+  items,
+  loading,
+  busy,
+  error,
+  onAdd,
+  onTogglePin,
+  onDelete,
+}: Props) {
   const [draft, setDraft] = useState('')
+  const now = useNow()
 
   const submit = () => {
     const text = draft.trim()
@@ -63,7 +76,12 @@ export function MemoryPanel({ items, busy, error, onAdd, onTogglePin, onDelete }
 
       {error && <p className="memory-error">{error}</p>}
 
-      {items.length === 0 ? (
+      {loading && items.length === 0 ? (
+        <>
+          <MemorySkeleton />
+          <MemorySkeleton />
+        </>
+      ) : items.length === 0 ? (
         <div className="panel-empty">
           <p>
             还没有记住任何事。
@@ -75,8 +93,12 @@ export function MemoryPanel({ items, busy, error, onAdd, onTogglePin, onDelete }
         </div>
       ) : (
         <ul className="memory-list">
-          {items.map((item) => (
-            <li key={item.id} className={`memory-item${item.pinned ? ' memory-item--pinned' : ''}`}>
+          {items.map((item, i) => (
+            <li
+              key={item.id}
+              className={`memory-item${item.pinned ? ' memory-item--pinned' : ''}`}
+              style={{ '--i': i } as React.CSSProperties}
+            >
               <div className="memory-line">
                 <span className="memory-kind">{item.kindLabel}</span>
                 <span className="memory-text">{item.text}</span>
@@ -92,7 +114,7 @@ export function MemoryPanel({ items, busy, error, onAdd, onTogglePin, onDelete }
                   </>
                 )}
                 <span className="session-dot" aria-hidden="true" />
-                <time dateTime={item.updatedAt}>{relativeTime(item.updatedAt)}</time>
+                <time dateTime={item.updatedAt}>{relativeTime(item.updatedAt, now)}</time>
               </div>
               <div className="memory-actions">
                 <button

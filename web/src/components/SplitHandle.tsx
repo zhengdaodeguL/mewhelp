@@ -1,10 +1,10 @@
-import { useCallback, useRef } from 'react'
+import { useCallback, useRef, useState } from 'react'
 import { MAX_RATIO, MIN_RATIO } from '../hooks/useSplit'
 
 /**
  * 左右分栏之间的拖拽条。
  *
- * 三件容易被忽略、但缺了就会"能用但难用"的事：
+ * 四件容易被忽略、但缺了就会"能用但难用"的事：
  *
  * 1. **用 Pointer Events 而不是 mouse*。** 鼠标事件在触屏和手写笔上不触发；
  *    更要命的是没有指针捕获：鼠标移出这条 6px 宽的细缝就收不到 move 了，
@@ -17,8 +17,10 @@ import { MAX_RATIO, MIN_RATIO } from '../hooks/useSplit'
  * 3. **双击复位。** 拖到某个很别扭的比例之后，用户最想做的是"回到默认"，
  *    而不是反向猜着拖回去。
  *
- * 拖拽期间给 <body> 挂 resizing：光标的 col-resize 是次要的，
- * 主要是禁掉文本选中 —— 否则拖一次会选中满屏文字。
+ * 4. **拖拽中给出即时读数。** 跟着光标飘一个百分比气泡：没有它，用户只知道
+ *    "变宽了"，不知道现在是几比几，也就没法把两次调成一致。
+ *    拖拽期间同时关掉两条栏的宽度过渡 —— 跟手的拖拽上再套一层动画，
+ *    手感和延迟都变得很怪。
  */
 
 interface Props {
@@ -27,10 +29,13 @@ interface Props {
   /** 方向键的步进（比例值） */
   onNudge: (delta: number, big?: boolean) => void
   onReset: () => void
+  /** 拖拽开始/结束 —— 上层据此暂停宽度过渡 */
+  onDraggingChange?: (dragging: boolean) => void
 }
 
-export function SplitHandle({ ratio, onRatio, onNudge, onReset }: Props) {
+export function SplitHandle({ ratio, onRatio, onNudge, onReset, onDraggingChange }: Props) {
   const ref = useRef<HTMLDivElement>(null)
+  const [dragging, setDragging] = useState(false)
 
   const startDrag = useCallback(
     (e: React.PointerEvent<HTMLDivElement>) => {
@@ -45,6 +50,9 @@ export function SplitHandle({ ratio, onRatio, onNudge, onReset }: Props) {
       const usable = rect.width - handleWidth
       if (usable <= 0) return
 
+      setDragging(true)
+      onDraggingChange?.(true)
+
       const onMove = (ev: PointerEvent) => {
         onRatio((ev.clientX - rect.left - handleWidth / 2) / usable)
       }
@@ -53,6 +61,8 @@ export function SplitHandle({ ratio, onRatio, onNudge, onReset }: Props) {
         window.removeEventListener('pointerup', onUp)
         window.removeEventListener('pointercancel', onUp)
         document.body.classList.remove('resizing')
+        setDragging(false)
+        onDraggingChange?.(false)
       }
 
       document.body.classList.add('resizing')
@@ -60,7 +70,7 @@ export function SplitHandle({ ratio, onRatio, onNudge, onReset }: Props) {
       window.addEventListener('pointerup', onUp)
       window.addEventListener('pointercancel', onUp)
     },
-    [onRatio],
+    [onRatio, onDraggingChange],
   )
 
   const onKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
@@ -79,17 +89,19 @@ export function SplitHandle({ ratio, onRatio, onNudge, onReset }: Props) {
     }
   }
 
+  const percent = Math.round(ratio * 100)
+
   return (
     <div
       ref={ref}
-      className="split"
+      className={`split${dragging ? ' split--active' : ''}`}
       role="separator"
       aria-orientation="vertical"
       aria-label="调整对话区与工作区的宽度"
-      aria-valuenow={Math.round(ratio * 100)}
+      aria-valuenow={percent}
       aria-valuemin={Math.round(MIN_RATIO * 100)}
       aria-valuemax={Math.round(MAX_RATIO * 100)}
-      aria-valuetext={`对话区 ${Math.round(ratio * 100)}%`}
+      aria-valuetext={`对话区 ${percent}%`}
       tabIndex={0}
       title="拖动调整宽度（双击还原，方向键微调）"
       onPointerDown={startDrag}
@@ -97,6 +109,11 @@ export function SplitHandle({ ratio, onRatio, onNudge, onReset }: Props) {
       onKeyDown={onKeyDown}
     >
       <span className="split-grip" aria-hidden="true" />
+      {dragging && (
+        <span className="split-badge">
+          {percent}% / {100 - percent}%
+        </span>
+      )}
     </div>
   )
 }

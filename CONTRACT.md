@@ -266,7 +266,7 @@ def build_tracer(settings=None) -> Tracer
 # api/app.py
 def create_app(deps: GraphDeps | None = None) -> FastAPI
 # 路由
-POST /api/chat          {user_id, session_id, message} → SSE 流（逐字）
+POST /api/chat          {user_id, session_id, message, quote?} → SSE 流（逐字）
 POST /api/chat/sync     同上但返回完整 JSON
 POST /api/feedback      {session_id, request_id, thumbs_down, comment}
 GET  /api/flywheel/pending
@@ -300,6 +300,12 @@ event: error    data: {"message":..}
 直接当成"记忆面板该更新了"的信号，不必自己判断空列表。
 推的是**全量**档案而不是增量：增量一旦漏掉一次事件，面板和真实记忆就会
 永久对不上，而且没有任何报错。
+
+`quote` 是**引用提问**：用户在界面上明确指向的那一句原话。它进的是**当轮上下文**
+（挂成一条 `user` 轮次放在历史末尾，让"最近实体"指向它），**不落库** ——
+被引用的消息本身就在会话历史里，再存一遍会让它下次出现两次。
+它必须显式发出去的理由：被引用的往往是较早的消息，很可能已经滑出
+`window_turns`，只靠会话历史服务端根本看不到。
 
 ### J. 存储 `storage/`
 ```python

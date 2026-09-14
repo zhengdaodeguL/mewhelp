@@ -92,6 +92,92 @@
   box-sizing: border-box;
 }
 
+/* ---------------- 动效基元 ----------------
+   只有三档时长、两条缓动曲线。这不是省事，是为了让整个界面**节奏一致** ——
+   十个地方各写各的 0.2s/0.25s/0.3s，看起来就是"哪哪都不太对"但说不清哪里不对。
+
+   动效在这里只干三件事，每一条都有理由，不做纯装饰：
+     · 入场（orient）—— 新东西从哪来、和旧东西什么关系
+     · 反馈（feedback）—— 我的操作生效了没有
+     · 状态（status）—— 系统现在在忙什么
+
+   `prefers-reduced-motion` 那条规则在文件末尾统一关掉它们。 */
+:root {
+  --dur-1: 120ms; /* 按压、悬停这类"立刻要有反应"的 */
+  --dur-2: 200ms; /* 入场、展开 */
+  --dur-3: 320ms; /* 面板、抽屉这类大块头的位移 */
+  --ease-out: cubic-bezier(0.22, 0.61, 0.36, 1);
+  /* 尾部带回弹的曲线：用在"弹出来"的东西上（toast、命令面板、徽标） */
+  --ease-spring: cubic-bezier(0.34, 1.4, 0.64, 1);
+}
+
+/** 入场：从下方浮起。行高只有 8px —— 位移大了会像"砸下来"，小了看不出来。 */
+@keyframes rise-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/** 入场：轻微放大。用在"弹出来"的元素上。 */
+@keyframes pop-in {
+  from {
+    opacity: 0;
+    transform: scale(0.94);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+/** 状态：一条不确定进度的光带从左扫到右。 */
+@keyframes sweep {
+  from {
+    transform: translateX(-100%);
+  }
+  to {
+    transform: translateX(300%);
+  }
+}
+
+/** 状态：骨架屏的微光。 */
+@keyframes shimmer {
+  from {
+    background-position: 200% 0;
+  }
+  to {
+    background-position: -200% 0;
+  }
+}
+
+/** 状态：呼吸。用在"正在思考"的头像上。 */
+@keyframes breathe {
+  0%,
+  100% {
+    box-shadow: 0 3px 10px rgba(77, 124, 255, 0.32), 0 0 0 0 rgba(77, 124, 255, 0.42);
+  }
+  50% {
+    box-shadow: 0 3px 10px rgba(77, 124, 255, 0.32), 0 0 0 7px rgba(77, 124, 255, 0);
+  }
+}
+
+/** 反馈：复制成功时从图标上扩散出去的一圈。 */
+@keyframes ring-out {
+  from {
+    opacity: 0.5;
+    transform: scale(0.6);
+  }
+  to {
+    opacity: 0;
+    transform: scale(1.9);
+  }
+}
+
 html,
 body,
 #root {
@@ -170,6 +256,7 @@ kbd {
   flex: var(--chat-grow, 46) 1 0;
   min-width: 260px;
   min-height: 0;
+  position: relative;
 }
 
 .pane-workspace {
@@ -181,6 +268,13 @@ kbd {
   background: var(--surface-sunken);
 }
 
+/* 双击复位、键盘微调时给宽度一个过渡，让"跳过去"变成"滑过去"。
+   拖拽期间**必须**关掉：跟手的拖拽上再套一层动画，手感和延迟都变得很怪。 */
+.panes:not(.panes--dragging) .pane-chat,
+.panes:not(.panes--dragging) .pane-workspace {
+  transition: flex-grow var(--dur-3) var(--ease-out);
+}
+
 .pane-workspace--hidden {
   display: none;
 }
@@ -188,6 +282,7 @@ kbd {
 /* ---------------- 拖拽分隔条 ---------------- */
 
 .split {
+  position: relative;
   display: grid;
   place-items: center;
   flex: 0 0 7px;
@@ -196,7 +291,7 @@ kbd {
   border: none;
   padding: 0;
   touch-action: none; /* 触屏上把横向拖动交给拖拽逻辑，而不是页面滚动 */
-  transition: background 0.15s;
+  transition: background var(--dur-1) var(--ease-out), flex-basis var(--dur-1);
 }
 
 .split:hover,
@@ -205,19 +300,51 @@ kbd {
   outline: none;
 }
 
+/* 拖拽中加宽并染色：手指（和眼睛）需要知道"现在正在改这一处" */
+.split--active {
+  flex-basis: 11px;
+  background: var(--accent-soft);
+}
+
 /* 平时只是一道浅痕：它占的是内容的宽度，视觉上不该抢戏 */
 .split-grip {
   width: 2px;
   height: 34px;
   border-radius: 2px;
   background: var(--border-strong);
-  transition: background 0.15s, height 0.15s;
+  transition: background var(--dur-1), height var(--dur-2) var(--ease-out);
 }
 
 .split:hover .split-grip,
 .split:focus-visible .split-grip {
   background: var(--accent);
   height: 52px;
+}
+
+.split--active .split-grip {
+  background: var(--accent);
+  height: 100%;
+  width: 3px;
+}
+
+/* 拖拽时跟着光标飘的百分比气泡 —— 没有它，用户只知道"变宽了"，
+   不知道现在是几比几，也就没法把两次会话调成一致 */
+.split-badge {
+  position: absolute;
+  top: 12px;
+  left: 50%;
+  transform: translateX(-50%);
+  padding: 3px 8px;
+  border-radius: 999px;
+  background: var(--accent);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+  pointer-events: none;
+  box-shadow: var(--shadow-md);
+  animation: pop-in var(--dur-1) var(--ease-spring);
 }
 
 /* 拖拽期间：光标固定住，并禁掉文本选中 ——
@@ -240,7 +367,8 @@ body.resizing {
   background: transparent;
   color: var(--text-muted);
   cursor: pointer;
-  transition: background 0.15s, color 0.15s, border-color 0.15s;
+  transition: background var(--dur-1), color var(--dur-1), border-color var(--dur-1),
+    transform var(--dur-1) var(--ease-out);
 }
 
 .icon-btn:hover {
@@ -249,8 +377,21 @@ body.resizing {
   color: var(--text);
 }
 
-.icon-btn:active {
-  transform: scale(0.94);
+/* 按下去的压缩感：这是最便宜、也最容易被省掉的一条反馈 ——
+   没有它，点击和"点了没反应"在体感上没有区别 */
+.icon-btn:active:not(:disabled) {
+  transform: scale(0.9);
+}
+
+/* 复制成功后从图标上扩散出去的一圈。放在伪元素上，不占布局。 */
+.icon-btn--pulse::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  border: 1.5px solid currentColor;
+  animation: ring-out 520ms var(--ease-out) forwards;
+  pointer-events: none;
 }
 
 .ghost-btn {
@@ -265,7 +406,8 @@ body.resizing {
   font-size: 12.5px;
   font-family: inherit;
   cursor: pointer;
-  transition: background 0.15s, color 0.15s, border-color 0.15s;
+  transition: background var(--dur-1), color var(--dur-1), border-color var(--dur-1),
+    transform var(--dur-1);
 }
 
 .ghost-btn:hover {
@@ -274,6 +416,11 @@ body.resizing {
   border-color: var(--border-strong);
 }
 
+.ghost-btn:active {
+  transform: scale(0.96);
+}
+
+/* 计数徽标：数字变化时弹一下。切会话/发消息之后"哪里变了"要能一眼看到 */
 .badge {
   position: absolute;
   top: -3px;
@@ -288,6 +435,10 @@ body.resizing {
   font-weight: 700;
   line-height: 16px;
   text-align: center;
+}
+
+.badge--bump {
+  animation: pop-in var(--dur-2) var(--ease-spring);
 }
 
 /* ---------------- 页头 ---------------- */
@@ -391,12 +542,48 @@ body.resizing {
   flex-direction: column;
 }
 
+/* 流式进行中时页头下方那条进度光带。
+   它是**不确定进度**的（一条光来回扫），而不是按 token 数算百分比 ——
+   我们并不知道还要说多久，一个假进度条比没有进度条更让人烦。 */
+.stream-bar {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 2px;
+  overflow: hidden;
+  z-index: 5;
+  pointer-events: none;
+}
+
+.stream-bar::after {
+  content: '';
+  display: block;
+  width: 34%;
+  height: 100%;
+  border-radius: 2px;
+  background: linear-gradient(90deg, transparent, var(--accent), transparent);
+  animation: sweep 1.15s var(--ease-out) infinite;
+}
+
 .messages {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
   background: var(--surface);
   scroll-behavior: smooth;
+  /* 往上滚之后顶部压一层内阴影：内容"钻到页头下面去"的关系一眼可见。
+     做在滚动容器自己身上，而不是去改页头的样式 —— 两个组件之间不需要为此连线。 */
+  box-shadow: inset 0 0 0 0 rgba(24, 34, 62, 0);
+  transition: box-shadow var(--dur-2) var(--ease-out);
+}
+
+.messages--scrolled {
+  box-shadow: inset 0 10px 12px -12px rgba(24, 34, 62, 0.34);
+}
+
+:root[data-theme='dark'] .messages--scrolled {
+  box-shadow: inset 0 10px 12px -12px rgba(0, 0, 0, 0.85);
 }
 
 .messages-inner {
@@ -411,6 +598,8 @@ body.resizing {
   align-items: flex-end;
   gap: 8px;
   max-width: 100%;
+  /* 新消息浮上来：位移只有 6px，够看清"这是刚来的"，又不至于像弹窗 */
+  animation: rise-in var(--dur-2) var(--ease-out) backwards;
 }
 
 .row--user {
@@ -440,6 +629,39 @@ body.resizing {
   white-space: pre-wrap;
   word-break: break-word;
   box-shadow: var(--shadow-sm);
+}
+
+/* 正在逐字长出来的气泡：右侧一道缓慢流动的高光。
+   它表达的是"这里还在写"，和光标是同一件事的两种尺度 ——
+   光标告诉你在哪个字，高光告诉你在哪一块。 */
+.bubble--streaming {
+  position: relative;
+  overflow: hidden;
+}
+
+.bubble--streaming::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    100deg,
+    transparent 40%,
+    rgba(255, 255, 255, 0.5) 50%,
+    transparent 60%
+  );
+  background-size: 220% 100%;
+  animation: shimmer 2.4s linear infinite;
+}
+
+:root[data-theme='dark'] .bubble--streaming::after {
+  background: linear-gradient(
+    100deg,
+    transparent 40%,
+    rgba(122, 160, 255, 0.12) 50%,
+    transparent 60%
+  );
+  background-size: 220% 100%;
 }
 
 .bubble--assistant {
@@ -541,9 +763,35 @@ body.resizing {
 
 .bubble--typing {
   display: flex;
+  flex-direction: column;
+  gap: 9px;
+  padding: 14px 16px;
+  min-width: 190px;
+}
+
+.typing-dots {
+  display: flex;
   align-items: center;
   gap: 5px;
-  padding: 15px;
+}
+
+/* 首字之前不是"空气"，是"正在取内容" —— 两条微光条比三个点更能说明
+   接下来这里会长出正文，也让等待的几十毫秒有了形状 */
+.typing-line {
+  height: 9px;
+  border-radius: 5px;
+  background: linear-gradient(
+    90deg,
+    var(--surface-sunken) 25%,
+    var(--border) 37%,
+    var(--surface-sunken) 63%
+  );
+  background-size: 400% 100%;
+  animation: shimmer 1.5s linear infinite;
+}
+
+.typing-line--short {
+  width: 62%;
 }
 
 .dot {
@@ -560,6 +808,12 @@ body.resizing {
 
 .dot:nth-child(3) {
   animation-delay: 0.32s;
+}
+
+/* 正在思考的头像：一圈向外扩散的光环。它和进度条说的是同一件事，
+   但作用在"对面那个人"身上，比页头一根线更有临场感 */
+.avatar--thinking {
+  animation: breathe 1.9s var(--ease-out) infinite;
 }
 
 @keyframes bounce {
@@ -612,23 +866,35 @@ body.resizing {
   position: absolute;
   right: 18px;
   bottom: 14px;
-  width: 34px;
   height: 34px;
-  display: grid;
-  place-items: center;
-  border-radius: 50%;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 12px;
+  border-radius: 999px;
   border: 1px solid var(--border);
   background: var(--surface);
   color: var(--text-muted);
+  font: inherit;
+  font-size: 12px;
   box-shadow: var(--shadow-md);
   cursor: pointer;
-  animation: card-in 0.18s ease-out;
-  transition: color 0.15s, border-color 0.15s;
+  animation: pop-in var(--dur-2) var(--ease-spring);
+  transition: color var(--dur-1), border-color var(--dur-1), transform var(--dur-1);
 }
 
 .scroll-bottom:hover {
   color: var(--accent);
   border-color: var(--accent);
+  transform: translateY(-1px);
+}
+
+/* 往上翻着看历史时来了新消息：把条数说出来。
+   只说"回到最新"用户不知道错过了多少，于是多半会懒得点。 */
+.scroll-bottom-count {
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: var(--accent);
 }
 
 /* ---------------- 输入区 ---------------- */
@@ -944,7 +1210,9 @@ body.resizing {
 /* 空状态：一块"画布"网格 —— 暗示这里等着放东西。
    刻意用平面网格 + 径向渐隐，而不是 3D 透视地板：
    mask 作用在 transform 之前的局部坐标，再叠上 perspective 压缩，
-   可视区域会被压成很窄一条，实际渲染出来几乎看不见。 */
+   可视区域会被压成很窄一条，实际渲染出来几乎看不见。
+
+   上面一条缓慢横移的扫描光带：让"空"看起来是"待命"，而不是"坏了"。 */
 .workspace-empty {
   position: relative;
   display: flex;
@@ -966,6 +1234,42 @@ body.resizing {
   -webkit-mask-image: radial-gradient(ellipse 68% 58% at 50% 44%, #000 0%, transparent 100%);
   mask-image: radial-gradient(ellipse 68% 58% at 50% 44%, #000 0%, transparent 100%);
   pointer-events: none;
+}
+
+.grid-scan {
+  position: absolute;
+  left: 0;
+  right: 0;
+  height: 90px;
+  pointer-events: none;
+  background: linear-gradient(
+    to bottom,
+    transparent,
+    var(--grid-glow) 45%,
+    var(--grid-line) 50%,
+    var(--grid-glow) 55%,
+    transparent
+  );
+  -webkit-mask-image: radial-gradient(ellipse 60% 60% at 50% 50%, #000 0%, transparent 100%);
+  mask-image: radial-gradient(ellipse 60% 60% at 50% 50%, #000 0%, transparent 100%);
+  animation: scan 7s var(--ease-out) infinite;
+}
+
+@keyframes scan {
+  0% {
+    top: -12%;
+    opacity: 0;
+  }
+  18% {
+    opacity: 1;
+  }
+  82% {
+    opacity: 1;
+  }
+  100% {
+    top: 105%;
+    opacity: 0;
+  }
 }
 
 .workspace-empty-text {
@@ -994,7 +1298,19 @@ body.resizing {
   border-radius: var(--radius);
   padding: 13px 15px;
   box-shadow: var(--shadow-sm);
-  animation: card-in 0.22s ease-out;
+  animation: rise-in var(--dur-2) var(--ease-out) backwards;
+  /* 卡片按 index 依次入场（--i 由组件给）：一次推出三张卡时，
+     这个错开让"它们是一起出现的"和"它们是有先后的"同时成立 */
+  animation-delay: calc(var(--i, 0) * 45ms);
+  transition: transform var(--dur-2) var(--ease-out), box-shadow var(--dur-2) var(--ease-out),
+    border-color var(--dur-2);
+}
+
+/* 悬停抬升：卡片是可点、可复制的实体，抬一下比换背景色更能说明"这是张卡" */
+.card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-md);
+  border-color: var(--border-strong);
 }
 
 /* 左侧一道细色条：一眼分清卡片类型，比只靠小标签快得多 */
@@ -1028,17 +1344,6 @@ body.resizing {
 .card--action {
   --kind: var(--kind-action);
   --kind-soft: var(--kind-action-soft);
-}
-
-@keyframes card-in {
-  from {
-    opacity: 0;
-    transform: translateY(6px);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
 }
 
 .card-head {
@@ -1383,11 +1688,25 @@ body.resizing {
   gap: 2px;
 }
 
-.rail-empty {
-  margin: 8px 6px;
-  font-size: 12.5px;
-  line-height: 1.8;
+/* 会话按时间分组：今天 / 昨天 / 更早 的标签。
+   它存在的意义不是分类学，是**定位** —— "昨天那通"比"列表第 7 条"好找得多。 */
+.session-group {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 10px 9px 4px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
   color: var(--text-muted);
+  text-transform: uppercase;
+}
+
+.session-group::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border);
 }
 
 .session {
@@ -1396,17 +1715,33 @@ body.resizing {
   border-radius: 10px;
   cursor: pointer;
   border: 1px solid transparent;
-  transition: background 0.14s, border-color 0.14s;
+  animation: rise-in var(--dur-2) var(--ease-out) backwards;
+  animation-delay: calc(var(--i, 0) * 28ms);
+  transition: background var(--dur-1), border-color var(--dur-1), transform var(--dur-1);
 }
 
 .session:hover {
   background: var(--surface);
   border-color: var(--border);
+  transform: translateX(2px);
 }
 
 .session--active {
   background: var(--accent-soft);
   border-color: var(--accent);
+}
+
+/* 当前会话左边一道竖条：在长长的历史里一眼找出"我正在哪" */
+.session--active::before {
+  content: '';
+  position: absolute;
+  left: -4px;
+  top: 10px;
+  bottom: 10px;
+  width: 3px;
+  border-radius: 3px;
+  background: var(--accent);
+  animation: pop-in var(--dur-2) var(--ease-spring);
 }
 
 .session-title {
@@ -1534,6 +1869,65 @@ body.resizing {
   color: var(--text-muted);
 }
 
+.rail-empty {
+  margin: 8px 6px;
+  font-size: 12.5px;
+  line-height: 1.8;
+  color: var(--text-muted);
+}
+
+/* ---------------- 骨架屏 ----------------
+   加载态不是"转圈"，是**内容的轮廓**：先画出将要有几行、每行多宽，
+   数据回来时位置不跳。转圈只说明了"在忙"，骨架还说明了"将要出现什么"。*/
+.skeleton {
+  border-radius: 7px;
+  background: linear-gradient(
+    90deg,
+    var(--surface-soft) 25%,
+    var(--border) 37%,
+    var(--surface-soft) 63%
+  );
+  background-size: 400% 100%;
+  animation: shimmer 1.5s linear infinite;
+}
+
+.skeleton-item {
+  padding: 10px 9px;
+  border-radius: 10px;
+  border: 1px solid transparent;
+}
+
+.skeleton-line {
+  height: 11px;
+  margin-bottom: 7px;
+}
+
+.skeleton-line:last-child {
+  margin-bottom: 0;
+}
+
+.skeleton-line--title {
+  height: 13px;
+  width: 68%;
+}
+
+.skeleton-line--meta {
+  height: 9px;
+  width: 40%;
+}
+
+.skeleton-line--short {
+  width: 78%;
+}
+
+/* 卡片形状的骨架，给记忆面板用 */
+.skeleton-card {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--surface);
+  padding: 11px 12px;
+}
+
 /* ---------------- 查找条 ---------------- */
 
 .findbar {
@@ -1601,13 +1995,31 @@ body.resizing {
 /* ---------------- 工作区标签页 ---------------- */
 
 .tabs {
+  position: relative;
   display: flex;
   gap: 3px;
   flex: 1;
   min-width: 0;
 }
 
+/* 活动标签的底色块。它**不是**给每个标签自己画背景，而是用一个绝对定位的
+   滑块在三者之间平移 —— 切换时看到的是"同一块地方挪过去了"，
+   而不是"原来那块没了、新的一块冒出来"。连续性就是这么来的。 */
+.tab-indicator {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-radius: 9px;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-sm);
+  transition: transform var(--dur-2) var(--ease-out), width var(--dur-2) var(--ease-out);
+  pointer-events: none;
+}
+
 .tab {
+  position: relative;
+  z-index: 1;
   display: inline-flex;
   align-items: center;
   gap: 5px;
@@ -1621,20 +2033,19 @@ body.resizing {
   font-weight: 600;
   cursor: pointer;
   white-space: nowrap;
-  transition: background 0.14s, color 0.14s, border-color 0.14s;
+  transition: color var(--dur-1), transform var(--dur-1);
 }
 
 .tab:hover {
-  background: var(--surface);
   color: var(--text);
-  border-color: var(--border);
+}
+
+.tab:active {
+  transform: scale(0.96);
 }
 
 .tab--active {
-  background: var(--surface);
   color: var(--accent);
-  border-color: var(--border);
-  box-shadow: var(--shadow-sm);
 }
 
 .tab-count {
@@ -1646,11 +2057,18 @@ body.resizing {
   background: var(--surface-soft);
   color: var(--text-muted);
   text-align: center;
+  transition: background var(--dur-1), color var(--dur-1);
 }
 
 .tab--active .tab-count {
   background: var(--accent-soft);
   color: var(--accent);
+  animation: pop-in var(--dur-2) var(--ease-spring);
+}
+
+/* 标签内容切换时的入场：新面板浮上来，而不是硬切 */
+.workspace-body > * {
+  animation: rise-in var(--dur-2) var(--ease-out);
 }
 
 .panel-empty {
@@ -1725,7 +2143,15 @@ body.resizing {
   background: var(--surface);
   padding: 9px 12px;
   box-shadow: var(--shadow-sm);
-  animation: card-in 0.2s ease-out;
+  animation: rise-in var(--dur-2) var(--ease-out) backwards;
+  animation-delay: calc(var(--i, 0) * 34ms);
+  transition: transform var(--dur-2) var(--ease-out), box-shadow var(--dur-2) var(--ease-out),
+    border-color var(--dur-2);
+}
+
+.memory-item:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-md);
 }
 
 .memory-item--pinned {
@@ -1819,7 +2245,14 @@ body.resizing {
   background: var(--surface);
   padding: 9px 12px;
   box-shadow: var(--shadow-sm);
-  animation: card-in 0.2s ease-out;
+  animation: rise-in var(--dur-2) var(--ease-out) backwards;
+  animation-delay: calc(var(--i, 0) * 34ms);
+  transition: transform var(--dur-2) var(--ease-out), box-shadow var(--dur-2) var(--ease-out);
+}
+
+.star-item:hover {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-md);
 }
 
 .star-head {
@@ -1897,7 +2330,243 @@ body.resizing {
   color: var(--text-muted);
 }
 
-/* ---------------- 窄屏：左右两栏变抽屉 ---------------- */
+/* ---------------- 引用提问 ---------------- */
+
+/* 引用条：把"我在回答哪一句"从输入框里搬到它上面。
+   塞进输入框（"引用：xxx 我的问题是…"）会污染用户真正想说的那句话，
+   模型也会把引用当成问题的一部分。 */
+.quote-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+  padding: 7px 10px;
+  border-left: 3px solid var(--accent);
+  background: var(--accent-soft);
+  border-radius: 0 10px 10px 0;
+  animation: rise-in var(--dur-2) var(--ease-out);
+}
+
+.quote-label {
+  flex-shrink: 0;
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--accent);
+}
+
+.quote-text {
+  flex: 1;
+  min-width: 0;
+  font-size: 12.5px;
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.quote-bar .icon-btn {
+  width: 24px;
+  height: 24px;
+  border-radius: 6px;
+  flex-shrink: 0;
+}
+
+/* 被引用的那条消息：左边亮一道，提示"它在上下文里" */
+.row--quoted .bubble {
+  box-shadow: 0 0 0 2px var(--accent-soft), var(--shadow-sm);
+}
+
+/* ---------------- Toast ----------------
+   只给**改变了状态**的动作弹（已记住 / 已删除 / 已导出 / 已反馈）。
+   复制不弹 —— 图标变对勾已经把话说完了，再弹一个条是噪音。
+
+   放在底部居中而不是右上角：这个界面的右上角是工具栏，弹在那里会盖住按钮；
+   底部居中离输入框近，正好是用户视线刚离开的地方。 */
+.toaster {
+  position: fixed;
+  left: 50%;
+  bottom: 26px;
+  z-index: 60;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  transform: translateX(-50%);
+  pointer-events: none;
+}
+
+.toast {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  max-width: min(90vw, 460px);
+  padding: 9px 14px;
+  border-radius: 12px;
+  background: var(--toast-bg, var(--text));
+  color: var(--toast-fg, var(--surface));
+  font-size: 12.5px;
+  font-weight: 600;
+  box-shadow: var(--shadow-lg);
+  pointer-events: auto;
+  animation: pop-in var(--dur-2) var(--ease-spring);
+}
+
+.toast svg {
+  flex-shrink: 0;
+}
+
+.toast--leaving {
+  animation: toast-out var(--dur-2) var(--ease-out) forwards;
+}
+
+.toast--ok {
+  --toast-bg: #12a150;
+  --toast-fg: #fff;
+}
+
+.toast--error {
+  --toast-bg: #d64545;
+  --toast-fg: #fff;
+}
+
+@keyframes toast-out {
+  to {
+    opacity: 0;
+    transform: translateY(8px) scale(0.96);
+  }
+}
+
+/* ---------------- 命令面板 ---------------- */
+
+.palette-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  padding-top: 11vh;
+  background: rgba(12, 18, 32, 0.4);
+  /* 背后虚化：面板浮在内容之上这件事，靠模糊比靠阴影更省事也更清楚 */
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
+  animation: fade-in var(--dur-2) var(--ease-out);
+}
+
+.palette {
+  width: min(92vw, 540px);
+  max-height: 70vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 16px;
+  box-shadow: var(--shadow-lg);
+  animation: pop-in var(--dur-2) var(--ease-spring);
+}
+
+.palette-head {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 13px 15px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-muted);
+}
+
+.palette-input {
+  flex: 1;
+  min-width: 0;
+  border: none;
+  outline: none;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 14px;
+}
+
+.palette-list {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 6px;
+}
+
+.palette-group {
+  padding: 8px 10px 4px;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.4px;
+  color: var(--text-muted);
+}
+
+.palette-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  padding: 9px 11px;
+  border: none;
+  border-radius: 10px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  text-align: left;
+  cursor: pointer;
+  transition: background var(--dur-1), color var(--dur-1);
+}
+
+.palette-item svg {
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.palette-item--active {
+  background: var(--accent-soft);
+  color: var(--accent);
+}
+
+.palette-item--active svg {
+  color: var(--accent);
+}
+
+.palette-label {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.palette-hint {
+  flex-shrink: 0;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.palette-empty {
+  padding: 26px 16px;
+  text-align: center;
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+
+.palette-foot {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  padding: 9px 15px;
+  border-top: 1px solid var(--border);
+  background: var(--surface-soft);
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.palette-foot kbd {
+  font-size: 10px;
+}
 
 .drawer-scrim {
   position: fixed;

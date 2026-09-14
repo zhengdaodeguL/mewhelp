@@ -37,6 +37,14 @@ export interface StreamCallbacks {
 export interface ChatOptions {
   sessionId: string
   userId: string
+  /**
+   * 引用提问：用户明确指向的那一句。
+   *
+   * 不是"多给点信息" —— 被引用的往往是**较早**的消息，它很可能已经滑出
+   * 服务端的上下文窗口（`window_turns`），只靠会话历史根本看不到。
+   * 所以它必须跟着这一次请求显式发出去。
+   */
+  quote?: string
   signal?: AbortSignal
 }
 
@@ -54,6 +62,7 @@ export async function streamChat(
         message,
         session_id: options.sessionId,
         user_id: options.userId,
+        quote: options.quote ?? '',
       }),
       signal: options.signal,
     })
