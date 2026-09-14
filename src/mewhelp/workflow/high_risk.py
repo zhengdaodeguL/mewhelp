@@ -63,6 +63,12 @@ NEEDS_ADDRESS: frozenset[Intent] = frozenset({Intent.CHANGE_ADDRESS})
 #: 缺槽位时给用户的追问话术。写清"要什么、为什么"，
 #: 比一句"请提供更多信息"的转化率高得多。
 _PROMPTS: dict[tuple[Intent, str], str] = {
+    # 查订单 / 查物流也在这张表里，虽然它们走的是 Agent 而不是高风险子流程。
+    # 理由是一样的：缺订单号时该**追问**，不该把 None 当参数传给工具 ——
+    # 那样用户收到的是"没有查到这个订单号"，听起来像他报错了，
+    # 实际上他什么都没报错，只是系统没问。
+    (Intent.ORDER_QUERY, "order_id"): "请把订单号发我（形如 ORD-1007），我帮你查这笔订单的状态。",
+    (Intent.LOGISTICS_QUERY, "order_id"): "请把订单号发我（形如 ORD-1007），我看下这个包裹到哪了。",
     (Intent.REFUND_REQUEST, "order_id"): "可以帮你申请退款。请把订单号发我（形如 ORD-1007），我先确认一下这笔订单的状态和时效。",
     (Intent.RETURN_REQUEST, "order_id"): "可以帮你走退货。请把订单号发我（形如 ORD-1007），我确认下是否在退货窗口内。",
     (Intent.CANCEL_ORDER, "order_id"): "可以帮你取消。请把订单号发我（形如 ORD-1007），我需要确认它还没发货。",

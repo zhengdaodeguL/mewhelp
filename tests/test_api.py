@@ -497,7 +497,25 @@ def test_index_page_wires_to_real_api_routes(client):
     assert called, "产物里没有任何 /api/ 调用，客户端是不是没被打进去？"
 
     registered = {getattr(r, "path", "") for r in client.app.routes}
-    missing = sorted(p for p in called if p not in registered)
+
+    def is_served(path: str) -> bool:
+        """这个路径在后端有没有对应的路由。
+
+        带路径参数的调用在产物里长这样：`` `/api/sessions/${id}` `` ——
+        扫描只能扫到 `/api/sessions/`（模板表达式不在字符集里）。所以
+        **以斜杠结尾**的路径改为按前缀匹配，对应 FastAPI 的 `/api/sessions/{id}`。
+
+        只在结尾是斜杠时放宽：字面量调用永远不会以斜杠结尾，所以
+        "前端调了 /api/chat 而后端只有 /api/chat/sync"这种真错误依然会被抓住。
+        """
+        if path in registered:
+            return True
+        if not path.endswith("/"):
+            return False
+        stem = path.rstrip("/")
+        return any(r.startswith(stem + "/") for r in registered)
+
+    missing = sorted(p for p in called if not is_served(p))
     assert not missing, f"前端调了后端并不存在的接口：{missing}"
 
 
@@ -792,3 +810,88 @@ def test_frontend_builds_workspace_cards_from_real_payloads(client, tmp_path):
 
     # 卡片 id 稳定 —— 否则同一单问两遍会堆出一摞重复卡片
     assert got["mergedCount"] == len(cards), "同一批卡片合并后不该变多或变少"
+
+
+# ============================================================
+# 14. 导出：纯前端逻辑，但错了用户拿到的就是一份残缺的记录
+# ============================================================
+FRONTEND_EXPORT = _REPO_ROOT / "web" / "src" / "session-export.ts"
+
+_EXPORT_HARNESS = """
+import { sessionToMarkdown, exportFileName } from './session-export.ts';
+import fs from 'node:fs';
+
+const input = JSON.parse(fs.readFileSync(process.argv[2], 'utf-8'));
+console.log(JSON.stringify({
+  md: sessionToMarkdown(input.messages, input.options),
+  name: exportFileName(input.options.title, input.options.exportedAt),
+}));
+"""
+
+
+def test_frontend_export_keeps_the_conversation_and_drops_state_notices(tmp_path):
+    """导出的是**对话**，不是界面状态。
+
+    `notice` 类消息是界面上的提示条（"回答中断了，请重试"），它根本不是
+    客服说过的话。跟着导出会让人拿着一份记录去争论一句没人说过的话 ——
+    这类错误没有任何自动检查会拦住，所以在这里钉一条。
+
+    另外两件事一起验：标题要进文件、随附信息要能带上（工作区里的订单/物流）。
+    """
+    node = shutil.which("node")
+    if not node:
+        pytest.skip("环境里没有 node，跳过导出格式校验")
+    if not FRONTEND_EXPORT.is_file():
+        pytest.fail(f"导出模块不见了：{FRONTEND_EXPORT}")
+
+    (tmp_path / "session-export.ts").write_text(
+        FRONTEND_EXPORT.read_text(encoding="utf-8"), encoding="utf-8"
+    )
+    (tmp_path / "harness.mjs").write_text(_EXPORT_HARNESS, encoding="utf-8")
+
+    payload = {
+        "messages": [
+            {"id": "g", "role": "assistant", "kind": "normal", "content": "你好，我是客服助手"},
+            {"id": "u1", "role": "user", "kind": "normal", "content": "帮我查下订单 ORD-1002"},
+            {
+                "id": "a1",
+                "role": "assistant",
+                "kind": "normal",
+                "content": "订单 ORD-1002 当前状态：待发货。",
+                "turnId": "req_abc",
+            },
+            {"id": "n1", "role": "assistant", "kind": "notice", "content": "回答中断了，请重试。"},
+            {"id": "a2", "role": "assistant", "kind": "normal", "content": "   "},
+        ],
+        "options": {
+            "title": "查订单 / 物流",
+            "exportedAt": "2026-09-14T08:30:00+00:00",
+            "notes": "订单 ORD-1002（待发货）\n  合计 ¥168",
+        },
+    }
+    (tmp_path / "payload.json").write_text(
+        json.dumps(payload, ensure_ascii=False), encoding="utf-8"
+    )
+
+    proc = subprocess.run(
+        [node, str(tmp_path / "harness.mjs"), str(tmp_path / "payload.json")],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=60,
+    )
+    assert proc.returncode == 0, proc.stderr
+    got = json.loads(proc.stdout)
+    md = got["md"]
+
+    assert "# MewHelp 客服对话记录" in md
+    assert "查订单 / 物流" in md
+    assert "帮我查下订单 ORD-1002" in md
+    assert "**客服：**" in md and "**我：**" in md
+    assert "回答中断了" not in md, "界面提示条混进了对话记录"
+    assert "本次涉及的信息" in md and "¥168" in md
+    # 空内容不产生空段落
+    assert "\n\n\n\n" not in md
+    # 文件名要能直接落盘：标题里的斜杠不能变成目录分隔符
+    assert "/" not in got["name"] and "\\" not in got["name"]
+    assert got["name"].startswith("mewhelp-2026-09-14-") and got["name"].endswith(".md")

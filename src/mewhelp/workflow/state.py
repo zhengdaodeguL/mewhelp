@@ -54,6 +54,10 @@ class AgentState(TypedDict, total=False):
     user_id: str
     question: str          # 用户原话（半截话也算）
     history: list[Turn]    # 本次会话的历史轮次
+    #: 跨会话的用户档案（"最近关注的订单：ORD-1002"这类文本行）。
+    #: 和 history 是两个来源：history 是"这次聊了什么"（会被滑窗丢掉），
+    #: memories 是"这个用户是谁"（跨会话保留）。指代消解和生成都要用。
+    memories: list[str]
 
     # ---------------- ③ 指代消解 + 意图识别 ----------------
     resolved_question: str  # 补全后的完整问题
@@ -109,6 +113,7 @@ def new_state(
     user_id: str,
     question: str,
     history: list[Turn] | None = None,
+    memories: list[str] | None = None,
 ) -> AgentState:
     """构造一个干净的初始状态。
 
@@ -121,6 +126,7 @@ def new_state(
         user_id=user_id,
         question=question,
         history=list(history or []),
+        memories=list(memories or []),
         resolved_question="",
         tool_calls=[],
         path=[],

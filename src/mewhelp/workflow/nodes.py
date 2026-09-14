@@ -52,8 +52,9 @@ def make_resolve_node(deps) -> Any:
     def resolve_node(state: AgentState) -> dict[str, Any]:
         q = state.get("question", "")
         history = state.get("history", [])
+        memories = state.get("memories", [])
         try:
-            result = deps.resolver.resolve(q, history)
+            result = deps.resolver.resolve(q, history, memory=memories)
         except Exception as exc:  # noqa: BLE001 — 消解失败不该阻断问答
             from ..schemas import ResolveResult
 
@@ -79,6 +80,9 @@ def make_resolve_node(deps) -> Any:
                     resolved=result.resolved,
                     rewritten=result.rewritten,
                     substitutions=result.substitutions,
+                    # 记下"这一轮有几条用户档案参与"—— 排查"它怎么知道我的单号"
+                    # 时，这是唯一的线索
+                    memory_items=len(memories),
                 )
             ],
         }
@@ -276,6 +280,28 @@ def make_agent_node(deps) -> Any:
         from ..llm import extract_json
 
         question = state.get("resolved_question") or state.get("question", "")
+
+        # 缺必填槽位时先追问，而不是让 Agent 拿 None 去调工具。
+        # 不拦这一道，用户说"我的订单到哪了"会收到"没有查到这个订单号"——
+        # 他没报错任何东西，只是我们没问。这条判断和高风险子流程共用
+        # 同一张槽位表（`SlotExtraction.missing_for`），"哪些意图必须有订单号"
+        # 只能有一份定义。
+        missing = _missing_slots(state)
+        if missing:
+            from .high_risk import interrupt_prompt
+
+            prompt = interrupt_prompt(state.get("intent") or Intent.POLICY_FAQ, missing)
+            return {
+                "answer": prompt,
+                "interrupt_prompt": prompt,
+                "missing_slots": missing,
+                "handoff": False,
+                "path": [NodeName.AGENT.value],
+                "trace": [
+                    _step(NodeName.AGENT.value, skipped=True, missing=missing, reason="missing_slot")
+                ],
+            }
+
         specs = deps.tools.specs()
         calls: list[ToolCall] = []
         usage = TokenUsage()
@@ -346,6 +372,25 @@ def make_agent_node(deps) -> Any:
 def _brief(value: Any, limit: int = 400) -> str:
     text = str(value)
     return text if len(text) <= limit else text[:limit] + "…"
+
+
+def _missing_slots(state: AgentState) -> list[str]:
+    """这次请求走到 Agent 之前，还缺哪些必填槽位。
+
+    用的是**补全后**的问题再抽一次单号，这一点是必须的：指代消解（包括长期记忆
+    那一层）存在的意义就是把"我的订单"补成"订单 ORD-1002"。拿用户原话判，
+    记忆刚补上来的单号会被当成"缺失"，于是系统明明知道是哪一单，
+    却回一句"请把订单号发我"—— 记忆功能在这里就白做了。
+    """
+    intent = state.get("intent")
+    slots = state.get("slots")
+    if intent is None or slots is None:
+        return []
+    from .high_risk import extract_order_id
+
+    resolved = state.get("resolved_question") or state.get("question", "")
+    order_id = slots.order_id or extract_order_id(resolved)
+    return slots.model_copy(update={"order_id": order_id}).missing_for(intent)
 
 
 def _render_tool_answer(calls: list[ToolCall]) -> str:
@@ -525,6 +570,17 @@ def make_generate_node(deps) -> Any:
         context = retrieval.to_context() if retrieval else ""
         usage = TokenUsage()
 
+        # 用户档案作为**背景**注入，和知识库证据分开成两块。
+        # 分开是有意的：证据是"这次回答的依据"（自评要逐条核对它），
+        # 档案是"关于这个人的前提"（自评不该要求它出现在证据里）。
+        # 混在一块会让自评把"尺码：L"当成"证据里没有的数字"而误判不可信。
+        memories = state.get("memories") or []
+        memory_block = ""
+        if memories:
+            memory_block = "已知的用户信息：\n" + "\n".join(
+                f"- {m}" for m in memories
+            ) + "\n\n"
+
         try:
             resp = deps.llm.chat(
                 [
@@ -533,11 +589,17 @@ def make_generate_node(deps) -> Any:
                         "content": (
                             "你是电商客服。只根据下面给出的知识库证据回答，"
                             "不要引入证据之外的信息。证据不足时直接说无法确认。"
+                            "已知的用户信息可以用来理解用户在说哪一单、什么偏好，"
+                            "但它同样不是回答依据。"
                         ),
                     },
                     {
                         "role": "user",
-                        "content": f"知识库证据：\n{context}\n\n用户问题：{state.get('resolved_question') or state.get('question', '')}",
+                        "content": (
+                            f"{memory_block}"
+                            f"知识库证据：\n{context}\n\n"
+                            f"用户问题：{state.get('resolved_question') or state.get('question', '')}"
+                        ),
                     },
                 ],
                 task="generate",
@@ -556,13 +618,11 @@ def make_generate_node(deps) -> Any:
         # 生成前自评：不是等用户看出幻觉，而是发出去之前自己先校验一遍。
         # 注意它拦不住已经发生的幻觉，但能拦住"即将发出去"的那一次。
         selfeval = SelfEvalResult(grounded=True, coverage=1.0)
+        trace_err: str | None = None
         try:
             selfeval = deps.self_eval.evaluate(answer, context)
-        except Exception as exc:  # noqa: BLE001
-            usage = usage
+        except Exception as exc:  # noqa: BLE001 —— 自评挂了就当"没评过"，不能因此降级答复
             trace_err = str(exc)
-        else:
-            trace_err = None
 
         if not selfeval.grounded:
             return {

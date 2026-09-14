@@ -616,6 +616,10 @@ if missing:
 | 意图分类 | 兜底成 `policy_faq`（knowledge 出口，由闸门裁决） | `nlu/intent.py::_fallback` |
 | 指代消解 | 返回**原文**（宁可检索差一点，也不让整条请求断掉） | `nlu/coreference.py` |
 | 摘要生成 | 无摘要 + 完整滑窗继续；空摘要视为失败 | `memory/context.py::_summarize` |
+| 长期记忆读写 | 当作"没有档案 / 没记住"，记一条 warning；本轮答复照常 | `memory/store.py`（所有方法都收口在 try 里） |
+| 记忆抽取（模型） | 退回规则表（7 类模式），记忆功能降级但不消失 | `memory/extract.py::extract_candidates` |
+| 会话历史读写 | 读不到 = 没有历史；写不进 = 这一轮不落库（多轮上下文会断，但答复照常返回） | `api/service.py::SessionStore` |
+| 会话列表 / 恢复 | 返回空，界面退化成"新会话" | `api/service.py::SessionStore.list_sessions` |
 | 工具调用 | `ToolCall(ok=False, error=<ToolError>)`，不抛异常 | `tools/registry.py` |
 | ReAct 规划 | 收手（break），已调用的工具结果保留 | `nodes.py::make_agent_node` |
 | 检索节点 | 记 error + 一句人话答复（否则 handoff 会输出通用转人工，用户不知道发生了什么） | `nodes.py::make_retrieve_node` |
@@ -649,12 +653,14 @@ if missing:
 
 诚实记录，避免读者按错误预期验证：
 
-1. **`business_tool` 出口的答复没有接上工具结果。** `nodes.py::make_agent_node` 不写 `answer`，`make_generate_node` 的 prompt 只拼 `RetrievalResult.to_context()`，**不含 Agent 的工具返回**。实测（`python -m mewhelp.cli demo` 的第一题）："帮我查下订单 ORD-1002 到哪了" → `track_logistics` / `get_order` 都返回 `[OK]` → 答复却是通用的"抱歉，我暂时没有找到可以回答这个问题的依据"，状态 `转人工（self_eval_failed）`。（更早的一次实测里，同一个问题还触发了 mock ReAct 连续调用 `track_logistics` 达 `max_agent_steps=6` 次的现象 —— mock 的规划器不会主动 `finish`。接真实 LLM 后步数问题会缓解，但**答复不含工具结果**这个缺口依然在。）`tests/test_workflow.py` 只断言了这条路径的 `tool_calls`，没有断言答复内容，所以这个缺口没有被测试暴露。
+1. **业务工具出口的答复是确定性模板，不走模型。** `make_generate_node` 见到 `tool_calls` 就立刻走 `_render_tool_answer`，直接引用工具返回的 `status_label` / `note` 拼话术。好处是不会出现"工具说待付款、模型说已发货"这类自相矛盾；代价是灵活度低 —— 想在答复里加一句安抚话术得改模板而不是改 prompt。这是刻意的取舍，不是缺口。
 2. **只有精排策略的拒答准确率是 1.0000，其余三条是 0.0000（sparse 是 0.9833）。** 消融数据（`eval/artifacts/ablation.json`）：`dense` / `hybrid` 的拒答准确率 **0.0000**，`sparse` 0.9833，`hybrid_rerank` 1.0000。原因不是评测 bug：除精排外的三条策略，证据分都来自 RRF 的相对归一化（`raw_score / prior_max`），即"本查询最好的一条"恒等于 1.0，必然 ≥ 阈值 0.35，所以 `no_answer` 桶永远不会被分数拦下；`sparse` 之所以能到 0.9833，是因为那批问题在 BM25 侧零词面命中（`pairs = [... if s > 0]` 过滤后无证据）→ 走 `no_evidence`。**这个对比说明：精排除了排序，还提供了闸门赖以工作的绝对分数标尺** —— "要不要精排"不只是效果问题，也是"闸门能不能工作"的问题。
 3. **mock 精排的绝对分在个别查询上仍偏宽松。** 例如"你们在火星有仓库吗"实测 `top_score = 0.3906`（略高于 0.35，因为 "仓库" 与退货流程的片段有字面重叠），而 `low_coverage` 判据因该问题抽不出可加权实体（分母为 0）而跳过。这类边界案例是接真实 embedding / reranker 后需要重新校准阈值的地方。
 4. **契约与代码的两处出入**：`CONTRACT.md` §2.F 的图里有独立的 `rerank` 节点，实际没有（精排在 `RetrievalPipeline.retrieve()` 内部）；`domain.NodeName.RERANK` / `TOOL` 两个常量当前未被使用。
-5. **`nodes.py:494` 有一行自赋值 `usage = usage`**（自评 except 分支），无效果的死语句。
-6. **意图识别的"规则通道覆盖率"是真实盲区，我在评估集上量出了数字。** 检索侧的消融是干净的（上面 §5 那些数字都可复现），但 **意图识别没有进入评估**：`eval/run_eval.py` 只打召回/排序/拒答三组指标，从不读 `golden.jsonl` 里的 `expected_intent` 字段。我手动跑了 `IntentClassifier.classify()` 对 300 题的真实准确率：
+5. **会话历史与长期记忆接口没有鉴权。** 演示环境没有登录态，服务层每条读写都带 `user_id` 过滤（`SessionStore` / `MemoryStore` 的 delete/pin 都要求 owner 匹配），但 `user_id` 本身来自查询参数，防不住伪造。真实系统里它必须来自登录态。
+6. **`audit_log` 表建了、运行时没有写入路径。** 节点级审计目前只在内存里的 `Tracer`（`/api/trace/{request_id}`），重启后历史请求的调用树就查不到了。表结构本身完整（`tests/test_storage.py` 覆盖）—— 接上落库是下一件该做的事。
+7. **长期记忆在 mock 下是规则表抽取**（订单号 / 尺码 / 联系方式偏好 / 会员 / 称呼 / 备忘，7 类模式），自由表述（"我住杭州，一般周末在家"）要等真模型。进 prompt 的是**最近 8 条**、没做相关性排序：条目少时够用，量上来之后这里要换成按当前问题做向量召回。
+8. **意图识别的"规则通道覆盖率"是真实盲区，我在评估集上量出了数字。** 检索侧的消融是干净的（上面 §5 那些数字都可复现），但 **意图识别没有进入评估**：`eval/run_eval.py` 只打召回/排序/拒答三组指标，从不读 `golden.jsonl` 里的 `expected_intent` 字段。我手动跑了 `IntentClassifier.classify()` 对 300 题的真实准确率：
 
    - 全部 300 题：0.3933；只看四桶可答题（240）：**0.4875**。
    - 其中 **50/240 题会翻转"高风险 vs 非高风险"的出边判断**（比如「退款的时间窗从什么时候开始算？」期望 `policy_faq` 被判成 `refund_request`，「一个订单最多能改几次地址？」期望 `change_address` 被判成 `order_query`）。

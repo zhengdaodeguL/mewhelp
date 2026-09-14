@@ -26,9 +26,23 @@ from collections.abc import AsyncIterator, Iterator, Sequence
 from dataclasses import dataclass
 from typing import Any
 
+from sqlalchemy import select
+
 from ..config import Settings, get_settings
-from ..schemas import ConversationResult, KbChunk, RetrievalResult, TokenUsage, Turn
-from ..storage import SessionRow, session_scope
+from ..memory.extract import extract_candidates, prompt_lines, used_memory_ids
+from ..memory.store import MemoryStore
+from ..schemas import (
+    MEMORY_KIND_LABELS,
+    ConversationResult,
+    KbChunk,
+    RetrievalResult,
+    SessionDetail,
+    SessionMessage,
+    SessionSummary,
+    TokenUsage,
+    Turn,
+)
+from ..storage import SessionRow, ensure_utc, session_scope
 from ..workflow.state import AgentState, new_state
 
 logger = logging.getLogger("mewhelp.api")
@@ -51,6 +65,7 @@ CHUNK_SIZES: tuple[int, ...] = (3, 2, 4)
 #: SSE 事件名。前端按这些名字解析，**不要改**。
 EVENT_META = "meta"
 EVENT_EVIDENCE = "evidence"
+EVENT_MEMORY = "memory"
 EVENT_TOOL = "tool"
 EVENT_TOKEN = "token"
 EVENT_DONE = "done"
@@ -148,6 +163,84 @@ def encode_turns(turns: Sequence[Turn]) -> str:
     return json.dumps([t.model_dump(mode="json") for t in turns], ensure_ascii=False)
 
 
+#: 会话标题长度上限。历史列表一行放不下更多；截断比换行好 ——
+#: 列表要能一眼扫过去，两行的条目会毁掉这个节奏。
+TITLE_CHARS = 24
+
+#: 列表里那行灰色预览的长度
+PREVIEW_CHARS = 48
+
+
+def _flatten(text: str) -> str:
+    """把一段可能带换行/Markdown 记号的文本压成一行。
+
+    标题和预览都会出现在**列表**里，而列表里的换行会把一条撑成三行高；
+    `**` 之类的记号则是写给渲染器的，直接显示出来就是噪声。
+    """
+    line = " ".join((text or "").split())
+    return line.replace("**", "").replace("__", "").lstrip("#").strip()
+
+
+def make_title(text: str, limit: int = TITLE_CHARS) -> str:
+    """由第一句用户消息推出会话标题。
+
+    用用户原话而不是让模型总结：历史列表要的是"认得出这是哪次对话"，
+    用户自己那句话永远比一句概括更好认，而且这是零成本、零延迟的。
+    """
+    line = _flatten(text)
+    if not line:
+        return ""
+    return line[:limit] + ("…" if len(line) > limit else "")
+
+
+def _title_from(turns: Sequence[Turn]) -> str:
+    """从一串轮次里推标题：优先第一句用户消息，没有就退回第一条内容。"""
+    for t in turns:
+        if t.role == "user" and t.content.strip():
+            return make_title(t.content)
+    for t in turns:
+        if t.content.strip():
+            return make_title(t.content)
+    return ""
+
+
+def _preview_from(turns: Sequence[Turn]) -> str:
+    """列表里的预览行：最后一条助手答复的开头。"""
+    for t in reversed(list(turns)):
+        if t.role == "assistant" and t.content.strip():
+            line = _flatten(t.content)
+            return line[:PREVIEW_CHARS] + ("…" if len(line) > PREVIEW_CHARS else "")
+    return ""
+
+
+def to_session_messages(turns: Sequence[Turn]) -> list[SessionMessage]:
+    """库里的轮次 → 恢复对话要用的消息列表。
+
+    两道过滤，缺一不可：
+
+      1. **只留 user / assistant**。tool、system 轮是给模型看的，界面里
+         没有它们的容身之处（也没有对应的气泡样式）。
+      2. **只回用户视角的字段**。`intent` / `exit` / `path` 就存在
+         `Turn.metadata` 里，是审计用的；顺手把它们带出去，历史一恢复
+         就等于把这些内部信息又摆回了界面上。字段的白名单在这里显式写死，
+         而不是"刨掉几个已知的 key" —— 后者在下次有人加字段时会漏。
+    """
+    out: list[SessionMessage] = []
+    for t in turns:
+        if t.role not in ("user", "assistant"):
+            continue
+        meta = t.metadata or {}
+        out.append(
+            SessionMessage(
+                role=t.role,
+                content=t.content,
+                handoff=bool(meta.get("handoff")) if t.role == "assistant" else False,
+                request_id=str(meta.get("request_id") or ""),
+            )
+        )
+    return out
+
+
 class SessionStore:
     """会话历史的读写。
 
@@ -182,6 +275,10 @@ class SessionStore:
 
         截断保留**最近的**轮次：滑窗和摘要都只看近处，丢最早的那些对回答
         影响最小；反过来（丢最近的）会让多轮指代立刻失效。
+
+        顺带维护标题：只在标题为空时写一次（第一次有内容的时候）。
+        每次都重算的话，用户聊到第三轮会发现历史列表里那条的名字变了 ——
+        列表跳动比名字取得不完美更烦人。
         """
         if not session_id or not turns:
             return []
@@ -192,6 +289,7 @@ class SessionStore:
                     row = SessionRow(
                         session_id=session_id,
                         user_id=user_id or "",
+                        title="",
                         summary="",
                         turns_json="[]",
                         summarized_turns=0,
@@ -203,6 +301,8 @@ class SessionStore:
                 if len(history) > self.max_turns:
                     history = history[-self.max_turns :]
                 row.turns_json = encode_turns(history)
+                if not (row.title or "").strip():
+                    row.title = _title_from(history)
                 if user_id:
                     row.user_id = user_id
             return history
@@ -210,6 +310,113 @@ class SessionStore:
             self.last_error = f"append failed: {exc!r}"
             logger.warning("[api] 会话历史写入失败（本次答复照常返回）：%s", exc)
             return []
+
+    # ------------------------------------------------------------------
+    # 历史列表 / 恢复 / 改名 / 删除
+    # ------------------------------------------------------------------
+    def list_sessions(self, user_id: str, *, limit: int = 50) -> list[SessionSummary]:
+        """一个用户的历史会话，最近更新的排前面。
+
+        按 `user_id` 过滤不是可选项：演示环境没有登录态，这个参数是眼下
+        **唯一**的所有权边界 —— 少了它，谁都能列出别人的会话标题。
+        """
+        if not user_id:
+            return []
+        try:
+            with session_scope(settings=self.settings) as s:
+                rows = list(
+                    s.scalars(
+                        select(SessionRow)
+                        .where(SessionRow.user_id == user_id)
+                        .order_by(SessionRow.updated_at.desc(), SessionRow.session_id.desc())
+                        .limit(max(1, int(limit)))
+                    )
+                )
+                out: list[SessionSummary] = []
+                for row in rows:
+                    turns = decode_turns(row.turns_json)
+                    if not turns:
+                        # 空会话不进列表：它是"点了新会话又没说啥"留下的壳子，
+                        # 列出来只会让历史栏里堆一串"未命名"
+                        continue
+                    out.append(
+                        SessionSummary(
+                            session_id=row.session_id,
+                            title=(row.title or "").strip() or _title_from(turns) or "未命名会话",
+                            turns=len(turns),
+                            preview=_preview_from(turns),
+                            updated_at=ensure_utc(row.updated_at),
+                        )
+                    )
+                return out
+        except Exception as exc:  # noqa: BLE001 — 列表拉不出来，界面就当没有历史
+            self.last_error = f"list failed: {exc!r}"
+            logger.warning("[api] 会话列表读取失败：%s", exc)
+            return []
+
+    def get_session(self, session_id: str, *, user_id: str = "") -> SessionDetail | None:
+        """取一次会话的完整对话（已按用户视角过滤）。
+
+        `user_id` 传了就顺带校验归属；不传表示"按 id 取"（内部调用和
+        测试用）。这两条路径合并成一个方法，是为了避免出现两份实现 ——
+        过滤逻辑一旦分叉，早晚有一边会漏掉内部字段。
+        """
+        if not session_id:
+            return None
+        try:
+            with session_scope(settings=self.settings) as s:
+                row = s.get(SessionRow, session_id)
+                if row is None:
+                    return None
+                if user_id and (row.user_id or "") != user_id:
+                    return None
+                turns = decode_turns(row.turns_json)
+                return SessionDetail(
+                    session_id=row.session_id,
+                    title=(row.title or "").strip() or _title_from(turns) or "未命名会话",
+                    updated_at=ensure_utc(row.updated_at),
+                    messages=to_session_messages(turns),
+                )
+        except Exception as exc:  # noqa: BLE001
+            self.last_error = f"get failed: {exc!r}"
+            logger.warning("[api] 会话读取失败：%s", exc)
+            return None
+
+    def rename(self, session_id: str, title: str, *, user_id: str = "") -> bool:
+        """改名。空标题是合法输入（表示"恢复成自动生成的标题"）。"""
+        if not session_id:
+            return False
+        try:
+            with session_scope(settings=self.settings) as s:
+                row = s.get(SessionRow, session_id)
+                if row is None or (user_id and (row.user_id or "") != user_id):
+                    return False
+                row.title = _flatten(title)[:TITLE_CHARS + 8]
+                return True
+        except Exception as exc:  # noqa: BLE001
+            self.last_error = f"rename failed: {exc!r}"
+            logger.warning("[api] 会话改名失败：%s", exc)
+            return False
+
+    def delete(self, session_id: str, *, user_id: str = "") -> bool:
+        """删掉一次会话。
+
+        只删这一行 —— 记忆在另一张表（`user_memory`），**不会**被连带删掉。
+        这正是两张表分开的理由：用户清空的是"聊天记录"，不是"你认识我"。
+        """
+        if not session_id:
+            return False
+        try:
+            with session_scope(settings=self.settings) as s:
+                row = s.get(SessionRow, session_id)
+                if row is None or (user_id and (row.user_id or "") != user_id):
+                    return False
+                s.delete(row)
+                return True
+        except Exception as exc:  # noqa: BLE001
+            self.last_error = f"delete failed: {exc!r}"
+            logger.warning("[api] 会话删除失败：%s", exc)
+            return False
 
 
 # ============================================================
@@ -351,6 +558,8 @@ class ChatService:
         tracer: Any | None = None,
         cache: ResultCache | None = None,
         settings: Settings | None = None,
+        memory: MemoryStore | None = None,
+        llm: Any | None = None,
     ) -> None:
         self.graph = graph
         self.settings = settings or get_settings()
@@ -361,11 +570,20 @@ class ChatService:
         self.sessions = sessions if sessions is not None else SessionStore(self.settings)
         self.tracer = tracer
         self.cache = cache if cache is not None else ResultCache()
+        #: 长期记忆（跨会话的用户档案）。默认**关闭** —— 不注入就当没有这回事，
+        #: 这样单测里塞一张假图进来跑流程时，不会悄悄去连真实数据库。
+        self.memory = memory
+        #: 抽取记忆用的模型。没给就只读不写（读是纯查询，写要花一次模型调用）。
+        self.llm = llm
 
     # ------------------------------------------------------------------
     def ask(self, *, user_id: str, session_id: str, message: str) -> ConversationResult:
         text = (message or "").strip()
         history = self.sessions.load(session_id)
+        # 用户档案在跑图之前取一次：指代消解要靠它认出"我的订单"是哪一单。
+        # 失败时返回空列表（读不到记忆 = 没有记忆），不影响这一轮的任何流程。
+        memories = self.memory.for_prompt(user_id) if self.memory else []
+        memory_lines = prompt_lines(memories)
 
         # 两道输入护栏。它们不跑图，但照样落库、照样缓存 ——
         # 否则"用户说了句废话"这条记录在会话里会凭空消失，多轮上下文会断。
@@ -401,6 +619,7 @@ class ChatService:
                     user_id=user_id,
                     question=text,
                     history=list(history),
+                    memories=memory_lines,
                 )
             )
         except Exception as exc:  # noqa: BLE001
@@ -451,7 +670,41 @@ class ChatService:
         self.cache.put(CachedRun(result=result, retrieval=retrieval))
         self._record_trace(result)
         self._persist(result)
+        self._memorize(result)
         return result
+
+    def _memorize(self, result: ConversationResult) -> None:
+        """把这一轮里"值得长期记住的东西"写进用户档案，并把最新档案挂回结果。
+
+        顺序是有讲究的，三步不能换：
+
+          1. **先记命中**。判断"这条记忆有没有被用上"要拿**注入时**那份档案
+             和 `resolved_question` 比（补进去的那个单号就是记忆的功劳）。
+             放到抽取之后做的话，抽取刚写进去的新值会被算成"被用上了" ——
+             自己给自己记功，这个计数就再也没有意义了。
+          2. **再抽新记忆**。抽取永远只从**用户这句话**里抽：档案是"关于这个人
+             的事实"，助手说过什么不算。
+          3. **最后回读全量**。推给界面的是这一轮之后该用户的完整档案，
+             前端拿它直接替换面板，不需要做增量合并 —— 增量合并漏掉一次事件，
+             面板就会和真实记忆永久对不上，而且没人会发现。
+
+        整个方法包在 try 里：记忆是锦上添花，它出任何问题都不该让这一轮答复
+        （已经算完了）变成错误。
+        """
+        if self.memory is None or not result.user_id:
+            return
+        try:
+            injected = self.memory.for_prompt(result.user_id)
+            self.memory.mark_used(
+                result.user_id,
+                used_memory_ids(injected, result.question, result.resolved_question),
+            )
+            if self.llm is not None:
+                candidates = extract_candidates(self.llm, result.question)
+                self.memory.remember_many(result.user_id, candidates)
+            result.memories = self.memory.list(result.user_id)
+        except Exception as exc:  # noqa: BLE001 —— 记忆失败不影响答复
+            logger.warning("[api] 记忆更新失败（本轮答复不受影响）：%s", exc)
 
     def _record_trace(self, result: ConversationResult) -> None:
         """把 state 里攒的 TraceStep 交给 Tracer，喂给 `GET /api/trace/{id}`。
@@ -576,6 +829,32 @@ def tool_payload(result: ConversationResult) -> list[dict[str, Any]]:
     return payload
 
 
+def memory_payload(result: ConversationResult) -> dict[str, Any]:
+    """用户档案。
+
+    推的是**全量**而不是"本轮新增/变化"：前端拿它直接替换面板状态即可。
+    增量同步看着更省，但它要求前后端对"什么算一次变化"达成一致 ——
+    一旦某次事件丢了，面板和真实记忆就会永久对不上，而且没有任何报错。
+
+    `mem_key` / `user_id` 这类内部口径不在这里：面板要展示的就是
+    id、类型、内容、是否钉住、被用上过几次。
+    """
+    return {"items": [memory_to_public(m) for m in result.memories]}
+
+
+def memory_to_public(item: Any) -> dict[str, Any]:
+    """一条记忆 → 界面能直接渲染的字典。
+
+    `kind_label` 由服务端算好一起下发，而不是让前端自己维护一张
+    "order → 关注的订单"的映射表：那张表是**产品文案**，两处各写一份，
+    迟早会出现"服务端日志写'关注的订单'、界面显示'订单'"的不一致，
+    而且没有任何测试会因此失败。
+    """
+    data = item.model_dump(mode="json")
+    data["kind_label"] = MEMORY_KIND_LABELS.get(item.kind, "记忆")
+    return data
+
+
 def done_payload(result: ConversationResult) -> dict[str, Any]:
     return {
         "answer": result.answer,
@@ -589,10 +868,15 @@ def done_payload(result: ConversationResult) -> dict[str, Any]:
 async def stream_events(
     result: ConversationResult, *, sleep: float = STREAM_CHUNK_SLEEP
 ) -> AsyncIterator[dict[str, str]]:
-    """按 meta → evidence → tool* → token* → done 的顺序推事件。
+    """按 meta → evidence → memory? → tool* → token* → done 的顺序推事件。
 
-    顺序是硬约束，不只是为了好看：前端靠"先拿到 path 和证据、再逐字收答复"
+    顺序是硬约束，不只是为了好看：前端靠"先拿到路径和证据、再逐字收答复"
     来布局（左侧对话框 / 右侧检视面板）。顺序一乱，检视面板就会漏掉内容。
+
+    `memory` 事件只在**该用户确实有档案**时才推（新用户一个事件都不多推）：
+    前端因此可以把"收到 memory 事件"直接当成"面板该更新了"的信号，
+    不必自己判断"这次是不是空列表"。也正因如此，`test_stream_events_on_short_answer`
+    里那个没有任何记忆的结果，事件序列仍然是老的四件套。
 
     逐字推送是**事后切块**的：图本身是同步跑完的（mock 下几十毫秒），
     想让它看起来像流式，只能在这里人为放慢节奏。真接了流式模型之后，
@@ -600,6 +884,8 @@ async def stream_events(
     """
     yield sse_event(EVENT_META, meta_payload(result))
     yield sse_event(EVENT_EVIDENCE, evidence_payload(result))
+    if result.memories:
+        yield sse_event(EVENT_MEMORY, memory_payload(result))
     for payload in tool_payload(result):
         yield sse_event(EVENT_TOOL, payload)
     for piece in chunk_text(result.answer):
@@ -615,6 +901,7 @@ __all__ = [
     "CHUNK_SIZES",
     "EVENT_META",
     "EVENT_EVIDENCE",
+    "EVENT_MEMORY",
     "EVENT_TOOL",
     "EVENT_TOKEN",
     "EVENT_DONE",
@@ -628,9 +915,13 @@ __all__ = [
     "done_payload",
     "encode_turns",
     "evidence_payload",
+    "make_title",
+    "memory_payload",
+    "memory_to_public",
     "meta_payload",
     "result_from_state",
     "sse_event",
     "stream_events",
+    "to_session_messages",
     "tool_payload",
 ]

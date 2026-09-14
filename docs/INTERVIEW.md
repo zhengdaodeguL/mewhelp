@@ -749,6 +749,13 @@ if merged.status in (APPROVED, REJECTED, MERGED):
 | `tools/business.py::_resolve_today` 为什么夹具带 `as_of` | 否则"正好第 30 天可退"这条用例明天失效，CI 变成薛定谔的红 |
 | `memory/context.py` 的 `PREVIOUS_HEADER` / `NEW_TURNS_HEADER` 为什么被测试引用 | 段名一改测试就炸，防止增量摘要悄悄退化成全量重摘 |
 | `memory/context.py::_coverage_index` 为什么不拿 `summarized_turns + len(window)` 反推 | 窗口没长满时会算多 → 早期轮次被永久跳过摘要（静默丢信息） |
+| `memory/store.py` 为什么和 `SessionRow` 分成两张表 | 生命周期不同：删会话（清聊天记录）不该顺手删掉用户档案，混表后一句级联删除就出事 |
+| `memory/store.py::_enforce_limit` 只淘汰没钉住的条目 | 钉住是用户明确的"这条别删"，自动清理越过它比不清理更糟 |
+| `ChatService._memorize` 为什么先 `mark_used` 再抽取 | 顺序反了会把刚写进去的新值算成"被用上" → 自己给自己记功，`hits` 失去意义 |
+| `nlu/coreference.py::_resolve_from_memory` 的三个前置条件缺一不可 | 补错比不补更糟：补出来的句子读起来是通的，用户看到的是自信但错误的答案 |
+| `workflow/nodes.py::_missing_slots` 为什么用 `resolved_question` 再抽一次单号 | 用原话判会让记忆刚补上的单号被当成"缺失"，把正确答案换成一句反问 |
+| `storage/db.py::_add_missing_columns` 为什么不用 Alembic | 一个进程一个 SQLite 文件，为"加列"引迁移框架和版本表，维护成本大于它挡住的风险；真要改列名/拆表时再上 |
+| `storage/db.py::ensure_utc` 补的是什么 | SQLite 不存时区，读出来是朴素 datetime；`isoformat()` 出来的字符串没有时区标记时，JS 会按**本地**解析 → "3 分钟前"变成"8 小时前"，而且同一个列表里有的是 `Z`、有的没有 |
 | `flywheel/store.py::_stable` 和 `hash()` 的区别 | 同上第一条，但后果是"飞轮每次重启多一堆重复条目" |
 | `workflow/nodes.py` 里 Agent 拦住高风险工具后做了什么 | 写一条 `ToolCall(ok=False, error="HIGH_RISK_REQUIRES_FLOW")` 并 `break` |
 | `workflow/graph.py::build_graph` 为什么把 checkpointer 写回 `deps` | 高风险节点要知道"这次编译有没有持久化"，决定挂起还是追问收尾 |
@@ -760,6 +767,7 @@ if merged.status in (APPROVED, REJECTED, MERGED):
 ### 三个"要不要主动说"的判断
 
 - **要主动说**：Q15 里那个"mock 精排给无关问题打 0.39"的实测问题。主动暴露一个自己发现的问题，比被问出来强得多 —— 而且它证明你真的跑过自己的系统。
-- **要主动说**：`business_tool` 出口没有接上工具返回（Q3 的追问里提到）。这是真实缺口，`tests/test_workflow.py` 没覆盖到。
+- **要主动说**：`business_tool` 出口的答复是**确定性模板**（`_render_tool_answer` 直接引用工具返回的 `status_label` / `note`），不走模型。好处是不会出现"工具说待付款、模型说已发货"，代价是灵活度低。这是刻意的取舍，不是缺口。
+- **要主动说**：会话与记忆接口**没有鉴权**，所有权只靠 `user_id` 查询参数。演示环境没有登录态，服务层每条读写都带 `user_id` 过滤，但防不住伪造 —— 真实系统里它必须来自登录态。
 - **要主动说**：拒答准确率那一列的反差（`dense` / `hybrid` 0.0000 vs `hybrid_rerank` 1.0000）以及它的原因。这是"跑过消融才看得见"的东西，主动讲它能证明你不只是照着教科书搭了一遍。
 - **不要主动展开**：`dense` 单路 Recall@5（0.8743）低于 `sparse`（0.9181）这件事。它值得知道，但展开讨论会变成"mock embedder 没有语义能力"这个偏题的方向 —— 除非面试官问到 mock 与真实模型的差距（那正好是 Q10 的追问）。

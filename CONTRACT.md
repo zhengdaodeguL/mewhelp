@@ -273,33 +273,84 @@ GET  /api/flywheel/pending
 POST /api/flywheel/review  {record_id, approved, reviewer, answer}
 GET  /api/health
 GET  /api/trace/{request_id}
+# 会话历史（所有权靠 user_id 查询参数，没有鉴权 —— 见 README 已知限制）
+GET    /api/sessions?user_id=            → 列表（标题 / 轮数 / 预览 / 更新时间）
+GET    /api/sessions/{id}?user_id=       → 恢复对话（只回用户视角字段）
+PATCH  /api/sessions/{id}?user_id=       {title}  重命名
+DELETE /api/sessions/{id}?user_id=       → 删除（不动长期记忆）
+# 长期记忆
+GET    /api/memories?user_id=            → 全部档案（钉住的排前面）
+POST   /api/memories                     {user_id, text, kind} 用户自己写一条（默认钉住）
+PATCH  /api/memories/{id}                {user_id, pinned}
+DELETE /api/memories/{id}?user_id=
 GET  /                  服务 src/mewhelp/api/static/index.html
 ```
 SSE 事件格式（**前端按这个解析，不要改**）：
 ```
-event: meta    data: {"request_id":..,"intent":..,"exit":..,"path":[..]}
-event: token   data: {"text": "..."}
-event: tool    data: {"name":..,"ok":..,"result":..}
-event: evidence data: {"chunks":[{"chunk_id":..,"title":..,"score":..}]}
-event: done    data: {"answer":..,"usage":{..},"latency_ms":..,"handoff":..}
-event: error   data: {"message":..}
+event: meta     data: {"request_id":..,"intent":..,"exit":..,"path":[..]}
+event: evidence data: {"chunks":[{"chunk_id":..,"title":..,"score":..,"snippet":..}]}
+event: memory   data: {"items":[{"id":..,"kind":..,"kind_label":..,"text":..,"pinned":..,"hits":..}]}
+event: tool     data: {"name":..,"ok":..,"result":..}
+event: token    data: {"text": "..."}
+event: done     data: {"answer":..,"usage":{..},"latency_ms":..,"handoff":..}
+event: error    data: {"message":..}
 ```
+顺序是硬约束：`meta → evidence → memory? → tool* → token* → done`。
+`memory` 只在**该用户确实有档案**时才推 —— 前端因此可以把"收到这个事件"
+直接当成"记忆面板该更新了"的信号，不必自己判断空列表。
+推的是**全量**档案而不是增量：增量一旦漏掉一次事件，面板和真实记忆就会
+永久对不上，而且没有任何报错。
 
 ### J. 存储 `storage/`
 ```python
 # storage/db.py
 def get_engine(settings=None) -> Engine        # sqlite 或 mysql+pymysql
-def init_db(engine) -> None                    # 建表
+def init_db(engine) -> None                    # 建表 + 给老库补新列（ALTER TABLE ADD COLUMN）
+def ensure_utc(dt) -> datetime                 # 读出来的朴素时间补上 UTC 时区
 # storage/models.py  —— SQLAlchemy 2.0 DeclarativeBase
-class KbChunkRow  (chunk_id PK, doc_id, title, breadcrumb_json, text, keywords_json, is_table, source_path)
-class AuditLogRow (id PK, request_id, session_id, user_id, node, payload_json, tokens_in, tokens_out, created_at)
-class SessionRow  (session_id PK, user_id, summary, turns_json, updated_at)
-class FlywheelRow (record_id PK, session_id, question, resolved_question, intent, source,
-                   refusal_reason, snapshot_json, ask_count, status, reviewer, answer, created_at, reviewed_at)
-class FeedbackRow (id PK, session_id, request_id, thumbs_down, comment, created_at)
+class KbChunkRow   (chunk_id PK, doc_id, title, breadcrumb_json, text, keywords_json, is_table, source_path)
+class AuditLogRow  (id PK, request_id, session_id, user_id, node, payload_json, tokens_in, tokens_out, created_at)
+class SessionRow   (session_id PK, user_id, title, summary, turns_json, updated_at)
+class UserMemoryRow(id PK, user_id, kind, mem_key, text, source, pinned, hits, created_at, updated_at,
+                    UNIQUE(user_id, mem_key))
+class FlywheelRow  (record_id PK, session_id, question, resolved_question, intent, source,
+                    refusal_reason, snapshot_json, ask_count, status, reviewer, answer, created_at, reviewed_at)
+class FeedbackRow  (id PK, session_id, request_id, thumbs_down, comment, created_at)
 ```
 
-### K. 数据文件
+`session` 与 `user_memory` **必须是两张表**：前者的生命周期由用户决定
+（"清空聊天记录"），后者跨会话保留。混在一张表里，一句级联删除就会让用户
+发现自己写下的备忘跟着聊天记录一起没了。
+
+### K. 长期记忆 `memory/`
+```python
+# memory/context.py —— 会话内上下文（不在这里展开，见 §2.C）
+# memory/store.py
+class MemoryStore:
+    def list(user_id, *, limit=None) -> list[MemoryItem]
+    def for_prompt(user_id, *, limit=None) -> list[MemoryItem]   # 进 prompt 的那几条（默认 8）
+    def upsert(user_id, *, kind, text, key="", source="auto", pinned=False) -> MemoryItem | None
+    def remember(user_id, candidate, *, source="auto", pinned=False) -> MemoryItem | None
+    def delete(user_id, memory_id) -> bool          # 必须带 user_id（所有权校验）
+    def set_pinned(user_id, memory_id, pinned) -> bool
+    def mark_used(user_id, memory_ids) -> int       # "真的被用上"才计数
+# memory/extract.py
+def extract_candidates(llm, question) -> list[MemoryCandidate]   # task="memory"，失败退回规则
+def extract_by_rules(question) -> list[MemoryCandidate]
+def used_memory_ids(memories, question, resolved_question) -> list[int]
+```
+
+契约要点：
+* 抽取走 `LLMClient`（`task="memory"`），mock 与真模型**共用同一张规则表** ——
+  两处各写一套会出现"离线能记住、接上真模型就忘"。
+* 只记**稳定的事实**（尺码 / 称呼 / 联系偏好 / 会员 / 关注的订单 / 用户写的备忘），
+  不记一次性诉求（"我要退款"）和任何提问本身。
+* `(user_id, mem_key)` 唯一：同键是**更新**（去重靠数据库约束，不是"先查再写"）。
+* `hits` 记的是"帮上忙几次"：判据是某个值出现在**补全后**的问题里、却不在用户
+  原话里。每轮被塞进 prompt 不算。
+* 上限：每用户 50 条，超出淘汰最久未更新的**未钉住**条目。
+
+### L. 数据文件
 ```
 data/knowledge/*.md              # 知识库原文（按标题层级 + 表格写，供切分）
 data/fixtures/orders.json        # 模拟订单，至少 8 单，覆盖各状态（待发货/已发货/已签收/已取消）

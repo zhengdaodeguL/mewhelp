@@ -2,6 +2,9 @@
 
 这是整条链路里"省一次模型调用、又最不容易被替代"的一步。分层与每层的边界：
 
+  ⓪ 长期记忆里有"他最近关注的那一单"，而这句话里没报单号
+      （"我的订单到哪了"）→ 直接补进去。这一层用不上指代规则，因为句子里
+      连指代词都没有；它靠的是"系统记得这个用户"，而不是"句子里有线索"。
   ① 量词自证类型（"这单"=订单、"这款"=商品）
       补什么完全确定，规则直接改写，一次模型调用都不花。
   ② 句内 / 上下文原文 / 历史里有实体
@@ -33,6 +36,7 @@ from __future__ import annotations
 
 import logging
 import re
+from collections.abc import Sequence
 
 from ..config import get_settings
 from ..llm import build_llm
@@ -125,6 +129,23 @@ _DOMAIN_PREFIX = {_DOMAIN_ORDER: "订单 "}
 #: "订单 ORD-1001 那单能退吗"而不是"…1001 能退吗" —— 前者语义没有丢失。
 _DEMONSTRATIVE_MEASURE_RE = re.compile(r"^[那这](单|订单|笔|款|个|件)$")
 
+#: 长期记忆里"最近关注的订单"那一条的固定前缀。
+#:
+#: 这里刻意**再写一份字面量**而不是从 `memory.extract` 导入：NLU 层不该依赖
+#: 记忆层。依赖方向一反，"没有记忆也能跑"这条前提就不成立了 —— 消解在评估
+#: 脚本里是单独跑的，那时根本没有记忆存储。两边保持一致由测试钉住
+#: （`test_memory_extract_and_coreference_share_the_order_prefix`）。
+_MEMORY_ORDER_PREFIX = "最近关注的订单："
+
+#: 用户明确指向"自己那笔单子"的说法。
+#:
+#: 只有这类说法才允许用记忆补全。"这单能退吗"里的"这单"有自己的指代规则
+#: （按语义域从历史里找），拿记忆去补反而是错的 —— 用户说的是他刚才提过的
+#: 那一单，不是记忆里更早的那一单。
+_OWN_ORDER_RE = re.compile(
+    r"我的(?:订单|单子|单|快递|包裹|货)|我那(?:个)?(?:订单|单)|上次那单|还是那单|之前那单"
+)
+
 
 def _replacement_for(pronoun: str, entity: str, domain: str, prefix: str) -> str:
     """指代词 → 补全文本。
@@ -155,6 +176,7 @@ class CoreferenceResolver:
         question: str,
         history: list[Turn] | None = None,
         context: str = "",
+        memory: Sequence[str] | None = None,
     ) -> ResolveResult:
         """三层入口。任何一层给出确定结论就返回，异常一律降级成原文。
 
@@ -162,6 +184,11 @@ class CoreferenceResolver:
         已经被 memory 层压成摘要了（`window_turns` 之外只剩一句话的 summary），
         "最近在谈的是商品还是订单"这个关键信息会丢。调用方手上有原文时传进来，
         规则层就能少一次瞎猜。不传也不影响正确性，只是可能多问一次模型。
+
+        `memory` 是**跨会话**的用户档案（"最近关注的订单：ORD-1002"这类文本行）。
+        它回答的是 history 回答不了的问题：用户新开一个会话直接问"我的订单到哪了"，
+        这时历史是空的，而系统其实知道他指的是哪一单。两者都是追加式参数，
+        不传就是原来的行为 —— 旧的调用方一行都不用改。
         """
         original = question or ""
         turns = list(history or [])
@@ -170,6 +197,13 @@ class CoreferenceResolver:
             return self._noop(original)
 
         try:
+            # 第零层：用户没报单号，但档案里记着"他最近关注哪一单"。
+            # 放在最前面，是因为这句话里往往连指代词都没有
+            # （"我的订单到哪了"），后面的指代规则整个派不上用场。
+            from_memory = self._resolve_from_memory(original, memory or ())
+            if from_memory is not None:
+                return from_memory
+
             # 第一层：量词自带类型（"这单"=订单、"这款"=商品）时补什么完全确定，
             # 连语义域都不用猜，一次模型调用都省掉。
             typed = self._self_typed_domain(original)
@@ -209,6 +243,70 @@ class CoreferenceResolver:
             if pron in question:
                 return domain
         return None
+
+    # ------------------------------------------------------------------
+    # 第零层：长期记忆
+    # ------------------------------------------------------------------
+    @staticmethod
+    def memory_order_id(memory: Sequence[str]) -> str | None:
+        """从记忆文本里取出"最近关注的订单"单号。
+
+        只认带固定前缀的那一条，不在整段记忆里瞎找单号：记忆里可能同时存着
+        "常用地址：杭州市 1001 号"这种东西，全文 findall 迟早会把门牌号
+        当成订单号补进去。
+        """
+        for line in memory or ():
+            text = str(line or "")
+            if not text.startswith(_MEMORY_ORDER_PREFIX):
+                continue
+            order_id = E.find_order_id(text[len(_MEMORY_ORDER_PREFIX) :])
+            if order_id:
+                return order_id
+        return None
+
+    def _resolve_from_memory(
+        self, question: str, memory: Sequence[str]
+    ) -> ResolveResult | None:
+        """凭记忆补全"我的订单" —— 用户没报单号，但系统记得他上一单。
+
+        典型场景：用户上一通对话问过 ORD-1002，这次新开一个会话直接问
+        "我的订单到哪了"。没有记忆时这句话缺订单号，下游只能反问"请问是哪一单"，
+        而系统其实知道答案。这就是"有没有记忆"在用户体验上的分水岭。
+
+        三个条件**同时**成立才动手：
+
+          1. 问题里没有订单号 —— 用户自己说清楚了，补就是画蛇添足；
+          2. 问题明确在说"我的某一单" —— 泛指的"订单怎么退"不该被塞一个单号进去；
+          3. 记忆里确实存着最近关注的订单。
+
+        缺任何一个都返回 None，交给后面的规则。"补错"比"不补"更糟：补出来的
+        句子读起来是通的，用户看到的是一个自信但错误的答案，而且不会报错。
+        """
+        if not memory:
+            return None
+        if E.find_order_id(question):
+            return None
+        hit = _OWN_ORDER_RE.search(question)
+        if hit is None:
+            return None
+        order_id = self.memory_order_id(memory)
+        if not order_id:
+            return None
+
+        replacement = f"订单 {order_id}"
+        tail = question[hit.end() :]
+        # 后面紧跟着中文时补一个空格（"订单 ORD-1002 到哪了"），
+        # 否则数字会和汉字粘成一个词，读起来像"1002到哪了"这种机器味
+        joiner = "" if (not tail or tail[0] in " \t，,。.？?！!、；;：:") else " "
+        resolved = f"{question[: hit.start()]}{replacement}{joiner}{tail}"
+        if resolved == question:
+            return None
+        return ResolveResult(
+            original=question,
+            resolved=resolved,
+            rewritten=True,
+            substitutions={hit.group(0): replacement},
+        )
 
     def _pick_pronoun(self, question: str) -> tuple[str, int] | None:
         """找出第一个**真的在指代**的指代词，返回 (词, 位置)。

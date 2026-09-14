@@ -176,3 +176,117 @@ export function IconSend(props: IconProps) {
     </Base>
   )
 }
+
+/** 历史：时钟 + 回溯箭头 */
+export function IconHistory(props: IconProps) {
+  return (
+    <Base {...props}>
+      <path d="M3 12a9 9 0 1 0 3-6.7" />
+      <path d="M3 4v5h5" />
+      <path d="M12 8v4.5l3 1.7" />
+    </Base>
+  )
+}
+
+export function IconSearch(props: IconProps) {
+  return (
+    <Base {...props}>
+      <circle cx="11" cy="11" r="6.5" />
+      <path d="m16 16 4.5 4.5" />
+    </Base>
+  )
+}
+
+/** 导出：向下的箭头落进托盘 */
+export function IconDownload(props: IconProps) {
+  return (
+    <Base {...props}>
+      <path d="M12 3v11" />
+      <path d="m7.5 10 4.5 4.5 4.5-4.5" />
+      <path d="M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" />
+    </Base>
+  )
+}
+
+export function IconStar({ filled = false, ...rest }: IconProps & { filled?: boolean }) {
+  return (
+    <Base {...rest} fill={filled ? 'currentColor' : 'none'}>
+      <path d="m12 3.6 2.6 5.3 5.9.9-4.3 4.1 1 5.8-5.2-2.7-5.2 2.7 1-5.8L3.5 9.8l5.9-.9Z" />
+    </Base>
+  )
+}
+
+export function IconThumbUp(props: IconProps) {
+  return (
+    <Base {...props}>
+      <path d="M7 21V10l4-7a2 2 0 0 1 2 2v4h5.5a2 2 0 0 1 2 2.4l-1.3 6A2 2 0 0 1 17.2 21Z" />
+      <path d="M7 10H4v11h3" />
+    </Base>
+  )
+}
+
+export function IconThumbDown(props: IconProps) {
+  return (
+    <Base {...props}>
+      <path d="M17 3v11l-4 7a2 2 0 0 1-2-2v-4H5.5a2 2 0 0 1-2-2.4l1.3-6A2 2 0 0 1 6.8 3Z" />
+      <path d="M17 14h3V3h-3" />
+    </Base>
+  )
+}
+
+export function IconTrash(props: IconProps) {
+  return (
+    <Base {...props}>
+      <path d="M4 7h16" />
+      <path d="M9 7V5a1 1 0 0 1 1-1h4a1 1 0 0 1 1 1v2" />
+      <path d="M6 7v12a2 2 0 0 0 2 2h8a2 2 0 0 0 2-2V7" />
+      <path d="M10 11v6M14 11v6" />
+    </Base>
+  )
+}
+
+export function IconPencil(props: IconProps) {
+  return (
+    <Base {...props}>
+      <path d="M4 20h4L19 9a2.1 2.1 0 0 0-3-3L5 17v3Z" />
+      <path d="m14.5 6.5 3 3" />
+    </Base>
+  )
+}
+
+/** 记忆：书签 */
+export function IconPin({ filled = false, ...rest }: IconProps & { filled?: boolean }) {
+  return (
+    <Base {...rest} fill={filled ? 'currentColor' : 'none'}>
+      <path d="M6 4h12a1 1 0 0 1 1 1v15l-7-4.2L5 20V5a1 1 0 0 1 1-1Z" />
+    </Base>
+  )
+}
+
+/** 长期记忆：大脑/卡片式档案 */
+export function IconMemory(props: IconProps) {
+  return (
+    <Base {...props}>
+      <rect x="3" y="4" width="18" height="16" rx="2.5" />
+      <path d="M8 9h8M8 13h5" />
+    </Base>
+  )
+}
+
+export function IconArrowUp(props: IconProps) {
+  return (
+    <Base {...props}>
+      <path d="M12 19V5" />
+      <path d="m6 11 6-6 6 6" />
+    </Base>
+  )
+}
+
+export function IconArrowLeft(props: IconProps) {
+  return (
+    <Base {...props}>
+      <path d="M19 12H5" />
+      <path d="m11 6-6 6 6 6" />
+    </Base>
+  )
+}

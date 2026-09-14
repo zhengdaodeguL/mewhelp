@@ -8,6 +8,7 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Iterator
 
@@ -77,7 +78,43 @@ def get_session_factory(settings: Settings | None = None) -> sessionmaker[Sessio
 def init_db(engine: Engine | None = None, settings: Settings | None = None) -> Engine:
     engine = engine or get_engine(settings)
     Base.metadata.create_all(engine)
+    _add_missing_columns(engine)
     return engine
+
+
+def _add_missing_columns(engine: Engine) -> list[str]:
+    """给**已存在**的表补上新加的列，返回补了哪些。
+
+    为什么需要这一步：`create_all` 只建"不存在的表"，表已经在了它一句话都不说。
+    于是给 `SessionRow` 加一个 `title`，在空库上跑得好好的，一碰到开发机上那份
+    演示数据（mewhelp.db 早就建过表了）就是 `no such column: session.title` ——
+    而这类错误只在"已经有数据的环境"里出现，CI 从零建库永远复现不了。
+
+    这里刻意不引 Alembic：整套 schema 只有一个进程、一个 SQLite 文件，
+    为一次"加列"引入迁移框架和版本表，维护成本远大于它挡住的风险。
+    真要改列名、改类型、拆表的时候再上。
+
+    `ADD COLUMN` 只对"新列可空或带默认值"有效 —— 这是数据库的限制，不是这里的
+    取舍，所以新增列时记得给 `server_default`（Python 侧的 `default=` 不进 DDL）。
+    补列失败**不吞异常**：让调用方（`_init_db_safely`）决定要不要降级启动。
+    """
+    from sqlalchemy import inspect, text
+    from sqlalchemy.schema import CreateColumn
+
+    inspector = inspect(engine)
+    added: list[str] = []
+    with engine.begin() as conn:
+        for table in Base.metadata.sorted_tables:
+            if not inspector.has_table(table.name):
+                continue
+            existing = {c["name"] for c in inspector.get_columns(table.name)}
+            for column in table.columns:
+                if column.name in existing:
+                    continue
+                ddl = CreateColumn(column).compile(dialect=engine.dialect)
+                conn.execute(text(f"ALTER TABLE {table.name} ADD COLUMN {ddl}"))
+                added.append(f"{table.name}.{column.name}")
+    return added
 
 
 @contextmanager
@@ -106,3 +143,25 @@ def reset_engine_cache() -> None:
     for engine in _ENGINE_CACHE.values():
         engine.dispose()
     _ENGINE_CACHE.clear()
+
+
+def ensure_utc(value: datetime | None) -> datetime | None:
+    """把从库里读出来的时间补成**带时区**的 UTC。
+
+    读出来为什么会是朴素的：SQLite 的 DateTime 列不存时区，写进去的
+    tz-aware datetime 只剩下了钟面时间。而一个没有时区标记的 isoformat
+    字符串（"2026-09-14T08:34:41"）交给 JS 的 `new Date(...)` 会按**本地时区**
+    解析 —— 界面上"3 分钟前"就变成了"8 小时前"。
+
+    更阴的是它**有时对有时错**：刚写进内存的那条还是 tz-aware（序列化带 Z），
+    从库里读回来的那条是朴素的 —— 同一个列表里两条时间用两把尺子量，
+    看起来只是"排序有点怪"，查起来极难。
+
+    只在**读路径**上补，写路径不动：库里继续存 UTC 的天真值，
+    换 MySQL 或换驱动时不用重新对齐数据。
+    """
+    if value is None:
+        return None
+    if value.tzinfo is None:
+        return value.replace(tzinfo=timezone.utc)
+    return value.astimezone(timezone.utc)

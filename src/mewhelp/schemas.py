@@ -302,6 +302,86 @@ class ContextBundle(BaseModel):
 
 
 # ============================================================
+# 长期记忆
+# ============================================================
+
+
+class MemoryItem(BaseModel):
+    """一条长期记忆 —— 跨会话保留的"关于这个用户的稳定事实"。
+
+    存在的理由很具体：用户抱怨的"聊到第十轮它就不认识我了"，根因是上下文
+    会被滑窗和摘要丢掉。而"他穿 L 码""他关注的是 ORD-1007 那一单"这类事实
+    **本来就不该随时间衰减** —— 它们不是对话内容，是用户档案。
+
+    字段刻意都取"用户视角"的名字：`kind` / `text` / `source` 是给人看的，
+    没有 `score`、`mem_key`、`embedding` 这类内部口径 —— 记忆面板会把它们
+    原样展示出来，往里塞内部字段迟早会漏到界面上。
+    """
+
+    id: int
+    kind: str
+    text: str
+    #: auto(系统从对话里抽的) / manual(用户自己写的)。界面据此提示"这条是我
+    #: 自己加的，系统不会改它"。
+    source: str = "auto"
+    pinned: bool = False
+    #: 这条记忆真正帮上忙的次数（补全了用户没说清的话），不是"被塞进 prompt 的次数"
+    hits: int = 0
+    created_at: datetime = Field(default_factory=_now)
+    updated_at: datetime = Field(default_factory=_now)
+
+
+#: 记忆类型的中文名。放在契约层而不是界面层：它既是界面文案，也是
+#: "系统能记住哪几类事"的完整清单，两处各写一份必然会分叉。
+MEMORY_KIND_LABELS: dict[str, str] = {
+    "order": "关注的订单",
+    "preference": "偏好",
+    "manual": "我的备忘",
+}
+
+
+class SessionSummary(BaseModel):
+    """历史列表里的一行。
+
+    只有"用户认得出这是哪次对话"所需的最小信息。刻意**不带**摘要、路径、
+    意图这些内部字段 —— 历史列表和对话本身一样，是用户视角的东西。
+    """
+
+    session_id: str
+    title: str
+    #: 消息条数（一问一答算两条）
+    turns: int
+    preview: str = ""
+    updated_at: datetime = Field(default_factory=_now)
+
+
+class SessionMessage(BaseModel):
+    """历史里的一条消息 —— 已经按用户视角过滤过。
+
+    刻意**没有** `intent` / `path` / `exit` 这些字段：它们在库里确实存着
+    （`Turn.metadata`，给审计用），但恢复历史对话时不该跟着回到界面上。
+    过滤做在**类型这一层**，而不是在返回之前手动删几个 key —— 手动删的话，
+    下次有人加字段就会顺手漏出去，而且不会有任何测试失败。
+    """
+
+    role: Literal["user", "assistant"]
+    content: str
+    #: 当时是不是转人工了（前端据此把"已为你转接人工"提示条也画回来）
+    handoff: bool = False
+    #: 不透明句柄：反馈与收藏的键，界面不展示
+    request_id: str = ""
+
+
+class SessionDetail(BaseModel):
+    """恢复一次历史对话所需的全部内容。"""
+
+    session_id: str
+    title: str
+    updated_at: datetime = Field(default_factory=_now)
+    messages: list[SessionMessage] = Field(default_factory=list)
+
+
+# ============================================================
 # 可观测
 # ============================================================
 
@@ -364,6 +444,10 @@ class ConversationResult(BaseModel):
 
     evidences: list[Evidence] = Field(default_factory=list)
     tool_calls: list[ToolCall] = Field(default_factory=list)
+    #: 本轮之后该用户的全部长期记忆。放"全量"而不是"本轮新增"，
+    #: 是因为前端拿它直接替换面板状态即可 —— 增量合并一旦漏掉一次事件，
+    #: 面板就会和真实记忆永久对不上，而且没人会发现。
+    memories: list[MemoryItem] = Field(default_factory=list)
 
     #: 子流程中断时，这里带着恢复所需的载荷
     interrupted: bool = False

@@ -6,8 +6,14 @@
                因为 Milvus 不适合做全文/模糊查询，而运营后台需要按标题搜。
   AuditLogRow  审计日志 —— 每个节点一步，一条请求能还原成调用树。
   SessionRow   会话 —— 摘要 + 滑窗原文，支撑多轮续接和中断恢复。
+  UserMemoryRow 用户长期记忆 —— 跨会话保留的稳定事实（尺码、偏好、关注过的订单）。
   FlywheelRow  问题池 —— 数据飞轮的落地表。
-  FeedbackRow  用户反馈 —— 点踩入口。
+  FeedbackRow  用户反馈 —— 点赞/点踩入口。
+
+`SessionRow` 和 `UserMemoryRow` 刻意分成两张表，而不是把记忆也塞进会话：
+**生命周期不一样**。会话是可以被用户删掉的（"清空历史"），而"这个用户穿 L 码"
+不该因为删了一次对话就消失。混在一张表里，"删会话"就会顺手把用户档案删掉 ——
+这类越界删除在代码审查里很难被发现，因为删的语句看起来只提到了 session。
 
 一个刻意的选择：**审计日志按节点分步存**，不是一次请求存一行 JSON。
 分步存才能在"某一步特别慢"或"某一步开始出错"时用 SQL 聚合查出来 ——
@@ -93,12 +99,54 @@ class SessionRow(Base):
 
     session_id: Mapped[str] = mapped_column(String(64), primary_key=True)
     user_id: Mapped[str] = mapped_column(String(64), index=True)
+    #: 会话标题。历史列表靠它一眼认出"这是哪次对话" —— 没有它，用户面对的
+    #: 是一串 s_ab12cd34 这样的 id，历史功能等于没做。
+    #: `server_default` 不是为了好看：老库里已经有 session 表了，补列走的是
+    #: `ALTER TABLE ... ADD COLUMN`，SQLite/MySQL 都要求非空新列带默认值。
+    title: Mapped[str] = mapped_column(String(128), default="", server_default="")
     summary: Mapped[str] = mapped_column(Text, default="")
     turns_json: Mapped[str] = mapped_column(Text, default="[]")
     #: 被压进摘要的轮次数，用来核对"摘要有没有漏掉信息"
     summarized_turns: Mapped[int] = mapped_column(Integer, default=0)
     token_estimate: Mapped[int] = mapped_column(Integer, default=0)
     updated_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow, onupdate=_utcnow)
+
+
+class UserMemoryRow(Base):
+    """用户长期记忆 —— 跨会话保留的"关于这个人的稳定事实"。
+
+    和 `SessionRow` 的分工见模块头。这里只强调两个约束：
+
+      * `(user_id, mem_key)` 唯一：同一个人第二次说"我穿 L 码"是**更新**，
+        不是新增一条。去重靠数据库唯一约束而不是"先查再写" —— 后者在并发下
+        会漏，而漏出来的表现是记忆面板里堆着一串自相矛盾的旧值。
+      * `hits` 记的是"这条记忆真的被用上了几次"（不是"被塞进 prompt 几次"）。
+        两者差别很大：每条记忆每轮都会被塞进 prompt，那个数字只会随时间线性增长，
+        回答不了"这条记忆有没有价值"。真正的口径见 `MemoryStore.mark_used`。
+    """
+
+    __tablename__ = "user_memory"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = mapped_column(String(64), index=True)
+    #: 记忆类型：order(关注过的订单) / preference(偏好与备注) / manual(用户自己写的)
+    kind: Mapped[str] = mapped_column(String(32), default="preference", index=True)
+    #: 归一化后的去重键 —— 和 `MemoryStore` 用同一份规则算，不要在两处各写一遍
+    mem_key: Mapped[str] = mapped_column(String(128))
+    text: Mapped[str] = mapped_column(Text)
+    #: 来源：auto(系统从对话里抽出来的) / manual(用户在记忆面板里自己写的)
+    source: Mapped[str] = mapped_column(String(16), default="auto")
+    #: 钉住的记忆永远进 prompt，且不被条数上限挤掉
+    pinned: Mapped[bool] = mapped_column(Boolean, default=False)
+    hits: Mapped[int] = mapped_column(Integer, default=0)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime, default=_utcnow, onupdate=_utcnow
+    )
+
+    __table_args__ = (
+        UniqueConstraint("user_id", "mem_key", name="uq_user_memory_key"),
+    )
 
 
 class FlywheelRow(Base):

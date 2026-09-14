@@ -1,14 +1,41 @@
-import type { ReactNode } from 'react'
+import { useRef, type ReactNode } from 'react'
 import { useCopy } from '../hooks/useCopy'
+import type { ChatMessage, MemoryItem } from '../types'
 import { cardToText, formatAmount, statusTone, type WorkspaceCard } from '../workspace'
-import { IconBox, IconCheck, IconCopy, IconDoc, IconTruck } from './icons'
+import { MemoryPanel } from './MemoryPanel'
+import { StarsPanel } from './StarsPanel'
+import {
+  IconBox,
+  IconCheck,
+  IconCopy,
+  IconDoc,
+  IconMemory,
+  IconStar,
+  IconTruck,
+} from './icons'
 
 /**
- * 右侧工作区：把这一轮对话"办的事"摆出来 —— 订单、物流轨迹、政策依据。
+ * 右侧工作区：三个标签页。
+ *
+ *   工作区 —— 这一轮对话"办的事"：订单、物流轨迹、政策依据
+ *   记忆   —— 系统记住的关于我的事（可看、可加、可删）
+ *   收藏   —— 我星标过的消息
+ *
+ * 三者放在同一个面板里而不是各开一个抽屉，是因为它们回答的是同一个问题：
+ * "这次对话留下了什么"。分成三处之后，用户要先想"我要找的东西属于哪一类"
+ * 才能去点那个按钮 —— 而记忆和收藏这两个概念的区别，用户第一眼是分不清的。
  *
  * 这里只放**用户该看的东西**。意图、节点路径、证据分数、工具名、耗时都是
  * 内部信息，一律不进这个面板（开发者走 /docs 和 /api/trace/{request_id}）。
  */
+
+export type WorkspaceTab = 'cards' | 'memory' | 'stars'
+
+const TABS: ReadonlyArray<{ key: WorkspaceTab; label: string; Icon: typeof IconBox }> = [
+  { key: 'cards', label: '工作区', Icon: IconBox },
+  { key: 'memory', label: '记忆', Icon: IconMemory },
+  { key: 'stars', label: '收藏', Icon: IconStar },
+]
 
 type CardKind = WorkspaceCard['kind']
 
@@ -193,39 +220,126 @@ function Card({ card }: { card: WorkspaceCard }) {
   }
 }
 
-interface Props {
-  cards: WorkspaceCard[]
-  onClear: () => void
-  /** 窄屏下工作区是抽屉，需要一个关闭入口 */
-  onClose?: () => void
-}
-
-export function Workspace({ cards, onClear, onClose }: Props) {
+function CardsView({ cards }: { cards: WorkspaceCard[] }) {
   const summary = cards.reduce<Record<string, number>>((acc, c) => {
     acc[c.kind] = (acc[c.kind] ?? 0) + 1
     return acc
   }, {})
 
+  if (cards.length === 0) {
+    return (
+      <div className="workspace-empty">
+        <div className="grid-canvas" aria-hidden="true" />
+        <p className="workspace-empty-text">
+          对话里查到的订单、物流轨迹和政策依据
+          <br />
+          会陈列在这里
+        </p>
+      </div>
+    )
+  }
+
+  return (
+    <>
+      <div className="workspace-tallies">
+        {(Object.keys(KIND_META) as CardKind[])
+          .filter((k) => summary[k])
+          .map((k) => (
+            <span key={k} className={`tally tally--${k}`}>
+              {KIND_META[k].label} {summary[k]}
+            </span>
+          ))}
+      </div>
+      <div className="card-stack">
+        {cards.map((c) => (
+          <Card key={c.id} card={c} />
+        ))}
+      </div>
+    </>
+  )
+}
+
+interface Props {
+  tab: WorkspaceTab
+  onTab: (tab: WorkspaceTab) => void
+  cards: WorkspaceCard[]
+  onClearCards: () => void
+  memories: MemoryItem[]
+  memoryBusy: boolean
+  memoryError: string
+  onAddMemory: (text: string) => void
+  onToggleMemoryPin: (item: MemoryItem) => void
+  onDeleteMemory: (item: MemoryItem) => void
+  starred: ChatMessage[]
+  onJumpTo: (messageId: string) => void
+  onUnstar: (message: ChatMessage) => void
+  /** 窄屏下工作区是抽屉，需要一个关闭入口 */
+  onClose?: () => void
+}
+
+export function Workspace({
+  tab,
+  onTab,
+  cards,
+  onClearCards,
+  memories,
+  memoryBusy,
+  memoryError,
+  onAddMemory,
+  onToggleMemoryPin,
+  onDeleteMemory,
+  starred,
+  onJumpTo,
+  onUnstar,
+  onClose,
+}: Props) {
+  const tabRefs = useRef<Array<HTMLButtonElement | null>>([])
+
+  const counts: Record<WorkspaceTab, number> = {
+    cards: cards.length,
+    memory: memories.length,
+    stars: starred.length,
+  }
+
+  /** 标签之间用左右方向键切换（WAI-ARIA 的 tabs 约定）。 */
+  const onKeyDown = (e: React.KeyboardEvent, index: number) => {
+    if (e.key !== 'ArrowRight' && e.key !== 'ArrowLeft') return
+    e.preventDefault()
+    const next = (index + (e.key === 'ArrowRight' ? 1 : TABS.length - 1)) % TABS.length
+    onTab(TABS[next].key)
+    tabRefs.current[next]?.focus()
+  }
+
   return (
     <section className="workspace" aria-label="工作区">
       <header className="workspace-head">
-        <h2 className="workspace-title">工作区</h2>
-        {cards.length > 0 ? (
-          <div className="workspace-tallies">
-            {(Object.keys(KIND_META) as CardKind[])
-              .filter((k) => summary[k])
-              .map((k) => (
-                <span key={k} className={`tally tally--${k}`}>
-                  {KIND_META[k].label} {summary[k]}
-                </span>
-              ))}
-          </div>
-        ) : (
-          <span className="workspace-count" />
-        )}
+        <div className="tabs" role="tablist" aria-label="右侧面板">
+          {TABS.map(({ key, label, Icon }, i) => (
+            <button
+              key={key}
+              ref={(el) => {
+                tabRefs.current[i] = el
+              }}
+              type="button"
+              role="tab"
+              id={`tab-${key}`}
+              aria-selected={tab === key}
+              aria-controls={`tabpanel-${key}`}
+              tabIndex={tab === key ? 0 : -1}
+              className={`tab${tab === key ? ' tab--active' : ''}`}
+              onClick={() => onTab(key)}
+              onKeyDown={(e) => onKeyDown(e, i)}
+            >
+              <Icon width={14} height={14} />
+              {label}
+              {counts[key] > 0 && <span className="tab-count">{counts[key]}</span>}
+            </button>
+          ))}
+        </div>
+
         <div className="workspace-actions">
-          {cards.length > 0 && (
-            <button type="button" className="ghost-btn" onClick={onClear}>
+          {tab === 'cards' && cards.length > 0 && (
+            <button type="button" className="ghost-btn" onClick={onClearCards}>
               清空
             </button>
           )}
@@ -237,22 +351,25 @@ export function Workspace({ cards, onClear, onClose }: Props) {
         </div>
       </header>
 
-      <div className="workspace-body">
-        {cards.length === 0 ? (
-          <div className="workspace-empty">
-            <div className="grid-canvas" aria-hidden="true" />
-            <p className="workspace-empty-text">
-              对话里查到的订单、物流轨迹和政策依据
-              <br />
-              会陈列在这里
-            </p>
-          </div>
-        ) : (
-          <div className="card-stack">
-            {cards.map((c) => (
-              <Card key={c.id} card={c} />
-            ))}
-          </div>
+      <div
+        className="workspace-body"
+        role="tabpanel"
+        id={`tabpanel-${tab}`}
+        aria-labelledby={`tab-${tab}`}
+      >
+        {tab === 'cards' && <CardsView cards={cards} />}
+        {tab === 'memory' && (
+          <MemoryPanel
+            items={memories}
+            busy={memoryBusy}
+            error={memoryError}
+            onAdd={onAddMemory}
+            onTogglePin={onToggleMemoryPin}
+            onDelete={onDeleteMemory}
+          />
+        )}
+        {tab === 'stars' && (
+          <StarsPanel items={starred} onJump={onJumpTo} onUnstar={onUnstar} />
         )}
       </div>
     </section>

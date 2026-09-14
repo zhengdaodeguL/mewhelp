@@ -20,6 +20,7 @@ from __future__ import annotations
 
 import logging
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -34,9 +35,11 @@ from starlette.concurrency import run_in_threadpool
 from ..config import Settings
 from ..domain import FlywheelSource
 from ..flywheel.feedback import triage_hint, triage_label
+from ..memory.extract import KIND_MANUAL, MemoryCandidate
+from ..memory.store import MemoryStore
 from ..observability.tracing import build_tracer
 from ..schemas import FlywheelRecord
-from ..storage import FeedbackRow, init_db, session_scope
+from ..storage import FeedbackRow, ensure_utc, init_db, session_scope
 from ..tools.business import list_orders
 from ..workflow.graph import GraphDeps, build_deps, build_graph
 from .service import (
@@ -45,6 +48,7 @@ from .service import (
     CachedRun,
     ResultCache,
     SessionStore,
+    memory_to_public,
     sse_event,
     stream_events,
 )
@@ -86,6 +90,43 @@ class ReviewRequest(BaseModel):
     approved: bool = True
     reviewer: str = "anonymous"
     answer: str | None = None
+
+
+class MemoryRequest(BaseModel):
+    """用户在记忆面板里自己写一条备忘。"""
+
+    user_id: str = "u-anonymous"
+    text: str = ""
+    #: 默认 manual —— 从面板写进来的都是"我自己的备忘"，和系统自动抽的分开记
+    kind: str = KIND_MANUAL
+
+
+class MemoryPatchRequest(BaseModel):
+    user_id: str = "u-anonymous"
+    pinned: bool = True
+
+
+class SessionPatchRequest(BaseModel):
+    title: str = ""
+
+
+#: 时间序列化。真正的时区归一化发生在存储层（`storage.ensure_utc`）——
+#: 这里只是把契约模型里的 datetime 转成字符串。保留这一层而不是直接
+#: `model_dump(mode="json")`，是因为这些路由返回的是普通字典，
+#: 没有 Pydantic 帮忙做那一步。
+def _iso_utc(value: datetime | None) -> str:
+    stamped = ensure_utc(value)
+    return stamped.isoformat() if stamped else ""
+
+
+def _demo_user(user_id: str | None) -> str:
+    """演示环境没有登录态时的用户回落。
+
+    真实系统里 user_id 必须来自登录态 —— 这里接受查询参数只是为了能演示
+    "换个用户就是另一个人"的效果。集中成一个函数，是为了让"哪些接口在
+    信任外部传入的 user_id"这件事有迹可循，而不是散在每条路由里。
+    """
+    return user_id or "u-anonymous"
 
 
 # ============================================================
@@ -261,12 +302,17 @@ def create_app(deps: GraphDeps | None = None) -> FastAPI:
     graph = build_graph(deps)
     tracer = build_tracer(deps.settings)
     cache = ResultCache()
+    memory_store = MemoryStore(deps.settings)
     service = ChatService(
         graph=graph,
         sessions=SessionStore(deps.settings),
         tracer=tracer,
         cache=cache,
         settings=deps.settings,
+        # 记忆接在这里而不是在节点内部 new 一个：agent 的每一步都可能被单独
+        # 测试，注入进去的依赖才是可替换的（测试里塞个内存实现就能跑）。
+        memory=memory_store,
+        llm=deps.llm,
     )
 
     @asynccontextmanager
@@ -304,6 +350,7 @@ def create_app(deps: GraphDeps | None = None) -> FastAPI:
     app.state.tracer = tracer
     app.state.service = service
     app.state.cache = cache
+    app.state.memory = memory_store
     app.state.db_ready = False
     app.state.kb_chunks = 0
 
@@ -397,6 +444,126 @@ def create_app(deps: GraphDeps | None = None) -> FastAPI:
             "record": rec.model_dump(mode="json"),
             "backfill_chunk_id": chunk.chunk_id if chunk else None,
         }
+
+    # ------------------------------------------------------------
+    # 会话历史
+    # ------------------------------------------------------------
+    @app.get("/api/sessions")
+    async def sessions(
+        user_id: str | None = Query(default=None),
+        limit: int = Query(default=50, ge=1, le=200),
+    ) -> dict[str, Any]:
+        """历史会话列表，最近更新的在前。
+
+        列表里刻意没有摘要和路径 —— 这一栏的作用是"让用户认出是哪次对话"，
+        多给的信息只会挤掉真正有用的那行标题。
+        """
+        rows = service.sessions.list_sessions(_demo_user(user_id), limit=limit)
+        return {
+            "count": len(rows),
+            "sessions": [
+                {
+                    "session_id": r.session_id,
+                    "title": r.title,
+                    "turns": r.turns,
+                    "preview": r.preview,
+                    "updated_at": _iso_utc(r.updated_at),
+                }
+                for r in rows
+            ],
+        }
+
+    @app.get("/api/sessions/{session_id}")
+    async def session_detail(
+        session_id: str, user_id: str | None = Query(default=None)
+    ) -> dict[str, Any]:
+        """恢复一次历史对话。
+
+        返回的消息**已经按用户视角过滤过**（见 `to_session_messages`）：
+        意图、节点路径、出口这些存在库里但不该回到界面上。过滤写在服务层
+        而不是这里，是为了让 CLI 复用同一份口径。
+        """
+        detail = service.sessions.get_session(session_id, user_id=_demo_user(user_id))
+        if detail is None:
+            return {"ok": False, "error": "NOT_FOUND", "session_id": session_id}
+        return {
+            "ok": True,
+            "session_id": detail.session_id,
+            "title": detail.title,
+            "updated_at": _iso_utc(detail.updated_at),
+            "messages": [
+                {
+                    "role": m.role,
+                    "content": m.content,
+                    "handoff": m.handoff,
+                    "request_id": m.request_id,
+                }
+                for m in detail.messages
+            ],
+        }
+
+    @app.patch("/api/sessions/{session_id}")
+    async def session_rename(
+        session_id: str,
+        payload: SessionPatchRequest,
+        user_id: str | None = Query(default=None),
+    ) -> dict[str, Any]:
+        """改名。传空标题表示"恢复成自动生成的标题"（下一次追加时会重算）。"""
+        ok = service.sessions.rename(
+            session_id, payload.title, user_id=_demo_user(user_id)
+        )
+        return {"ok": ok, "session_id": session_id, "title": payload.title}
+
+    @app.delete("/api/sessions/{session_id}")
+    async def session_delete(
+        session_id: str, user_id: str | None = Query(default=None)
+    ) -> dict[str, Any]:
+        """删掉一次会话。
+
+        注意它**不动长期记忆**：用户清掉的是聊天记录，不是"你认识我"。
+        这两件事被混在一起的那天，用户会发现自己写下的备忘也跟着没了。
+        """
+        ok = service.sessions.delete(session_id, user_id=_demo_user(user_id))
+        return {"ok": ok, "session_id": session_id}
+
+    # ------------------------------------------------------------
+    # 长期记忆
+    # ------------------------------------------------------------
+    @app.get("/api/memories")
+    async def memories(user_id: str | None = Query(default=None)) -> dict[str, Any]:
+        """这个用户的全部记忆（钉住的排前面）。"""
+        items = memory_store.list(_demo_user(user_id))
+        return {"count": len(items), "items": [memory_to_public(i) for i in items]}
+
+    @app.post("/api/memories")
+    async def add_memory(payload: MemoryRequest) -> dict[str, Any]:
+        """用户自己写一条备忘。
+
+        面板里写的默认**钉住**：用户亲手敲进去的东西，不该被"记忆条数上限"
+        的自动清理顺手淘汰掉 —— 那是他明确表达过"这条重要"的信号。
+        """
+        text = (payload.text or "").strip()
+        if not text:
+            return {"ok": False, "error": "EMPTY", "item": None}
+        item = memory_store.remember(
+            _demo_user(payload.user_id),
+            MemoryCandidate(kind=payload.kind or KIND_MANUAL, key="", text=text),
+            source="manual",
+            pinned=True,
+        )
+        return {"ok": item is not None, "item": memory_to_public(item) if item else None}
+
+    @app.patch("/api/memories/{memory_id}")
+    async def patch_memory(memory_id: int, payload: MemoryPatchRequest) -> dict[str, Any]:
+        ok = memory_store.set_pinned(_demo_user(payload.user_id), memory_id, payload.pinned)
+        return {"ok": ok, "id": memory_id, "pinned": payload.pinned}
+
+    @app.delete("/api/memories/{memory_id}")
+    async def delete_memory(
+        memory_id: int, user_id: str | None = Query(default=None)
+    ) -> dict[str, Any]:
+        ok = memory_store.delete(_demo_user(user_id), memory_id)
+        return {"ok": ok, "id": memory_id}
 
     # ------------------------------------------------------------
     # 订单快捷选择

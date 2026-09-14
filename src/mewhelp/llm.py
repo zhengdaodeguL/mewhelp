@@ -461,6 +461,27 @@ def _mock_plan_tool(client: MockLLMClient, messages, tools) -> str:
     )
 
 
+def _mock_memory(client: MockLLMClient, messages, tools) -> str:
+    """长期记忆抽取：从用户这句话里挑出"下次对话还用得上"的事实。
+
+    直接复用 `memory.extract.extract_by_rules`，而不是在这里再写一套规则 ——
+    规则层本来就是这个任务的确定性实现，真模型只是它之上多认得一些自由表述。
+    两处各写一份的话，会出现"mock 抽得出、接上真模型抽不出"（或者反过来）
+    这种只有换模型那天才暴露的偏差。
+    """
+    from .memory.extract import extract_by_rules  # 局部导入：避免 llm ←→ memory 成环
+
+    candidates = extract_by_rules(_last_user_text(messages))
+    return json.dumps(
+        {
+            "memories": [
+                {"kind": c.kind, "key": c.key, "text": c.text} for c in candidates
+            ]
+        },
+        ensure_ascii=False,
+    )
+
+
 def _mock_summarize(client: MockLLMClient, messages, tools) -> str:
     """把更早的对话压成摘要 —— 保留意图、实体、结论，丢掉寒暄。"""
     blob = "\n".join(_msg_text(m) for m in messages)
@@ -492,6 +513,7 @@ _MOCK_HANDLERS = {
     "generate": _mock_generate,
     "plan_tool": _mock_plan_tool,
     "summarize": _mock_summarize,
+    "memory": _mock_memory,
 }
 
 #: Mock 能处理的 task 集合 —— 测试用来确认没有任务悄悄退化成 _mock_generic

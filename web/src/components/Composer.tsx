@@ -100,7 +100,7 @@ export function Composer({ isStreaming, onSend, onStop, inputRef, showQuickRepli
 
       <p className="composer-hint">
         <kbd>Enter</kbd> 发送 · <kbd>Shift</kbd>+<kbd>Enter</kbd> 换行 · <kbd>Esc</kbd> 停止 ·{' '}
-        <kbd>Ctrl</kbd>+<kbd>K</kbd> 聚焦输入
+        <kbd>Ctrl</kbd>+<kbd>K</kbd> 聚焦输入 · <kbd>Ctrl</kbd>+<kbd>F</kbd> 查找
       </p>
     </div>
   )

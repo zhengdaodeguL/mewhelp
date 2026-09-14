@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import type { ChatMessage } from '../types'
+import type { ChatMessage, Rating } from '../types'
 import { IconArrowDown } from './icons'
 import { MessageBubble } from './MessageBubble'
 
@@ -23,9 +23,24 @@ interface Props {
   messages: ChatMessage[]
   canRetry: boolean
   onRetry: () => void
+  query?: string
+  /** 查找定位到的那一条（会闪一下） */
+  flashId?: string
+  starredIds: string[]
+  onRate: (message: ChatMessage, rating: Rating) => void
+  onStar: (message: ChatMessage) => void
 }
 
-export function MessageList({ messages, canRetry, onRetry }: Props) {
+export function MessageList({
+  messages,
+  canRetry,
+  onRetry,
+  query = '',
+  flashId = '',
+  starredIds,
+  onRate,
+  onStar,
+}: Props) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
   const [atBottom, setAtBottom] = useState(true)
@@ -69,6 +84,11 @@ export function MessageList({ messages, canRetry, onRetry }: Props) {
               message={m}
               canRetry={canRetry && i === lastAssistant}
               onRetry={onRetry}
+              query={query}
+              flash={Boolean(flashId) && flashId === m.id}
+              starred={Boolean(m.turnId) && starredIds.includes(m.turnId as string)}
+              onRate={onRate}
+              onStar={onStar}
             />
           ))}
           {waitingFirstToken && <TypingIndicator />}
