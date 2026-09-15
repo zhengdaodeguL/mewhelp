@@ -192,11 +192,29 @@ export function useChat({ userId, sessionId, quote, onTurnEnd, onMemory }: Optio
     [isStreaming, sessionId, userId, quote],
   )
 
-  /** 停止当前生成：把已收到的内容定格为最终答复，不再继续等。 */
+  /**
+   * 停止当前生成：把已收到的内容定格为最终答复，不再继续等。
+   *
+   * 一个字都没收到的那种"停止"要单独处理：占位气泡留着就是一个永久空白框 ——
+   * 它没有重问按钮（重问挂在用户消息上），也没有任何可读内容，用户只会以为
+   * 界面坏了。这种气泡直接撤掉，连同它对应的那条用户消息一起 —— 留着用户消息
+   * 而拿走回复，看起来像"我说了话但没人理"。整轮撤掉，用户可以重打一次。
+   *
+   * （真模型下这个窗口是真实存在的：答复算完到第一个 token 之间还要跑一次
+   * 记忆抽取，那段时间界面正好停在一个空气泡上。）
+   */
   const stop = useCallback(() => {
     abortRef.current?.abort()
     abortRef.current = null
-    setMessages((prev) => prev.map((m) => (m.streaming ? { ...m, streaming: false } : m)))
+    setMessages((prev) => {
+      const last = prev[prev.length - 1]
+      if (last?.streaming && !last.content) {
+        const trimmed = prev.slice(0, -1)
+        const prevMsg = trimmed[trimmed.length - 1]
+        return prevMsg?.role === 'user' ? trimmed.slice(0, -1) : trimmed
+      }
+      return prev.map((m) => (m.streaming ? { ...m, streaming: false } : m))
+    })
     setIsStreaming(false)
   }, [])
 
@@ -213,9 +231,8 @@ export function useChat({ userId, sessionId, quote, onTurnEnd, onMemory }: Optio
   /**
    * 给一条答复点赞 / 点踩。
    *
-   * 界面状态先改（点下去要立刻有反馈），再把评价发给后端：点踩在后端会落到
-   * 问题池，让运营看到"哪一句答得不好"。发失败不回滚 —— 对用户来说，
-   * "我点了个踩但它没生效"没有任何可操作的补救，回滚反而显得像点错了。
+   * 界面状态先改（点下去要立刻有反馈），再把评价发给后端。发失败不回滚 ——
+   * 对用户来说，"我点了个踩但它没生效"没有任何可操作的补救，回滚反而显得像点错了。
    */
   const rate = useCallback(
     (message: ChatMessage, rating: Rating) => {

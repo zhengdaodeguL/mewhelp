@@ -91,24 +91,19 @@ def chat(client, message: str, session_id: str = "s-test", user_id: str = "u-tes
 # ============================================================
 # 1. 健康检查
 # ============================================================
-def test_health_reports_component_modes(client):
+def test_health_returns_only_liveness(client):
+    """健康检查只回「在不在」。
+
+    组件模式（llm / embedding / vector_store）、是否纯 mock、检索引擎、飞轮
+    统计，都是**部署与排查用**的内部信息 —— 它们该待在运维自己的监控里，
+    而不是暴露给任何能访问这个域名的前端。
+    """
     resp = client.get("/api/health")
     assert resp.status_code == 200
-    body = resp.json()
-
-    assert body["status"] == "ok"
-    components = body["components"]
-    # 这三个模式是"当前是不是纯离线"的全部依据，一个都不能少
-    for key in ("llm", "embedding", "vector_store"):
-        assert key in components, f"健康检查缺少组件模式：{key}"
-        assert isinstance(components[key], str) and components[key]
-    assert components["llm"] == "mock"
-    assert body["fully_mocked"] is True
-    assert body["db_ready"] is True
-
-    # 启动时灌进知识库了 —— 没有 chunk 的检索器会让所有知识类问题都被拒答
-    assert body["kb_chunks"] > 0
-    assert body["retriever"]["chunks"] == body["kb_chunks"]
+    assert resp.json() == {"status": "ok"}
+    # 一个内部字段都不许漏出来
+    assert "components" not in resp.json()
+    assert "mock" not in resp.text.lower()
 
 
 # ============================================================
@@ -217,24 +212,24 @@ def test_out_of_kb_question_hands_off(client):
 
 
 def test_flywheel_pending_lists_refused_question(client):
-    """拒答的问题必须落进问题池，且带着当时的检索快照。"""
+    """拒答的问题必须落进问题池，且带着当时的检索快照。
+
+    原来这条用例打的是 `/api/flywheel/pending` —— 那个 HTTP 接口现在关了
+    （见 `test_flywheel_review_and_pending_are_not_exposed_over_http`）。
+    落池行为本身不变，只是从 **FlywheelStore 的 Python 接口**核准。
+    """
     question = "你们卖不卖火箭"
     chat(client, question, session_id="s-refuse-2")
 
-    resp = client.get("/api/flywheel/pending")
-    assert resp.status_code == 200
-    body = resp.json()
-    assert body["count"] >= 1
-
-    hit = next((i for i in body["items"] if i["question"] == question), None)
-    assert hit is not None, f"问题池里没找到拒答的题：{[i['question'] for i in body['items']]}"
-    assert hit["status"] == "pending"
-    assert hit["source"] in ("refused", "self_eval", "thumbs_down")
-    assert hit["triage"], "必须给出分诊结论（该补文档还是该调检索）"
-    assert hit["triage_label"]
+    flywheel = client.app.state.deps.flywheel
+    hits = [r for r in flywheel.pending() if r.question == question]
+    assert hits, f"问题池里没找到拒答的题"
+    hit = hits[0]
+    assert hit.status == "pending"
+    assert hit.source.value in ("refused", "self_eval", "thumbs_down")
     # 快照是飞轮最值钱的字段 —— 没有它，人工没法判断是真缺知识还是没检索到
-    assert hit["snapshot"] is not None
-    assert "top_score" in hit["snapshot"]
+    assert hit.retrieval_snapshot is not None
+    assert hit.retrieval_snapshot.top_score >= 0.0
 
 
 # ============================================================
@@ -289,9 +284,12 @@ def test_feedback_is_persisted(client):
     assert resp.status_code == 200
     out = resp.json()
     assert out["ok"] is True
-    assert out["feedback_id"] is not None
-    # 点踩不只是记一笔：它是最强信号，应该带着当时的现场落进问题池
-    assert out["flywheel"], "点踩应该落进问题池"
+    # 点踩不只是记一笔：它是最强信号，应该带着当时的现场落进问题池。
+    # 但落没落、落到哪、快照长什么样是**运营侧**的事 —— 接口只回"收到"。
+    assert out == {"ok": True}, f"反馈接口泄漏了内部字段：{out}"
+
+    flywheel = client.app.state.deps.flywheel
+    assert any(r.question == body["question"] for r in flywheel.pending()), "点踩该落进问题池"
 
 
 def test_feedback_on_unknown_request_does_not_fail(client):
@@ -301,42 +299,42 @@ def test_feedback_on_unknown_request_does_not_fail(client):
         json={"session_id": "s-none", "request_id": "req-不存在", "thumbs_down": True, "comment": ""},
     )
     assert resp.status_code == 200
-    assert resp.json()["ok"] is True
+    assert resp.json() == {"ok": True}
+
+
+def test_flywheel_review_and_pending_are_not_exposed_over_http(client):
+    """飞轮审核台是**运营侧**的东西，不能开在面向用户的 HTTP 服务上。
+
+    它返回的检索快照、分诊结论、被问次数、拒答原因，件件都是内部账——
+    原来的 `/api/flywheel/pending` 和 `/api/flywheel/review` 等于把一个
+    审核台整个放到公网。运营流程走 `python -m mewhelp.cli flywheel`。
+    """
+    assert client.get("/api/flywheel/pending").status_code == 404
+    assert client.post("/api/flywheel/review", json={"record_id": "fw_x"}).status_code == 404
 
 
 # ============================================================
-# 7. 飞轮审核
+# 7. 飞轮审核（内部路径，不经 HTTP）
 # ============================================================
-def test_flywheel_review_approves_and_prepares_backfill(client):
+def test_flywheel_review_and_backfill_via_store(client):
+    """审核与回灌走的是 FlywheelStore 的 Python 接口，不经 HTTP 路由。
+
+    这条保住的是**行为本身**没有被关掉 —— 拒答落池、人工审核通过、
+    准备可回灌的 chunk —— 只是不给用户界面开一个后门。
+    """
     chat(client, "你们卖不卖服务器机柜", session_id="s-review")
-    items = client.get("/api/flywheel/pending").json()["items"]
-    target = next(i for i in items if i["question"] == "你们卖不卖服务器机柜")
 
-    resp = client.post(
-        "/api/flywheel/review",
-        json={
-            "record_id": target["record_id"],
-            "approved": True,
-            "reviewer": "ops-1",
-            "answer": "抱歉，平台暂不销售服务器机柜。",
-        },
+    flywheel = client.app.state.deps.flywheel
+    rows = flywheel.pending()
+    target = next(r for r in rows if r.question == "你们卖不卖服务器机柜")
+
+    reviewed = flywheel.review(
+        target.record_id, True, "ops-1", "抱歉，平台暂不销售服务器机柜。"
     )
-    assert resp.status_code == 200
-    out = resp.json()
-    assert out["ok"] is True
-    assert out["record"]["status"] == "approved"
-    assert out["record"]["reviewer"] == "ops-1"
-    # 回灌所需的 chunk 必须当场准备好（但不由这个接口直接写向量库）
-    assert out["backfill_chunk_id"], "审核通过却没给出可回灌的 chunk"
-
-
-def test_flywheel_review_unknown_record_does_not_500(client):
-    resp = client.post(
-        "/api/flywheel/review",
-        json={"record_id": "fw_不存在", "approved": False, "reviewer": "ops"},
-    )
-    assert resp.status_code == 200
-    assert resp.json()["ok"] is True
+    assert reviewed.status == "approved"
+    assert reviewed.reviewer == "ops-1"
+    chunk = flywheel.to_kb_chunk(reviewed)
+    assert chunk is not None and chunk.text, "审核通过却没准备好可回灌的正文"
 
 
 # ============================================================
@@ -387,22 +385,17 @@ def test_oversized_message_is_capped_not_forwarded(client):
 
 
 # ============================================================
-# 9. trace / 演示页
+# 9. 开发者入口一律关闭
 # ============================================================
-def test_trace_returns_call_tree(client):
-    body = chat(client, "生鲜类可以退款吗", session_id="s-trace")
-    resp = client.get(f"/api/trace/{body['request_id']}")
-    assert resp.status_code == 200
-    trace = resp.json()
-    assert trace["count"] >= 4
-    nodes = [s["node"] for s in trace["steps"]]
-    assert nodes[0] == "resolve" and "classify" in nodes and "gate" in nodes
+def test_dev_facing_endpoints_are_not_exposed(client):
+    """调试者视角的入口，用户界面上一个都不能有。
 
-
-def test_trace_unknown_request_returns_empty(client):
-    resp = client.get("/api/trace/req-根本不存在")
-    assert resp.status_code == 200
-    assert resp.json() == {"request_id": "req-根本不存在", "count": 0, "steps": []}
+    /docs /redoc /openapi.json 是给开发者看的 API 文档；/api/trace/{id} 能
+    还原一整条请求的调用树。它们服务的是调试，不是用户 —— 面向用户的界面
+    不该把它们连同内部实现一起敞开。开发者排查走 CLI / logs / 数据库。
+    """
+    for path in ("/docs", "/redoc", "/openapi.json", "/api/trace/req-x"):
+        assert client.get(path).status_code == 404, f"{path} 应该关闭，却还能访问"
 
 
 # ============================================================
@@ -520,14 +513,25 @@ def test_index_page_wires_to_real_api_routes(client):
 
 
 def test_frontend_does_not_render_internal_fields(client):
-    """用户界面上不能出现内部信息。
+    """用户界面上不能出现任何开发者 / 调试者视角的信息。
 
-    意图、节点路径、证据块、工具名、置信度这些都是**开发者视角**的东西。
-    后端照常推它们（开发者走 /docs 和 /api/trace/{request_id} 看），
-    但前端产物里不该有把它们渲染出去的字样 —— 这条就是那道界线本身。
+    意图、节点路径、证据分数、工具名、置信度、命中次数、以及"运营/知识库/
+    检索"这类内部机制的字眼，都是给开发者或运维看的，一律不能出现在给用户
+    看的产物里 —— 后端要怎么推数据、怎么排查，是后端自己的事。
     """
     bundle = _bundle(client)
-    for leaked in ("refusal_reason", "latency_ms", "置信", "意图", "证据", "节点路径"):
+    for leaked in (
+        "refusal_reason",
+        "latency_ms",
+        "置信",
+        "意图",
+        "证据",
+        "节点路径",
+        "帮上忙",  # 记忆命中次数 —— 内部指标，界面不展示
+        "运营",  # 反馈去向 —— 内部流程，界面不解释
+        "/docs",
+        "/api/trace",
+    ):
         assert leaked not in bundle, f"前端产物里出现了内部字段：{leaked}"
 
 

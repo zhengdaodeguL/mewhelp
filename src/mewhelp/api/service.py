@@ -20,9 +20,11 @@ import hashlib
 import json
 import logging
 import re
+import threading
 import time
 from collections import OrderedDict
 from collections.abc import AsyncIterator, Iterator, Sequence
+from concurrent.futures import Future
 from dataclasses import dataclass
 from typing import Any
 
@@ -510,6 +512,28 @@ def result_from_state(
     )
 
 
+def _extract_in_background(llm: Any, question: str) -> Any:
+    """在后台线程里跑记忆抽取，返回一个已经开跑的 Future。
+
+    只用来把"问模型要候选"这一步从关键路径上挪走，**不改变任何顺序**：
+    真正决定先后的是 `_memorize` 里的三步（先记命中、再落库、最后回读），
+    这里的线程只负责算，落库仍然由 `_memorize` 在主线程上按原顺序做。
+
+    用裸线程而不是线程池：这个 Future 的存活期就是一次请求，不需要池化；
+    而要管好一个长生命周期线程池的关闭时机，比省下的这点开销麻烦得多。
+    """
+    future: Future = Future()
+
+    def run() -> None:
+        try:
+            future.set_result(extract_candidates(llm, question))
+        except BaseException as exc:  # noqa: BLE001 —— 抽取失败不能杀死线程
+            future.set_exception(exc)
+
+    threading.Thread(target=run, daemon=True, name="mewhelp-memory").start()
+    return future
+
+
 def _guarded_result(
     *,
     request_id: str,
@@ -638,6 +662,18 @@ class ChatService:
 
         request_id = _request_id(session_id, user_id, text, len(history))
         t0 = time.perf_counter()
+
+        # 记忆抽取**和图并行跑**，不要串在答复之后。
+        #
+        # 它只依赖用户这句话，不依赖图算出什么 —— 而真模型跑一趟要 1~3 秒。
+        # 串行的话，这段时间正好落在"图已经跑完、第一个字还没推出去"的窗口里：
+        # 用户盯着一个空气泡多等一个完整往返，且这期间点"停止"会留下一个
+        # 永远不会有内容的占位气泡（它连第一个 token 都没等到）。
+        #
+        # 并发跑不产生任何顺序问题：真正决定先后的是 `_memorize` 里那三步
+        # （先记命中、再落库、最后回读），这里的线程只负责"问模型要候选"。
+        learner = _extract_in_background(self.llm, text) if (self.memory and self.llm) else None
+
         try:
             state = self.graph.invoke(
                 new_state(
@@ -674,7 +710,7 @@ class ChatService:
             user_id=user_id,
             question=text,
         )
-        return self._finish(result, state=state)
+        return self._finish(result, state=state, learner=learner)
 
     # ------------------------------------------------------------------
     def _finish(
@@ -683,6 +719,7 @@ class ChatService:
         *,
         state: AgentState | None,
         error: str | None = None,
+        learner: Any = None,
     ) -> ConversationResult:
         """收尾：缓存现场、登记 trace、把这一轮写回会话。"""
         retrieval = state.get("retrieval") if state else None
@@ -697,10 +734,10 @@ class ChatService:
         self.cache.put(CachedRun(result=result, retrieval=retrieval))
         self._record_trace(result)
         self._persist(result)
-        self._memorize(result)
+        self._memorize(result, learner=learner)
         return result
 
-    def _memorize(self, result: ConversationResult) -> None:
+    def _memorize(self, result: ConversationResult, *, learner: Any = None) -> None:
         """把这一轮里"值得长期记住的东西"写进用户档案，并把最新档案挂回结果。
 
         顺序是有讲究的，三步不能换：
@@ -727,7 +764,11 @@ class ChatService:
                 used_memory_ids(injected, result.question, result.resolved_question),
             )
             if self.llm is not None:
-                candidates = extract_candidates(self.llm, result.question)
+                # 候选多半已经在跑图的那段时间里算好了（见 `ask` 里的
+                # `_extract_in_background`）；`learner` 是 None 时才是同步抽。
+                candidates = learner.result() if learner is not None else extract_candidates(
+                    self.llm, result.question
+                )
                 self.memory.remember_many(result.user_id, candidates)
             result.memories = self.memory.list(result.user_id)
         except Exception as exc:  # noqa: BLE001 —— 记忆失败不影响答复
@@ -876,10 +917,22 @@ def memory_to_public(item: Any) -> dict[str, Any]:
     "order → 关注的订单"的映射表：那张表是**产品文案**，两处各写一份，
     迟早会出现"服务端日志写'关注的订单'、界面显示'订单'"的不一致，
     而且没有任何测试会因此失败。
+
+    刻意用**白名单**而不是 `model_dump`：`MemoryItem` 里有 `hits`（被用上
+    几次）这种内部口径 —— 它回答的是"这条记忆有没有价值"，是给运营/调试
+    看的，不该出现在面对用户的 payload 里。`model_dump` 会把字段一股脑带出去，
+    下次加一个内部字段就又会漏到界面上；白名单则是一道显式的闸。
     """
-    data = item.model_dump(mode="json")
-    data["kind_label"] = MEMORY_KIND_LABELS.get(item.kind, "记忆")
-    return data
+    return {
+        "id": item.id,
+        "kind": item.kind,
+        "kind_label": MEMORY_KIND_LABELS.get(item.kind, "记忆"),
+        "text": item.text,
+        "source": item.source,
+        "pinned": item.pinned,
+        "created_at": item.created_at.isoformat() if item.created_at else "",
+        "updated_at": item.updated_at.isoformat() if item.updated_at else "",
+    }
 
 
 def done_payload(result: ConversationResult) -> dict[str, Any]:

@@ -25,7 +25,7 @@ from sqlalchemy import create_engine, inspect, text
 
 from mewhelp.api import create_app
 from mewhelp.config import Settings
-from mewhelp.llm import MockLLMClient
+from mewhelp.llm import LLMResponse, MockLLMClient
 from mewhelp.memory import (
     KIND_MANUAL,
     KIND_ORDER,
@@ -162,6 +162,80 @@ def test_extract_candidates_falls_back_to_rules_when_the_model_fails():
 
     got = extract_candidates(Broken(), "我穿 L 码")
     assert [c.text for c in got] == ["尺码：L"]
+
+
+def _shape_llm(payload):
+    """只在 task="memory" 上返回指定 payload，其余走 mock。"""
+    import json as _json
+
+    class Shaped(MockLLMClient):
+        def chat(self, messages, **kw):  # noqa: ANN003
+            if kw.get("task") == "memory":
+                return LLMResponse(text=_json.dumps(payload, ensure_ascii=False))
+            return super().chat(messages, **kw)
+
+    return Shaped()
+
+
+@pytest.mark.parametrize(
+    "payload",
+    [
+        {"memories": [{"kind": "preference", "key": "size", "text": "尺码：L"}]},
+        [{"kind": "preference", "key": "size", "text": "尺码：L"}],           # 裸数组
+        {"data": {"memories": [{"kind": "preference", "key": "size", "text": "尺码：L"}]}},
+        {"memories": [{"kind": "preference", "text": "尺码：L"}]},            # 缺 key
+    ],
+)
+def test_memory_extraction_tolerates_common_model_shapes(payload):
+    """模型换个包装不该让用户档案整体消失。
+
+    原先只认 `{"memories":[{key,text}]}`：裸数组、多套一层 `data`、条目缺 `key`
+    都静默返回空、连一条日志都没有。而 `key` 恰恰是提示词里最容易不被遵守的
+    一项（要求"稳定的英文短键"），拿它当准入门槛，等于把整个记忆功能的存亡
+    押在模型记不记得填一个内部字段上。
+    """
+    got = extract_candidates(_shape_llm(payload), "我穿 L 码")
+    assert [c.text for c in got] == ["尺码：L"]
+
+
+def test_memory_extraction_unrecognized_shape_falls_back_to_rules():
+    """形状完全不认识时退回规则层，并且留下线索。
+
+    这和"模型明确说没有"是两件事：后者是正常结论（不能再退回规则层，
+    那会把模型明确排除的东西又捡回来），前者是功能静默失效 ——
+    用户说"我穿 L 码"、面板空空如也、日志里却一条记录都没有。
+    """
+
+    class Weird(MockLLMClient):
+        def __init__(self):
+            super().__init__()
+            self.payload = {"记忆": [{"kind": "preference", "text": "尺码：L"}]}
+
+        def chat(self, messages, **kw):  # noqa: ANN003
+            import json as _json
+
+            if kw.get("task") == "memory":
+                return LLMResponse(text=_json.dumps(self.payload, ensure_ascii=False))
+            return super().chat(messages, **kw)
+
+    assert [c.text for c in extract_candidates(Weird(), "我穿 L 码")] == ["尺码：L"]
+
+
+def test_memory_extraction_respects_an_explicit_empty():
+    """模型明确说"没有可记的"时不许再退回规则层。"""
+    assert extract_candidates(_shape_llm({"memories": []}), "我穿 L 码") == []
+    assert extract_candidates(_shape_llm([]), "我穿 L 码") == []
+
+
+def test_derived_key_is_stable_across_calls():
+    """模型不给 key 时派生的键必须稳定 —— 否则同一句话每轮都被记成新的一条。"""
+    from mewhelp.memory.extract import parse_candidates
+
+    payload = {"memories": [{"kind": "preference", "text": "尺码：L"}]}
+    first = parse_candidates(payload)[0]
+    second = parse_candidates(payload)[0]
+    assert first.key == second.key
+    assert first.key.startswith("preference:")
 
 
 def test_used_memory_ids_only_credits_real_help():
@@ -304,10 +378,14 @@ def test_memory_lets_a_fresh_session_answer_about_my_order(client):
         t.get("result", {}).get("order_id") == "ORD-1002" for t in tools if t["ok"]
     )
 
-    # 这条记忆因为"真的帮上忙了"被记了一次命中
+    # 这条记忆因为"真的帮上忙了"被记了一次命中。命中计数是**内部口径**，
+    # 走的是 MemoryStore 的 Python 接口，不会出现在对外的 /api/memories 里。
     items = client.get("/api/memories", params={"user_id": user}).json()["items"]
     order_mem = next(i for i in items if i["kind"] == "order")
-    assert order_mem["hits"] >= 1, "被用上的记忆没有计数"
+    assert "hits" not in order_mem, "命中计数是内部指标，不该下发到界面"
+    store = client.app.state.memory
+    by_text = {m.text: m for m in store.list(user)}
+    assert by_text[order_mem["text"]].hits >= 1, "被用上的记忆没有计数"
     # 记忆补上的单号必须被当成"已有槽位"：否则会被缺槽位的护栏拦回去反问
     assert "请把订单号发我" not in "".join(
         d["answer"] for d in _of(events, "done")

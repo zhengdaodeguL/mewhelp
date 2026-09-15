@@ -205,7 +205,6 @@ export function memoryItems(raw: unknown): MemoryItem[] {
     text: str(r.text),
     source: str(r.source) || 'auto',
     pinned: r.pinned === true,
-    hits: Number(r.hits) || 0,
     createdAt: str(r.created_at),
     updatedAt: str(r.updated_at),
   }))
@@ -381,9 +380,9 @@ export async function deleteMemory(userId: string, id: number): Promise<boolean>
 /**
  * 赞 / 踩一条答复。
  *
- * 点踩在后端会落到"问题池"，所以必须带上 `session_id` 和 `request_id` ——
- * 没有它们，运营只看到"有人不满意"，却不知道是哪一句答得不好。
- * 仓库里 `/api/feedback` 早就有了，界面一直没接上；这里把它补全。
+ * 点踩必须带上 `session_id` 和 `request_id`：没有它们，后端拿不到"这次是哪句
+ * 被踩了"，反馈就等于一句没有指向的"有人不满意"。至于点踩之后后端怎么处理，
+ * 是内部流程，不在这里展开。
  */
 export async function sendFeedback(
   sessionId: string,

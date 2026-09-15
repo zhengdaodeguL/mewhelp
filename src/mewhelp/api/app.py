@@ -34,7 +34,6 @@ from starlette.concurrency import run_in_threadpool
 
 from ..config import Settings
 from ..domain import FlywheelSource
-from ..flywheel.feedback import triage_hint, triage_label
 from ..memory.extract import KIND_MANUAL, MemoryCandidate
 from ..memory.store import MemoryStore
 from ..observability.tracing import build_tracer
@@ -90,6 +89,7 @@ class FeedbackRequest(BaseModel):
 
 
 class ReviewRequest(BaseModel):
+    """飞轮人工审核 —— 已从 HTTP 关闭，留在契约里仅供 CLI/内部脚本复用。"""
     record_id: str
     approved: bool = True
     reviewer: str = "anonymous"
@@ -163,70 +163,6 @@ def _index_kb(deps: GraphDeps) -> int:
     except Exception as exc:  # noqa: BLE001
         logger.warning("[api] 知识库加载失败：%s", exc)
         return 0
-
-
-def _db_backend(settings: Settings) -> str:
-    return "sqlite" if str(settings.database_url).startswith("sqlite") else "mysql"
-
-
-def _retriever_stats(deps: GraphDeps) -> dict[str, Any]:
-    fn = getattr(getattr(deps, "retriever", None), "stats", None)
-    if not callable(fn):
-        return {}
-    try:
-        return dict(fn())
-    except Exception as exc:  # noqa: BLE001 — 自检不能把健康检查搞挂
-        return {"error": f"{type(exc).__name__}: {exc}"}
-
-
-def _flywheel_stats(deps: GraphDeps) -> dict[str, Any]:
-    fn = getattr(getattr(deps, "flywheel", None), "stats", None)
-    if not callable(fn):
-        return {}
-    try:
-        return dict(fn())
-    except Exception as exc:  # noqa: BLE001
-        return {"error": f"{type(exc).__name__}: {exc}"}
-
-
-def _flywheel_item(rec: FlywheelRecord, settings: Settings) -> dict[str, Any]:
-    """一条待审记录 → 审核台要看到的全部信息。
-
-    快照摘要（几条证据、最高分多少）是这里最要紧的字段：审核人靠它一眼判断
-    "该补文档"还是"该调检索"，而不用去翻原始日志。
-    """
-    snap = rec.retrieval_snapshot
-    hint = triage_hint(rec, settings)
-    return {
-        "record_id": rec.record_id,
-        "session_id": rec.session_id,
-        "question": rec.question,
-        "resolved_question": rec.resolved_question,
-        "intent": rec.intent.value if rec.intent else None,
-        "source": rec.source.value if rec.source else None,
-        "refusal_reason": rec.refusal_reason.value if rec.refusal_reason else None,
-        "ask_count": rec.ask_count,
-        "status": rec.status,
-        "reviewer": rec.reviewer,
-        "answer": rec.answer,
-        "created_at": rec.created_at.isoformat(),
-        "reviewed_at": rec.reviewed_at.isoformat() if rec.reviewed_at else None,
-        "triage": hint,
-        "triage_label": triage_label(hint),
-        "snapshot": (
-            {
-                "strategy": snap.strategy,
-                "evidence_count": len(snap.evidences),
-                "top_score": round(snap.top_score, 4),
-                "chunks": [
-                    {"chunk_id": e.chunk_id, "title": e.chunk.title, "score": round(e.score, 4)}
-                    for e in snap.evidences
-                ],
-            }
-            if snap is not None
-            else None
-        ),
-    }
 
 
 def _record_thumbs_down(
@@ -341,6 +277,14 @@ def create_app(deps: GraphDeps | None = None) -> FastAPI:
         version="0.1.0",
         description="电商 AI 客服：Workflow + Agent 混合架构，SSE 逐字推送",
         lifespan=lifespan,
+        # 前端是给**普通用户**看的。这几样开发者通道全都关掉：
+        #   docs_url      —— /docs 的 Swagger UI
+        #   redoc_url     —— /redoc 的 ReDoc
+        #   openapi_url   —— /openapi.json 的 schema（关了上面两个还能直接拿到）
+        # 开发者排查另有 CLI / logs / 数据库，不需要给面向用户的界面留后门。
+        docs_url=None,
+        redoc_url=None,
+        openapi_url=None,
     )
     # 演示页可能被从 file:// 或另一个端口打开，放开跨域省掉一类"打不开"的求助。
     # 离线演示用不上鉴权，这里没有额外风险面。
@@ -414,45 +358,19 @@ def create_app(deps: GraphDeps | None = None) -> FastAPI:
         return JSONResponse(content=result.model_dump(mode="json"))
 
     # ------------------------------------------------------------
-    # 反馈 / 飞轮
+    # 反馈
     # ------------------------------------------------------------
     @app.post("/api/feedback")
     async def feedback(payload: FeedbackRequest) -> dict[str, Any]:
-        return await run_in_threadpool(_save_feedback, deps, cache, payload)
+        """用户点赞/点踩。
 
-    @app.get("/api/flywheel/pending")
-    async def flywheel_pending(limit: int = Query(default=50, ge=1, le=500)) -> dict[str, Any]:
-        """待审问题池。按被问频次降序 —— 排队顺序就是运营优先级。"""
-        try:
-            rows = deps.flywheel.pending(limit=limit)
-        except Exception as exc:  # noqa: BLE001
-            return {"count": 0, "items": [], "error": f"{type(exc).__name__}: {exc}"}
-        items = [_flywheel_item(r, deps.settings) for r in rows]
-        return {"count": len(items), "items": items, "stats": _flywheel_stats(deps)}
-
-    @app.post("/api/flywheel/review")
-    async def flywheel_review(payload: ReviewRequest) -> dict[str, Any]:
-        """人工审核。
-
-        审核通过后**不自动写向量库**：知识库的回灌是批量动作（要重建索引、
-        要能整体回滚），把它塞进一个点击接口里会让"审核"和"发布"两件事
-        纠缠在一起。这里只把回灌所需的 chunk 准备好并返回它的 id。
+        只回「收没收到」。点踩之后内部发生了什么（落问题池、带检索快照、
+        分诊）是**运营侧**的事 —— 那些字段原本就站在这里往外发，
+        等于把一个审核台接口开给了普通用户。审核台走 `python -m mewhelp.cli flywheel`。
         """
-        try:
-            rec = deps.flywheel.review(
-                payload.record_id, payload.approved, payload.reviewer, payload.answer
-            )
-            chunk = deps.flywheel.to_kb_chunk(rec) if rec.status == "approved" else None
-        except Exception as exc:  # noqa: BLE001
-            return {"ok": False, "error": f"{type(exc).__name__}: {exc}", "record": None}
-        return {
-            "ok": True,
-            "record": rec.model_dump(mode="json"),
-            "backfill_chunk_id": chunk.chunk_id if chunk else None,
-        }
-
-    # ------------------------------------------------------------
-    # 会话历史
+        saved = await run_in_threadpool(_save_feedback, deps, cache, payload)
+        # 收敛成用户视角的应答：详情、flywheel id、快照一律不对外
+        return {"ok": saved.get("ok", False)}
     # ------------------------------------------------------------
     @app.get("/api/sessions")
     async def sessions(
@@ -597,34 +515,13 @@ def create_app(deps: GraphDeps | None = None) -> FastAPI:
     # ------------------------------------------------------------
     @app.get("/api/health")
     async def health() -> dict[str, Any]:
-        s: Settings = deps.settings
-        return {
-            "status": "ok",
-            # 每个组件的模式都摊开写：看到这一行就知道当前是不是纯离线跑，
-            # 不用去猜 .env 里配了什么。
-            "components": {
-                "llm": s.llm_mode,
-                "embedding": s.embedding_mode,
-                "vector_store": s.vector_store_mode,
-                "reranker": s.reranker_mode,
-                "database": _db_backend(s),
-                "observability": "langfuse" if s.langfuse_enabled else "local",
-            },
-            "fully_mocked": bool(s.is_fully_mocked),
-            "kb_chunks": int(app.state.kb_chunks),
-            "db_ready": bool(app.state.db_ready),
-            "retriever": _retriever_stats(deps),
-            "flywheel": _flywheel_stats(deps),
-        }
+        """存活探针。
 
-    @app.get("/api/trace/{request_id}")
-    async def trace(request_id: str) -> dict[str, Any]:
-        steps = tracer.trace(request_id)
-        return {
-            "request_id": request_id,
-            "count": len(steps),
-            "steps": [step.model_dump(mode="json") for step in steps],
-        }
+        只回「在不在」。组件模式、模式开关、检索引擎、飞轮状态这些内部信息
+        一律不下发 —— 它们是部署和排查用的话，就该待在对方自己的监控系统里，
+        而不是暴露给任何能访问这个域名的前端。
+        """
+        return {"status": "ok"}
 
     # ------------------------------------------------------------
     # 前端（React 构建产物）
@@ -633,17 +530,12 @@ def create_app(deps: GraphDeps | None = None) -> FastAPI:
     async def index() -> Any:
         """用户界面入口。
 
-        页面只呈现对话本身：意图、节点路径、证据块、工具名这些内部信息
-        一律不出现在这里（开发者需要的话走 /docs 与 /api/trace/{request_id}）。
+        页面只呈现对话本身，任何开发者/调试者视角的内容都不出现。
         """
         if not INDEX_HTML.is_file():
-            return JSONResponse(
-                status_code=404,
-                content={
-                    "error": "前端资源缺失，请先在 web/ 目录执行 npm install && npm run build",
-                    "expected": str(INDEX_HTML),
-                },
-            )
+            # 前端资源缺失是部署问题，不是用户问题 —— 不该把构建命令、
+            # 目录路径这些事讲给普通用户听。它们属于启动日志，不属于页面。
+            return JSONResponse(status_code=404, content={"error": "页面暂时不可用"})
         return FileResponse(INDEX_HTML, media_type="text/html; charset=utf-8")
 
     # 构建产物带 hash 的静态资源（/assets/*.js、/assets/*.css）

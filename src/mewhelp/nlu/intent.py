@@ -43,8 +43,8 @@ import logging
 import re
 
 from ..config import get_settings
-from ..domain import INTENT_KEYWORDS, INTENT_LABELS, INTENT_SPECS, Intent
-from ..llm import build_llm, extract_json
+from ..domain import HIGH_RISK_INTENTS, INTENT_KEYWORDS, INTENT_LABELS, INTENT_SPECS, Intent
+from ..llm import as_bool, build_llm, extract_json
 from ..schemas import ClassifyResult, SlotExtraction, Turn
 from . import entities as E
 
@@ -109,6 +109,11 @@ _TOPIC_DISCOUNT = 0.5
 _FEWSHOT = (
     ("那它能退吗", "return_request"),
     ("钱什么时候退回来", "refund_request"),
+    # 和上一条的差别就在"我那笔钱"和"退款这件事"：问时限、问规则的一律 policy_faq。
+    # 没有这条例子时，模型对「退款要多久到账」会给 refund_request —— 字面没错，
+    # 但它会把一句咨询推进高风险出口去要订单号。代码里还有一道 `_demoted` 兜底，
+    # 这里的例子是为了让模型**第一遍就答对**，而不是每次都靠兜底纠偏。
+    ("退款要多久到账", "policy_faq"),
     ("这个尺码偏小吗", "product_faq"),
     ("运费怎么算", "policy_faq"),
     ("别发了", "cancel_order"),
@@ -145,6 +150,18 @@ class IntentClassifier:
             # 就是它看到了词表没有的线索，听它的。
             if scored and _weak_evidence_only(scored[0], text) and model.intent is scored[0][0]:
                 return self._best_effort(scored)
+            # 咨询句里模型回了"要动手"的意图 —— 不听它的，按规则降级成政策咨询。
+            #
+            # 「退款要多久到账」在模型眼里满是"退款"，它给 refund_request 是个
+            # 合理的字面判断；但那句话一个祈使词都没有、问的是规则，不是自己那单。
+            # `_demote_question_to_policy` 只降得住**规则候选**，模型这一路它够不着 ——
+            # 于是一句咨询照样命中高风险出口，系统伸手向用户要订单号。
+            #
+            # 这道判断必须落在代码里而不是提示词里：它是一条**业务铁律**
+            # （咨询不许触发动手的流程），不能指望模型每次都听话。
+            # 提示词里的 few-shot 只负责让模型第一遍就答对，答不对时由这里兜住。
+            if _is_question(text) and model.intent in _DEMOTABLE_INTS:
+                return self._demoted(scored, model)
             if model.method != "fallback" and model.confidence >= _RULE_CONF_MIN:
                 return model
             # 模型也只给出低置信（甚至自己标了 fallback）时，规则层的词表直觉
@@ -152,6 +169,49 @@ class IntentClassifier:
             return self._best_effort(scored) if scored else model
         except Exception as exc:  # noqa: BLE001 —— 异常不外泄
             return self._fallback(str(exc))
+
+    def _demoted(
+        self,
+        scored: list[tuple[Intent, float, list[str], float]],
+        model: ClassifyResult,
+    ) -> ClassifyResult:
+        """把模型给出的高风险动作意图改判成政策咨询。
+
+        置信度沿用规则层降级后的那个候选（`_score` 里的合成项），而不是
+        照搬模型的分数 —— 模型报的 0.95 是它对"这句话里有'退款'"的把握，
+        跟"该不该动钱"没关系，照搬会把一次改判包装成一次高置信命中。
+
+        标 `method="demoted"` 而不是复用 "rule"/"fallback"：trace 里要能一眼
+        看出"这条是被改判的"，否则排查时会以为是模型自己改的口径。
+        """
+        if not scored:
+            # 规则层一个词都没命中（"生鲜的东西坏了能赔吗"就是），没有可依据的
+            # 降级口径 —— 但**"咨询不许动手"是硬约束**，不能因为规则层没词就放行：
+            # 那样模型给的 return_request 会直接走进高风险子流程，把一句咨询
+            # 当成退货申请真跑起来（当轮带单号时还会真的登记退货）。
+            #
+            # 退到咨询出口，置信度取 `_fallback` 那一档（0.10）。这不是判断，
+            # 是"不敢动" —— 答不出来该由闸门和转人工去表达，而不是替用户退货。
+            logger.warning(
+                "咨询句里模型给了 %s，但规则层无候选可降级，退到 %s",
+                model.intent.value,
+                _QUESTION_INTENT.value,
+            )
+            return ClassifyResult(
+                intent=_QUESTION_INTENT,
+                confidence=_DEMOTED_NO_EVIDENCE_CONF,
+                label=INTENT_LABELS[_QUESTION_INTENT],
+                matched=[_QUESTION_SYNTHETIC_MATCH],
+                method="demoted",
+            )
+        demoted = self._best_effort(scored)
+        return ClassifyResult(
+            intent=demoted.intent,
+            confidence=demoted.confidence,
+            label=demoted.label,
+            matched=demoted.matched,
+            method="demoted",
+        )
 
     def _score(self, text: str) -> list[tuple[Intent, float, list[str], float]]:
         """返回 [(意图, 置信度, 命中词, 有效得分)]，按置信度降序。"""
@@ -269,7 +329,12 @@ class IntentClassifier:
             return None  # 模型编了个不存在的意图名 —— 当作没答
 
         conf = _clamp(data.get("confidence"), 0.0, 1.0)
-        method = "fallback" if data.get("fallback") else _method_of(self.llm)
+        # 必须过 `as_bool`：模型常把布尔写成字符串，而字符串 "false" 是真值。
+        # 直接 `if data.get("fallback")` 会把"我很确定"读成"我拿不准"，
+        # 于是这次判断被丢掉、换成规则层那个本来就没过开门线的弱候选 ——
+        # 出口都可能跟着换掉，而日志里一切正常。同文件其它解析点
+        # （confidence 有 _clamp、intent 有 Intent(str(...))）都做了归一，就这里漏了。
+        method = "fallback" if as_bool(data.get("fallback")) else _method_of(self.llm)
         matched = [str(m) for m in (data.get("matched") or []) if m]
         return ClassifyResult(
             intent=intent,
@@ -417,7 +482,27 @@ _MODAL_RE = re.compile(r"可以|能否|是否|能退|能用|能开|能补|行不
 
 #: "…是什么/怎么算/有哪些" —— 询问定义而不是提交请求。
 #: 「退款政策是什么」没有问号也没有"吗"，但它显然是在问，不是在退。
-_DEFINITION_RE = re.compile(r"是什么|有哪些|怎么算|什么规则|什么政策|什么条件|如何计算")
+#:
+#: 这张表**必须覆盖到"用户在问规则"的全部常见句式**，漏一个就出一次事故：
+#: 漏掉"谁出"，「退货运费谁出？」就会命中"退货"这个**动作词**，
+#: 以 0.8 的置信度走进高风险出口，系统伸手向用户要订单号 ——
+#: 而他只是想问运费谁付。这不是判错一个词，是把一句咨询当成了动钱的操作。
+#:
+#: 分四类收词（都只收"没有动作词也能确定是在问"的说法）：
+#:   定义式 —— 是什么 / 怎么算 / 怎么规定
+#:   归属式 —— 谁出 / 谁承担（问责任归属，不是问"能不能给我免了"）
+#:   时长式 —— 多久 / 多长时间 / 要几天（问规则里的时限）
+#:   流程式 —— 怎么走 / 什么流程
+#:
+#: 刻意**不收**单个"几天"：它既可能是政策（"几天无理由"）也可能是物流
+#: （"几天能到"），在 `_WEAK_KEYWORDS` 里已经因此被标成弱词，
+#: 这里再收一次等于把那条判定绕过去。
+_DEFINITION_RE = re.compile(
+    r"是什么|有哪些|怎么算|什么规则|什么政策|什么条件|如何计算"
+    r"|怎么规定|如何规定|怎么定的|怎么说的|什么标准|什么流程|怎么走"
+    r"|谁出|谁承担|谁付|谁负责|谁来出"
+    r"|多久|多长时间|要几天|多少天|几个工作日"
+)
 
 #: 祈使标记 —— 出现这些就是明确在提要求，即便句尾带"吗"也不算咨询。
 #: 「能帮我退款吗」是请求，不是咨询 —— 单看"吗"会判错，必须靠这条兜住。
@@ -475,31 +560,55 @@ def _demote_question_to_policy(
 
     out: list[tuple[Intent, float, list[str], float]] = []
     for intent, conf, matched, score in scored:
-        if intent in _ACTION_ONLY:
+        if intent in _DEMOTABLE_INTS:
             discounted = score * _QUESTION_DISCOUNT
             # 覆盖度按"最高分"重新给，规则与打分口径保持一致
             out.append((intent, round(discounted, 4), matched, discounted))
         else:
             out.append((intent, conf, matched, score))
 
-    if not any(i is _QUESTION_INTENT for i, _c, _m, _s in out):
-        # 咨询句里没有任何候选命中"政策"关键词（比如"能退吗"里没出现"政策"），
-        # 补一条候选，分数取折扣后最高分之上一点点，确保它胜出。
-        top = max((c for _i, c, _m, _s in out), default=0.0)
-        out.append(
-            (
-                _QUESTION_INTENT,
-                round(min(0.90, max(0.62, top + 0.05)), 4),
-                [_QUESTION_SYNTHETIC_MATCH],
-                1.0,
-            )
-        )
+    # 咨询句里"政策"就是正解，它必须**不低于**合成下限 —— 否则胜负是由折扣的
+    # 先后顺序决定的，而不是由"这是一句咨询"这个已经做出的判断决定的。
+    #
+    # 会踩的坑：「退货运费谁出？」里 POLICY_FAQ 命中了"运费"，但 `_score` 因为
+    # RETURN_REQUEST 带着动作词（"退货"）而给它加了一道话题降权（×0.5），只剩
+    # 0.20；"退货"降级后倒还有 0.44。"谁出"这个明确的咨询信号，就这样被
+    # "运费"那个词的降权抵消掉了 —— 降级函数改了排序，唯独没改胜负。
+    others = [t for t in out if t[0] is not _QUESTION_INTENT]
+    existing = next((t for t in out if t[0] is _QUESTION_INTENT), None)
+    top = max((c for _i, c, _m, _s in others), default=0.0)
+    floor = round(min(0.90, max(0.62, top + 0.05)), 4)
+
+    if existing is None:
+        # 一个政策词都没命中（比如"能退吗"里没有"政策"），补一条合成候选
+        out = others + [(_QUESTION_INTENT, floor, [_QUESTION_SYNTHETIC_MATCH], 1.0)]
+    elif existing[1] < floor:
+        # 命中了政策词，但被话题降权压住了 —— 抬到下限。
+        # 把合成标记追加进 matched，审计里能看出"这条的分不全是关键词给的"。
+        out = others + [
+            (_QUESTION_INTENT, floor, [*existing[2], _QUESTION_SYNTHETIC_MATCH], 1.0)
+        ]
+    # existing[1] >= floor：关键词本来就命中得够强，维持原样，不拿合成项改写它
     out.sort(key=lambda x: (-x[1], x[0].value))
     return out
 
 
 #: 合成候选的 matched 标记 —— 让审计里能看出一眼"这条不是关键词命中的"
 _QUESTION_SYNTHETIC_MATCH = "（提问式咨询）"
+
+#: 改判时规则层一个候选都没有（无从降级）给的置信度。
+#: 和 `_fallback` 同档，**必须低于 settings.confidence_threshold**。
+_DEMOTED_NO_EVIDENCE_CONF = 0.10
+
+#: 哪些意图在咨询句里要被降级 —— **只有会动钱的四条**。
+#:
+#: 刻意不用 `_ACTION_ONLY`。那个集合回答的是"命中里有没有动作词"，
+#: 它把 HUMAN_HANDOFF 也算成动作（"转人工"确实是用户要做的事），
+#: 用它来判"要不要降级"就错了一格：转人工既不动钱也不是咨询，
+#: 用户说「可以转人工吗」就是要人工。曾经真的这么写过，代价是
+#: 用户明确要人工、系统回一段《开票时效与限制》政策正文，而且 handoff=false ——
+#: 比答错更糟：他以为有人会来，其实没有。
+_DEMOTABLE_INTS: frozenset[Intent] = HIGH_RISK_INTENTS
 
 #: 提问式咨询的降权系数
 _QUESTION_DISCOUNT = 0.55

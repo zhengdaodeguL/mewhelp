@@ -533,7 +533,7 @@ coverage    = min(模型给的, 规则算的)
 
 ### 30 秒版本
 
-三层：`AgentState.path`（走过哪些节点，一眼看出分流对不对）、`AgentState.trace`（每步的输入输出摘要、检索回了哪些 chunk、闸门四个判据、工具成败与重试次数）、`AgentState.errors`（每步的降级原因）。这三样东西不依赖 Langfuse —— **trace 是产品功能，不是调试开关**。`GET /api/trace/{request_id}` 就是它的读接口。
+三层：`AgentState.path`（走过哪些节点，一眼看出分流对不对）、`AgentState.trace`（每步的输入输出摘要、检索回了哪些 chunk、闸门四个判据、工具成败与重试次数）、`AgentState.errors`（每步的降级原因）。这三样东西不依赖 Langfuse —— **trace 是产品功能，不是调试开关**。它的读接口是**进程内**的 `Tracer.trace()`（CLI / 评估脚本用），**不开 HTTP**：`/api/trace/{id}` 那种读接口是调试者视角，不该敞在面向用户的界面上 —— 排查走 CLI / 日志 / 数据库。
 
 ### 深入版本
 
@@ -563,7 +563,7 @@ coverage    = min(模型给的, 规则算的)
 
 ### 可能的追问
 
-- *"为什么不用 OpenTelemetry？"* → 用它就要引入一套 SDK 和 collector 的运维。当前规模下 `TraceStep` 直接落库（`storage/models.py::AuditLogRow`）更简单，而且能被 `GET /api/trace/{request_id}` 直接读出来给前端排障用。真要接 OTel，`Tracer.step()` 这个上下文管理器是最自然的接入点。
+- *"为什么不用 OpenTelemetry？"* → 用它就要引入一套 SDK 和 collector 的运维。当前规模下 `TraceStep` 落库（`storage/models.py::AuditLogRow`）更简单，读走的是进程内的 `Tracer.trace()`。真要接 OTel，`Tracer.step()` 这个上下文管理器是最自然的接入点。
 - *"Langfuse 连不上会怎样？"* → 三级降级：构造期 bridge 起不来 → 关桥 + 一条 warning，只留本地 trace；span 开不起来 → 关桥，后续步骤不再尝试；flush 失败 → 忽略。**三种情况都不影响业务**。
 - *"怎么防止日志被证据正文撑爆？"* → 证据只记 `chunk_id` / `title` / `score`（`_evidence_digest`），不记正文。`retrieve` 节点的注释："*只记 chunk_id 和标题，不记全文 —— 日志不该被证据正文撑爆。*"
 

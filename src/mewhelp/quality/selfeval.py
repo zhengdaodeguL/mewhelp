@@ -40,7 +40,7 @@ import re
 from typing import Any
 
 from ..config import Settings, get_settings
-from ..llm import LLMClient
+from ..llm import LLMClient, as_bool
 from ..schemas import SelfEvalResult
 
 #: 答案里"可能被编造"的量化声明：天数 / 金额 / 小时 / 工作日 / 折扣 / 百分比。
@@ -201,8 +201,34 @@ def _claims(answer: str) -> list[str]:
 
 
 def _squash(text: str) -> str:
-    """去掉所有空白 —— 用于宽松匹配。"""
-    return re.sub(r"\s+", "", text or "")
+    """去空白 + 统一同义单位 —— 用于宽松匹配。
+
+    只去空白是不够的。证据写"7 天内寄回"、模型复述成"7 日内寄回"，这是**同一个
+    事实换个说法**，而按逐字比对会被判成编造 —— 后果不是少一句话，是整条答复
+    被判 self_eval_failed，用户看到"帮你转人工"，而没有任何人跟进。
+
+    真模型的任务恰恰是"用自己的话复述证据"，所以单位改写是常态而不是异常；
+    反倒是离线 mock 把证据原文拼进答复（llm.py 的 `_mock_generate`），
+    数字永远逐字命中，这条路径在离线测试里结构性地不可见。
+
+    只折叠**同义**写法，不做数字换算（"一周"和"7 天"仍然算两回事）——
+    换算是语义判断，规则层不做，留给人看 coverage 刻度。
+    """
+    text = re.sub(r"\s+", "", text or "")
+    for pattern, canonical in _UNIT_SYNONYMS:
+        text = pattern.sub(canonical, text)
+    return text
+
+
+#: 同义单位折叠表。顺序有意义：长的先替换，否则"个工作日"会被"日"先吃掉。
+_UNIT_SYNONYMS: tuple[tuple[re.Pattern[str], str], ...] = (
+    (re.compile(r"个?工作日"), "工作日"),
+    (re.compile(r"小时|个小时"), "小时"),
+    (re.compile(r"天|日"), "天"),
+    (re.compile(r"元|¥|￥|块钱|块|圆"), "元"),
+    (re.compile(r"%|％"), "%"),
+    (re.compile(r"折"), "折"),
+)
 
 
 # ------------------------------------------------------------
@@ -293,13 +319,13 @@ def _coerce(payload: dict[str, Any]) -> SelfEvalResult:
 
 
 def _as_bool(value: Any) -> bool:
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, str):
-        return value.strip().lower() in {"true", "1", "yes", "是", "通过"}
-    if isinstance(value, (int, float)):
-        return bool(value)
-    return False
+    """模型给的"布尔"读成布尔。实现统一在 `llm.as_bool`。
+
+    这条曾经只在本模块有（而 `nlu/intent.py` 的同类字段直接拿原值当真值用），
+    于是同一个"模型把 true 写成字符串"的现象，一处防住了、另一处静默取反。
+    模型输出解析属于同一件事，口径只该有一份。
+    """
+    return as_bool(value)
 
 
 def _as_float(value: Any, default: float = 0.0) -> float:

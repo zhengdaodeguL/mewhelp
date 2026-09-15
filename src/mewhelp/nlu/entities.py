@@ -20,8 +20,17 @@ from ..schemas import Turn
 # 订单号
 # ============================================================
 
-#: 带 ORD 前缀的写法：ORD-1001 / ORD1001 / ord 1001 都归一成 ORD-1001
-_ORDER_RE = re.compile(r"ORD[\-_\s]?(\d{4,8})", re.I)
+#: 全项目**唯一**的订单号口径。指代消解、槽位、高风险子流程、置信度闸门
+#: 都从这一条正则派生 —— 三处各写一份的下场，是其中两份悄悄写坏、只有一份能跑。
+#:
+#: **不要用 `\b` 划边界。** Python 的 `\w` 包含中日韩字符，于是"订单ORD-1001"
+#: 里"单"和"O"都是词字符、中间根本没有词边界，`\bORD` 匹配不到；
+#: "ORD-1001的物流"末尾同理。而中文用户恰恰很少在单号前后敲空格 ——
+#: 结果就是"用户明明报了单号，系统却追着要单号"。
+#:
+#: 改用两头都不依赖 `\w` 的定界：前面不能是 ASCII 字母数字（挡住 `xORD-1001`
+#: 这种粘连），后面不能还是数字（挡住从更长的数字串里截一段）。
+ORDER_RE = re.compile(r"(?<![A-Za-z0-9])ORD[-_\s]?(\d{4,8})(?!\d)", re.I)
 
 #: 用户也常只说"订单 1001""单号：10012345"。这种裸数字必须**带上下文词**才认，
 #: 否则"我家住 1001 室""电话 1380000"都会被当成订单号 —— 误抽订单号比抽不到
@@ -46,7 +55,7 @@ def find_order_id(text: str) -> str | None:
     """
     if not text:
         return None
-    hits = _ORDER_RE.findall(text)
+    hits = ORDER_RE.findall(text)
     if hits:
         return normalize_order_id(hits[-1])
     hits = _BARE_ORDER_RE.findall(text)

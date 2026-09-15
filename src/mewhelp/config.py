@@ -9,11 +9,12 @@
 
 from __future__ import annotations
 
+import os
 from functools import lru_cache
 from pathlib import Path
 from typing import Literal
 
-from pydantic import AliasChoices, Field
+from pydantic import AliasChoices, Field, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
@@ -33,14 +34,22 @@ class Settings(BaseSettings):
     llm_temperature: float = 0.0
     llm_max_tokens: int = 1024
     llm_timeout_s: float = 60.0
-    openai_api_key: str | None = Field(
-        default=None,
-        validation_alias=AliasChoices("MEWHELP_OPENAI_API_KEY", "OPENAI_API_KEY"),
-    )
-    openai_base_url: str | None = Field(
-        default=None,
-        validation_alias=AliasChoices("MEWHELP_OPENAI_BASE_URL", "OPENAI_BASE_URL"),
-    )
+    #: 连接阶段的超时，比分给读取的那一段短得多。
+    #: 中转域名下面往往挂着好几个 IP，其中个别是黑洞 —— 连接也等满 60 秒的话，
+    #: 第一次挑中坏 IP 就把整次预算烧光，重试压根没机会发生。
+    llm_connect_timeout_s: float = 8.0
+    #: 模型请求的重试次数。和工具的 `tool_max_retries` 分开：工具的失败要记进
+    #: 业务轨迹（"这次查询重试过"），模型的重试只是链路抖动，不该混在一个开关里。
+    llm_max_retries: int = 3
+    #: 模型是否先输出思维链（`reasoning_content`）再给正文 —— DeepSeek-R 系、
+    #: o 系这类推理模型都要打开。打开后输出预算改用下面那个更大的值，并且不发
+    #: `response_format`（推理模型普遍不支持，个别中转直接 400）。
+    llm_reasoning: bool = False
+    #: 推理模式下的输出预算。思维链同样计入 `completion_tokens`，沿用 1024 的话
+    #: 会出现"想完了、话没说出来"：`content` 为空且 `finish_reason=length`。
+    llm_max_tokens_reasoning: int = 4096
+    openai_api_key: str | None = None
+    openai_base_url: str | None = None
 
     # ---------------- Embedding ----------------
     embedding_mode: Literal["mock", "bge"] = "mock"
@@ -76,6 +85,17 @@ class Settings(BaseSettings):
     min_evidence_count: int = 1
 
     # ---------------- 会话上下文 ----------------
+    # ⚠️ 这两项目前**不在请求路径上**，改了不会改变问答行为。
+    #
+    # 它们服务的是 `memory/context.py` 的双层上下文（近处滑窗保原文、更早的
+    # 压成摘要），那套实现和它的测试都在，但 `ChatService` 从来没有调过它 ——
+    # 实际进模型的是会话库里保留的全部轮次（上限见
+    # `api/service.py` 的 `DEFAULT_MAX_TURNS`）。
+    #
+    # 接上去不是一行的事，是个有代价的取舍，所以先把现状写明而不是让它假装生效：
+    # 滑窗设为 3 轮意味着**超过 3 轮的对话几乎每轮都要多跑一次摘要模型调用**，
+    # 而指代消解能扫到的原文只剩 3 轮（"它"指到 5 轮前的那一单就找不到了，
+    # 只能靠摘要里恰好提到）。要接就得连着这两条一起定。
     window_turns: int = 3              # 近处滑窗保留的轮数（原文）
     summary_trigger_tokens: int = 2000  # 超过这个量就把更早的压成摘要
 
@@ -96,6 +116,28 @@ class Settings(BaseSettings):
     data_dir: Path = PROJECT_ROOT / "data"
     knowledge_dir: Path = PROJECT_ROOT / "data" / "knowledge"
     eval_dir: Path = PROJECT_ROOT / "data" / "eval"
+
+    @model_validator(mode="after")
+    def _fallback_to_plain_openai_env(self) -> "Settings":
+        """MEWHELP_ 前缀优先，只有它为空时才回落到不带前缀的 OPENAI_*。
+
+        这里**不能**用 `AliasChoices("MEWHELP_OPENAI_API_KEY", "OPENAI_API_KEY")`：
+        pydantic-settings 里环境变量的优先级高于 `.env` 文件，于是机器上任何历史
+        遗留的 OPENAI_API_KEY 都会压过本项目 `.env` 里明确写的那一个 ——
+        表现为"明明配了 key，跑起来用的却是别人家的"。显式回落才让 `.env` 说了算。
+        """
+        for field_name, env_name in (
+            ("openai_api_key", "OPENAI_API_KEY"),
+            ("openai_base_url", "OPENAI_BASE_URL"),
+        ):
+            if not getattr(self, field_name):
+                setattr(self, field_name, os.environ.get(env_name) or None)
+        return self
+
+    @property
+    def llm_output_budget(self) -> int:
+        """不给单次调用指定 max_tokens 时的默认输出预算。"""
+        return self.llm_max_tokens_reasoning if self.llm_reasoning else self.llm_max_tokens
 
     @property
     def is_fully_mocked(self) -> bool:

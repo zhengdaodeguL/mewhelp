@@ -28,23 +28,40 @@ from dataclasses import dataclass
 from typing import Any
 
 from ..domain import Intent, ToolError
+from ..nlu.entities import ORDER_RE
+from ..nlu.entities import normalize_order_id as normalize_entity_order_id
 from ..schemas import SlotExtraction, ToolCall
 
-#: 订单号的唯一口径。全项目只在这里定义一次正则 ——
-#: 两处各写一个正则，迟早会出现"一处认 ORD 1007、一处不认"的分裂。
-ORDER_ID_RE = re.compile(r"\bORD[-\s]?(\d{4,8})\b", re.IGNORECASE)
+#: 订单号口径来自 NLU 的实体层，这里**不再自己写一份**。
+#:
+#: 原先这里自带一条 `\bORD[-\s]?(\d{4,8})\b`，`quality/gate.py` 里还有一条
+#: 一模一样的副本。两条都因为 `\b` 在中文里不成立而漏抽（见 entities.ORDER_RE
+#: 的注释），于是"帮我取消订单ORD-1001"会被判成缺订单号，反过来问用户要号码 ——
+#: 而他刚刚才给过。两个文件的注释都写着"全项目只定义一次"，实际有四份。
+ORDER_ID_RE = ORDER_RE
 
 
 def normalize_order_id(raw: str) -> str:
-    """把 `ord 1007` / `ORD-1007` / `ORD1007` 统一成 `ORD-1007`。"""
+    """把 `ord 1007` / `ORD-1007` / `ORD1007` 统一成 `ORD-1007`。
+
+    和 `entities.normalize_order_id` 同一口径（含去前导零），
+    否则同一个单号在槽位层和这里会得出两个不同的字符串。
+    """
     m = ORDER_ID_RE.search(raw)
-    return f"ORD-{m.group(1)}" if m else raw.strip()
+    return normalize_entity_order_id(m.group(1)) if m else raw.strip()
 
 
 def extract_order_id(text: str) -> str | None:
-    """从文本里抽订单号。只认当轮文本，不扫历史。"""
+    """从文本里抽订单号。只认当轮文本，不扫历史。
+
+    取**第一个**匹配，和 `entities.find_order_id`（取最后一个）不同，这是刻意的：
+    那边服务的是指代消解，"最近提到的那一单"才是用户说的"它"；
+    这里服务的是取消/退款这种会动钱的指令，一句话里出现两个单号时
+    （"取消 ORD-1001，不是 ORD-1002"）第一个才是他要动的那个 ——
+    取最后一个会把一个明确的否定项当成目标。
+    """
     m = ORDER_ID_RE.search(text or "")
-    return f"ORD-{m.group(1)}" if m else None
+    return normalize_entity_order_id(m.group(1)) if m else None
 
 
 #: 哪些意图需要订单号才能进入子流程

@@ -57,6 +57,8 @@ import re
 
 from ..config import Settings, get_settings
 from ..domain import HIGH_RISK_INTENTS, Intent, RefusalReason
+from ..nlu.entities import ORDER_RE
+from ..nlu.entities import normalize_order_id as normalize_entity_order_id
 from ..schemas import GateDecision, RetrievalResult, SlotExtraction
 
 # ------------------------------------------------------------
@@ -107,7 +109,6 @@ _DEFAULT_HIGH_RISK_MARGIN = 0.0
 # 模型调用等于把"最便宜的一道检查"变成"第二贵的调用"。用正则抽不全没关系
 # （抽不到就退化成只按分数判），抽得稳才有意义。
 
-_RE_ORDER_ID = re.compile(r"\bORD[-\s]?(\d{4,8})\b", re.I)
 _RE_DAYS = re.compile(r"(\d{1,3})\s*(?:个)?\s*天")
 _RE_YUAN = re.compile(r"(\d+(?:\.\d+)?)\s*元")
 
@@ -151,8 +152,13 @@ def _normalize_order_id(raw: str) -> str:
 
     不归一化，用户打 `ord1001` 而证据写 `ORD-1001`，覆盖率会算成 0 并误拒。
     这是最典型的"规则没错、口径没统一"造成的假故障。
+
+    ——所以这里直接用实体层那一个归一化函数，不再自己拼字符串：
+    原先这里返回 `"ORD-" + raw`（保留前导零），而 `SlotExtraction.order_id`
+    走的是实体层（去前导零）。用户打 `ord0001` 时两边会得到 `ORD-0001` 和
+    `ORD-1`，覆盖率照样算成 0 —— 正是这段注释想避免的那个故障，只是换了个地方。
     """
-    return "ORD-" + raw
+    return normalize_entity_order_id(raw)
 
 
 def _extract_kinds(text: str) -> list[tuple[str, str]]:
@@ -161,7 +167,7 @@ def _extract_kinds(text: str) -> list[tuple[str, str]]:
         return []
 
     pairs: list[tuple[str, str]] = []
-    for m in _RE_ORDER_ID.finditer(text):
+    for m in ORDER_RE.finditer(text):
         pairs.append((_KIND_ORDER, _normalize_order_id(m.group(1))))
     for m in _RE_PRODUCT.finditer(text):
         word = m.group(0)
@@ -352,13 +358,18 @@ class ConfidenceGate:
         # 顺序是有意义的：先报"一条都没有"，再报"有但都不够格"，接着"够格但太少"，
         # 最后才是"够格但不贴题"。这样用户拿到的解释永远是最贴近根因的那一条，
         # 而不是"最先撞上的那条"。
+        #
+        # message 是**给用户看的话**，会被当作答复正文发出去、也会写进会话历史
+        # 和导出文件。所以这里一个字都不许提分数、阈值、条数 —— 那些是 checks 和
+        # trace 的事。曾经这几条话术把"相关性只有 0.10（低于 0.35）"原样念给用户，
+        # 既违反"开发者口径不进界面"，也让用户看到一串无法解读的数字。
         if not raw:
             checks["reject"] = 1.0
             decision = GateDecision.reject(
                 0.0,
                 RefusalReason.NO_EVIDENCE,
                 checks,
-                message="抱歉，知识库里没有检索到与这个问题相关的资料，我不猜，帮你转人工核实一下。",
+                message="抱歉，这个问题我这边暂时没有找到可靠的依据，不敢乱答，帮你转人工确认一下。",
             )
         elif top_score < threshold:
             checks["reject"] = 1.0
@@ -366,10 +377,7 @@ class ConfidenceGate:
                 confidence,
                 RefusalReason.WEAK_EVIDENCE,
                 checks,
-                message=(
-                    f"抱歉，我找到的资料相关性只有 {top_score:.2f}（低于 "
-                    f"{threshold:.2f}），不足以支撑一个确定答复，帮你转人工确认。"
-                ),
+                message="抱歉，我找到的资料和你的问题对不太上，不足以支撑一个确定答复，帮你转人工确认一下。",
             )
         elif len(valid) < min_count:
             checks["reject"] = 1.0
@@ -378,10 +386,7 @@ class ConfidenceGate:
                 confidence,
                 RefusalReason.WEAK_EVIDENCE,
                 checks,
-                message=(
-                    f"抱歉，只找到 {len(valid)} 条够格的资料，"
-                    f"不到 {min_count} 条的最低要求，帮你转人工确认。"
-                ),
+                message="抱歉，能找到的依据太单薄，我不敢凭它下结论，帮你转人工确认一下。",
             )
         elif cov_pairs and coverage < _COVERAGE_MIN:
             checks["reject"] = 1.0

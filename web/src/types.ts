@@ -53,8 +53,6 @@ export interface MemoryItem {
   /** auto = 系统从对话里抽的；manual = 用户自己在面板里写的 */
   source: 'auto' | 'manual' | string
   pinned: boolean
-  /** 这条记忆真正帮上忙的次数（不是"被塞进 prompt 的次数"） */
-  hits: number
   createdAt: string
   updatedAt: string
 }

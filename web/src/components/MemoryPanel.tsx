@@ -105,14 +105,6 @@ export function MemoryPanel({
               </div>
               <div className="memory-meta">
                 <span>{item.source === 'manual' ? '我自己写的' : '对话里记住的'}</span>
-                {item.hits > 0 && (
-                  <>
-                    <span className="session-dot" aria-hidden="true" />
-                    {/* 命中次数是"这条记忆有没有价值"唯一的客观依据 ——
-                        它真的帮系统补全过用户没说清的话，才算数。 */}
-                    <span>帮上忙 {item.hits} 次</span>
-                  </>
-                )}
                 <span className="session-dot" aria-hidden="true" />
                 <time dateTime={item.updatedAt}>{relativeTime(item.updatedAt, now)}</time>
               </div>

@@ -17,9 +17,12 @@
 
 from __future__ import annotations
 
+import json
+from collections.abc import Sequence
 from typing import Any
 
-from ..domain import Exit, Intent, NodeName, RefusalReason
+from ..domain import Exit, Intent, NodeName, RefusalReason, ToolError
+from ..llm import LLMResponse, extract_json
 from ..schemas import (
     Evidence,
     GateDecision,
@@ -277,8 +280,6 @@ def make_agent_node(deps) -> Any:
     """
 
     def agent_node(state: AgentState) -> dict[str, Any]:
-        from ..llm import extract_json
-
         question = state.get("resolved_question") or state.get("question", "")
 
         # 缺必填槽位时先追问，而不是让 Agent 拿 None 去调工具。
@@ -308,44 +309,52 @@ def make_agent_node(deps) -> Any:
         steps_detail: list[dict[str, Any]] = []
         errors: list[str] = []
 
-        scratch = [{"role": "user", "content": question}]
+        scratch: list[dict[str, Any]] = [{"role": "user", "content": question}]
         for step in range(deps.max_agent_steps):
             try:
                 resp = deps.llm.chat(scratch, tools=specs, task="plan_tool")
                 usage = usage.add(_usage_from(resp))
-                plan = extract_json(resp.text)
+                actions = _read_plan(resp)
             except Exception as exc:  # noqa: BLE001 — 规划失败就收手，不用模型兜
                 errors.append(f"agent: {exc}")
                 break
 
-            action = (plan or {}).get("action")
-            action_input = (plan or {}).get("action_input") or {}
-            steps_detail.append({"step": step, "action": action, "args": action_input})
-
-            if not action or action == "finish":
+            steps_detail.append(
+                {"step": step, "actions": [{"action": a, "args": d} for a, d in actions]}
+            )
+            if not actions:
                 break
 
             # 高风险工具不允许 Agent 直接调用 —— 只能由 high_risk_flow 决定。
             # 这是"业务铁律写死在图上"最具体的一处体现。
-            if action in deps.tools.high_risk_actions():
-                calls.append(
-                    ToolCall(
-                        name=action,
-                        args=dict(action_input),
-                        ok=False,
-                        error="HIGH_RISK_REQUIRES_FLOW",
-                    )
+            #
+            # 先整轮扫一遍再决定执行与否，而不是"能跑的先跑、危险的丢一边"：
+            # 模型越过这条线的时候，这一轮的规划整体已经不可信了，只执行其中
+            # "看起来安全"的那几个，等于让越界的模型拿到一半的执行权。
+            risky = [(a, d) for a, d in actions if a in deps.tools.high_risk_actions()]
+            if risky:
+                calls.extend(
+                    ToolCall(name=a, args=dict(d), ok=False, error="HIGH_RISK_REQUIRES_FLOW")
+                    for a, d in risky
                 )
                 steps_detail[-1]["blocked"] = "high_risk"
                 break
 
-            call = deps.tools.call(action, dict(action_input))
-            calls.append(call)
-            scratch.append({"role": "assistant", "content": resp.text})
+            executed = [
+                deps.tools.call(action, dict(action_input)) for action, action_input in actions
+            ]
+            calls.extend(executed)
+            # 把这一步的动作与结果写回对话，供下一轮继续推理。
+            # 正文为空（模型只用 function calling 说话）时要补一句动作本身 ——
+            # 空着一轮，下一步就失去了"我刚要干什么"的线索，只能对着工具结果猜。
+            scratch.append({"role": "assistant", "content": resp.text or _plan_text(actions)})
             scratch.append(
                 {
                     "role": "user",
-                    "content": f"工具 {action} 返回：{_brief(call.result if call.ok else call.error)}",
+                    "content": "\n".join(
+                        f"工具 {c.name} 返回：{_brief(c.result if c.ok else c.error)}"
+                        for c in executed
+                    ),
                 }
             )
         else:
@@ -367,6 +376,52 @@ def make_agent_node(deps) -> Any:
         }
 
     return agent_node
+
+
+def _read_plan(resp: LLMResponse) -> list[tuple[str, dict[str, Any]]]:
+    """从一次规划响应里读出这一步要调哪些工具、参数是什么。
+
+    两种约定都要认，而且**必须**都认：
+
+      * **function calling** —— 真模型按 OpenAI 协议把动作放在 `tool_calls` 里，
+        正文往往是空的、或者是一句"我先查一下订单"的旁白；
+      * **正文 JSON** —— 离线 mock 把 `{"action": ..., "action_input": ...}`
+        写在正文里。
+
+    只读正文的话，接上真模型会**安静地一个工具都不调**：意图、出口、置信度
+    全都正常，就是没有数据，最后生成节点只能答"没有可用的证据"。而这条路径
+    离线跑永远不复现 —— mock 永远走的是第二种约定。
+
+    function calling 优先：正文此时本来就可能没有可解析的内容。
+    返回空列表表示"模型认为可以收尾了"。
+    """
+    if resp.tool_calls:
+        return [
+            (str(call.get("name") or ""), _as_args(call.get("arguments")))
+            for call in resp.tool_calls
+            if call.get("name")
+        ]
+    try:
+        plan = extract_json(resp.text)
+    except Exception:  # noqa: BLE001 — 解析不出计划就是"没有下一步"，不是错误
+        return []
+    if not isinstance(plan, dict):
+        return []
+    action = plan.get("action")
+    if not action or action == "finish":
+        return []
+    return [(str(action), _as_args(plan.get("action_input")))]
+
+
+def _as_args(value: Any) -> dict[str, Any]:
+    return value if isinstance(value, dict) else {}
+
+
+def _plan_text(actions: Sequence[tuple[str, dict[str, Any]]]) -> str:
+    """把这一步的动作写成一句模型看得懂的记录，回灌进对话。"""
+    return json.dumps(
+        [{"action": a, "action_input": d} for a, d in actions], ensure_ascii=False
+    )
 
 
 def _brief(value: Any, limit: int = 400) -> str:
@@ -401,12 +456,20 @@ def _render_tool_answer(calls: list[ToolCall]) -> str:
 
     每个工具的结果都是 dict，带自己的 `status_label` / `note` 字段，优先用它们。
     这样新增一个业务工具时，只要它返回规范的 dict，这里就不用改。
+
+    **有成功的就只渲染成功的。** 这一轮里失败的那些，多半已经被模型自己纠正
+    （它换个工具名或补上参数再调一次），把"系统暂时不可用"拼进答复等于让用户
+    读一段他不需要知道的故障前言 —— 数据是对的、前言是假的，整条读起来像系统坏了。
+    全部失败才算真的没办成，那时候才渲染错误。
     """
     if not calls:
         return "没有可用的查询结果。"
 
+    successful = [c for c in calls if c.ok]
+    renderable = successful or calls
+
     parts: list[str] = []
-    for call in calls:
+    for call in renderable:
         if not call.ok:
             parts.append(_tool_error_text(call.error))
             continue
@@ -425,21 +488,44 @@ def _render_tool_answer(calls: list[ToolCall]) -> str:
     return "已经查到相关信息，具体的我帮你转人工核对一下。"
 
 
+#: 服务侧故障 —— 重试也不会好，这一轮是真的没办成，该转人工。
+#: 与业务侧拒绝（订单不存在、不可取消、不在退款条件内）区分开：那是"查到了，
+#: 结果是不同意"，用户知道下一步该干什么，再转人工只会多一道没人接的工序。
+#:
+#: 注意 `ToolError.UPSTREAM_ERROR` 同时承载"下游真的挂了"和"模型把工具名
+#: 写错了"两种成因（见 tools/registry.py 的 `call`）—— 后者会在多步循环里
+#: 被模型自己纠正，所以判升级时还要看**有没有任何一条成功**，不能只看错误码。
+_SERVICE_ERRORS = frozenset({ToolError.TIMEOUT.value, ToolError.UPSTREAM_ERROR.value})
+
+
+def _should_escalate(calls: list[ToolCall]) -> bool:
+    """这一轮工具全都没办成，且至少一条是服务侧故障 → 升级转人工。"""
+    if any(c.ok for c in calls):
+        return False
+    return any((c.error or "") in _SERVICE_ERRORS for c in calls)
+
+
 #: 工具错误码 → 人话。工具名对用户是内部实现细节，不该泄漏到答复里。
+#:
+#: **这里的每一句都不许承诺"已帮你转人工"。** 这句话只出现在答复正文里，
+#: 而 agent 出口的 handoff 标志是由 `_should_escalate` 单独决定的 ——
+#: 正文说转了、标志是 false，用户就会读到一个不存在的转接（前端只在
+#: handoff=true 时才补那条"已为你转接人工客服"提示条）。真要转人工时，
+#: 由节点把 handoff 置真、再由 handoff 节点补那句提示，正文不抢这个话。
 _TOOL_ERROR_TEXT: dict[str, str] = {
     "ORDER_NOT_FOUND": "没有查到这个订单号，麻烦核对一下再发我（形如 ORD-1007）。",
     "ORDER_NOT_CANCELLABLE": "这笔订单已经发货了，没法直接取消。",
     "ORDER_ADDRESS_LOCKED": "订单已发出，收货地址改不了了。",
-    "REFUND_NOT_ELIGIBLE": "这笔订单不在退款条件内，我可以帮你转人工复核。",
+    "REFUND_NOT_ELIGIBLE": "这笔订单不在退款条件内，需要的话我可以帮你转人工复核。",
     "TIMEOUT": "系统查询超时了，请稍后再试。",
-    "UPSTREAM_ERROR": "系统暂时不可用，我帮你转人工处理。",
+    "UPSTREAM_ERROR": "系统暂时没查出来，请稍后再试。",
 }
 
 
 def _tool_error_text(error: str | None) -> str:
     if error and error in _TOOL_ERROR_TEXT:
         return _TOOL_ERROR_TEXT[error]
-    return "暂时没查到，我帮你转人工核实一下。"
+    return "暂时没查到，麻烦核对一下信息再发我。"
 
 
 # ============================================================
@@ -553,8 +639,15 @@ def make_generate_node(deps) -> Any:
         tool_calls = state.get("tool_calls") or []
         if tool_calls:
             answer = _render_tool_answer(tool_calls)
+            escalate = _should_escalate(tool_calls)
             return {
                 "answer": answer,
+                "handoff": escalate,
+                # 转人工时给一个拒答原因，飞轮才知道该把这条归到哪个入口 ——
+                # 不写的话它落进问题池却标不出"为什么答不上来"，人工审核时
+                # 分不清"缺知识"还是"下游挂了"。BUSINESS_TOOL 出口没有闸门，
+                # 没有别的来源能补这个字段。
+                "refusal_reason": RefusalReason.NO_EVIDENCE if escalate else None,
                 "path": [NodeName.GENERATE.value],
                 "trace": [
                     _step(
@@ -562,7 +655,25 @@ def make_generate_node(deps) -> Any:
                         source="tool_result",
                         tool_calls=[c.name for c in tool_calls],
                         chars=len(answer),
+                        escalate=escalate,
                     )
+                ],
+            }
+
+        # 业务工具出口却一个工具都没调成 —— 这不是"答不上来"，是"没查到"。
+        #
+        # 不能让它掉进下面那条知识库通道：那条通道会拿着**空的证据**去生成
+        # （business_tool 出口不经过 retrieve，`retrieval` 是 None），模型只能
+        # 编一句"没有依据"，而置信度闸门压根没参与过 —— 它只服务知识出口。
+        # 于是一次工具规划的失败，被静默粉饰成一次正常的知识问答。
+        if state.get("exit") is Exit.BUSINESS_TOOL:
+            return {
+                "answer": "抱歉，这笔信息我这边暂时没查到，帮你转人工确认一下。",
+                "handoff": True,
+                "refusal_reason": RefusalReason.NO_EVIDENCE,
+                "path": [NodeName.GENERATE.value],
+                "trace": [
+                    _step(NodeName.GENERATE.value, source="no_tool_call", fallback=True)
                 ],
             }
 

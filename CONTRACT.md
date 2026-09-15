@@ -265,14 +265,11 @@ def build_tracer(settings=None) -> Tracer
 ```python
 # api/app.py
 def create_app(deps: GraphDeps | None = None) -> FastAPI
-# 路由
+# 路由 —— 面向**用户**的服务。任何开发者/调试者视角的入口都不开在这里。
 POST /api/chat          {user_id, session_id, message, quote?} → SSE 流（逐字）
 POST /api/chat/sync     同上但返回完整 JSON
-POST /api/feedback      {session_id, request_id, thumbs_down, comment}
-GET  /api/flywheel/pending
-POST /api/flywheel/review  {record_id, approved, reviewer, answer}
-GET  /api/health
-GET  /api/trace/{request_id}
+POST /api/feedback      {session_id, request_id, thumbs_down, comment} → 只回 {"ok": bool}
+GET  /api/health        → 只回 {"status": "ok"}（存活探针，不暴露组件模式）
 # 会话历史（所有权靠 user_id 查询参数，没有鉴权 —— 见 README 已知限制）
 GET    /api/sessions?user_id=            → 列表（标题 / 轮数 / 预览 / 更新时间）
 GET    /api/sessions/{id}?user_id=       → 恢复对话（只回用户视角字段）
@@ -285,6 +282,15 @@ PATCH  /api/memories/{id}                {user_id, pinned}
 DELETE /api/memories/{id}?user_id=
 GET  /                  服务 src/mewhelp/api/static/index.html
 ```
+
+**刻意不开的入口**（开发者/调试者视角，走 CLI / logs / 数据库 / 内部脚本）：
+
+* `/docs` / `/redoc` / `/openapi.json` —— FastAPI 以 `docs_url=None / redoc_url=None /
+  openapi_url=None` 关闭；
+* `/api/trace/{request_id}` —— 调用树是内部诊断，`Tracer.trace()` 仍是进程内接口；
+* `/api/flywheel/pending`、`/api/flywheel/review` —— 飞轮审核台是运营侧的东西，
+  走 `python -m mewhelp.cli flywheel` 和 `FlywheelStore` 的 Python 接口。
+
 SSE 事件格式（**前端按这个解析，不要改**）：
 ```
 event: meta     data: {"request_id":..,"intent":..,"exit":..,"path":[..]}

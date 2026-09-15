@@ -89,7 +89,6 @@ def build_deps(
     每个组件都允许外部覆盖 —— 这正是上面那个容器的意义。
     """
     from ..flywheel.store import FlywheelStore
-    from ..memory.context import ContextManager
     from ..nlu.coreference import CoreferenceResolver
     from ..nlu.intent import IntentClassifier
     from ..quality.gate import ConfidenceGate
@@ -156,7 +155,23 @@ def build_graph(deps: GraphDeps, checkpointer: Any | None = None) -> Any:
         {"handoff": "handoff", "__end__": "generate"},
     )
 
-    g.add_edge("generate", END)
+    # 生成之后要**再看一眼 handoff**，不能直接进 END。
+    #
+    # generate 有三条会置 handoff=True 的出口：生成失败兜底、自评没过（判成编造）、
+    # 工具全没调成。原先这三条都直连 END，后果有两个：
+    #   1. 答复正文里写着"帮你转人工"，而 handoff 标志是假的 —— 前端只在
+    #      handoff=true 时才补那条"已为你转接人工客服"提示条，用户看到的
+    #      是一句没有兑现的承诺；
+    #   2. 绕过了 flywheel，`FlywheelSource.SELF_EVAL` 这个入口在生产路径上
+    #      永远是 0 —— 答不上来的问题一条都进不了问题池，而那正是这套
+    #      "数据飞轮"存在的意义。
+    # handoff 节点对"已经有答复"的情况是**追加**一句转接提示、不覆盖正文，
+    # 所以走这一趟不会把已经生成好的答复弄丢。
+    g.add_conditional_edges(
+        "generate",
+        lambda s: "handoff" if s.get("handoff") else END,
+        {"handoff": "handoff", END: END},
+    )
     g.add_edge("handoff", "flywheel")
     g.add_edge("flywheel", END)
 

@@ -192,10 +192,10 @@ export default function App() {
   const onRate = useCallback(
     (message: ChatMessage, rating: Rating) => {
       rate(message, rating)
-      // 点踩是要被认真对待的：它落到问题池，运营据此改知识或改检索。
-      // 告诉用户"你的反馈有人看"，是让下一次点踩还愿意发生的前提。
+      // 点踩之后让用户知道"收到"。不说这条反馈去哪了、会不会有人处理 ——
+      // 那些是内部流程，对用户而言这一段就是过程。
       if (message.rating !== 'down' && rating === 'down') {
-        toast('已记录反馈，会同步给运营', 'ok')
+        toast('已记录，谢谢你的反馈', 'ok')
       }
     },
     [rate],

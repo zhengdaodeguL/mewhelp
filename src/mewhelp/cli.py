@@ -142,7 +142,7 @@ def cmd_serve(args: argparse.Namespace) -> int:
     from .api import create_app
 
     print(f"启动 MewHelp 服务：http://{args.host}:{args.port}")
-    print("演示页：GET /    接口文档：/docs")
+    print("用户界面：GET /")
     app = create_app()
     uvicorn.run(app, host=args.host, port=args.port, log_level=args.log_level)
     return 0

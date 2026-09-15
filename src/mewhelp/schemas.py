@@ -140,7 +140,8 @@ class ClassifyResult(BaseModel):
     label: str = ""
     #: 打分依据（命中的关键词 / few-shot 例子），用于解释和调试
     matched: list[str] = Field(default_factory=list)
-    #: 命中哪条通道：rule | mock | llm | fallback
+    #: 命中哪条通道：rule | mock | llm | demoted | fallback
+    #: demoted = 模型报了高风险动作意图、但这句话是在问规则，被按业务铁律改判成政策咨询
     method: str = "mock"
 
 

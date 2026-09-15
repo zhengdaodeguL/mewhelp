@@ -40,6 +40,9 @@ class LLMResponse:
     finish_reason: str = "stop"
     latency_ms: float = 0.0
     raw: Any = None
+    #: 推理模型在正文之前写的那段思维链。只用于排查，**不进任何 prompt、更不进
+    #: 答复** —— 它常常包含模型对用户的臆测（"用户可能在试探"），漏出去就是事故。
+    reasoning: str = ""
 
     def json(self) -> Any:
         """把 text 当 JSON 解析，容忍 ```json 围栏和前后废话。"""
@@ -85,6 +88,25 @@ def extract_json(text: str) -> Any:
                     except json.JSONDecodeError:
                         break
     raise LLMError(f"cannot parse JSON from response: {text[:200]}")
+
+
+def as_bool(value: Any) -> bool:
+    """把模型给的"布尔"读成布尔。
+
+    真模型经常把 `true` 写成字符串 `"true"` / `"是"` / `"通过"`，反向也一样。
+    直接拿原值当条件判断的后果不是报错，而是**静默取反**：
+    字符串 `"false"` 是真值，`if payload.get("fallback")` 会判成"模型说它拿不准"，
+    于是一次高置信的判断被丢掉、换成规则层的弱猜测 —— 而日志里一切正常。
+
+    所以凡是读模型给的布尔字段，都必须过这一道，不许直接 `if data.get(...)`。
+    """
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, str):
+        return value.strip().lower() in {"true", "1", "yes", "y", "是", "对", "通过", "有"}
+    if isinstance(value, (int, float)):
+        return bool(value)
+    return False
 
 
 class LLMClient(ABC):
@@ -540,10 +562,24 @@ class OpenAILLMClient(LLMClient):
         self._client = OpenAI(
             api_key=self.settings.openai_api_key,
             base_url=self.settings.openai_base_url,
-            timeout=self.settings.llm_timeout_s,
-            max_retries=self.settings.tool_max_retries,
+            timeout=self._timeout(),
+            max_retries=self.settings.llm_max_retries,
         )
         self.model = self.settings.llm_model
+
+    def _timeout(self) -> Any:
+        """连接超时单独调短，读写沿用 `llm_timeout_s`。
+
+        中转域名下常挂着多个 IP，挑中黑洞 IP 时连接会一直挂着 —— 如果连接阶段
+        也等满 `llm_timeout_s`，第一次就把整次调用的预算烧完了，`max_retries`
+        形同虚设。压短之后坏 IP 快速失败，重试换一个 IP 就通了。
+        """
+        import httpx
+
+        return httpx.Timeout(
+            self.settings.llm_timeout_s,
+            connect=self.settings.llm_connect_timeout_s,
+        )
 
     def chat(
         self,
@@ -561,9 +597,12 @@ class OpenAILLMClient(LLMClient):
             "messages": list(messages),
             "temperature": self.settings.llm_temperature if temperature is None else temperature,
         }
-        if max_tokens or self.settings.llm_max_tokens:
-            kwargs["max_tokens"] = max_tokens or self.settings.llm_max_tokens
-        if json_mode:
+        if max_tokens or self.settings.llm_output_budget:
+            kwargs["max_tokens"] = max_tokens or self.settings.llm_output_budget
+        if json_mode and not self.settings.llm_reasoning:
+            # 推理模型普遍不认 `response_format`：发了要么被忽略、要么个别中转直接
+            # 400。提示词里本来就写着"只输出 JSON"，`extract_json` 也容忍围栏和
+            # 前后废话，所以关掉它并不降低解析成功率。
             kwargs["response_format"] = {"type": "json_object"}
         if tools:
             kwargs["tools"] = list(tools)
@@ -574,17 +613,49 @@ class OpenAILLMClient(LLMClient):
             raise LLMError(f"LLM 调用失败: {exc}") from exc
 
         choice = resp.choices[0]
+        message = choice.message
         usage = getattr(resp, "usage", None)
         tool_calls: list[dict[str, Any]] = []
-        for tc in getattr(choice.message, "tool_calls", None) or []:
+        for tc in getattr(message, "tool_calls", None) or []:
             try:
                 args = json.loads(tc.function.arguments or "{}")
             except json.JSONDecodeError:
                 args = {}
             tool_calls.append({"id": tc.id, "name": tc.function.name, "arguments": args})
 
+        text = (message.content or "").strip()
+        reasoning = (getattr(message, "reasoning_content", None) or "").strip()
+        finish_reason = choice.finish_reason or "stop"
+
+        # 空正文是**失败**，不是"答完了什么都不用说"。判空必须放在这里：下游拿到
+        # 空字符串只会原样渲染成一条空气泡（界面上就是"转人工"），而日志里没有
+        # 任何异常 —— 排查时只会看到"模型没报错但也没说话"。
+        # 唯一合法的空正文是"这一轮要调工具"，所以 tool_calls 非空时放过。
+        if not text and not tool_calls:
+            detail = "，思维链已耗尽输出预算" if reasoning else ""
+            raise LLMError(
+                f"模型返回空正文（finish_reason={finish_reason}{detail}，"
+                f"task={task}，max_tokens={kwargs.get('max_tokens')}）"
+            )
+
+        # 被预算截断的正文同样是**失败** —— 它比空正文更危险：空正文看起来像
+        # "模型没说话"，而半句话看起来像一句完整的答复。用户会一字一字收到
+        # "款项将在 1 到 3 个工"然后流就结束了，SSE 的 done 还是正常收尾，
+        # trace 里 self_eval 也过（半句话里的数字往往仍来自证据），
+        # 事后没有任何线索能看出这一轮是断的。
+        #
+        # 宁可让调用方走兜底：生成节点会回一句"没能组织出可靠的答复，帮你转人工"，
+        # 摘要/记忆这类任务会退回规则层，规划任务会收手 —— 每一个都比发半句话好。
+        if finish_reason == "length" and not tool_calls:
+            raise LLMError(
+                f"模型正文被输出预算截断（finish_reason=length，task={task}，"
+                f"max_tokens={kwargs.get('max_tokens')}，"
+                f"正文 {len(text)} 字，思维链 {len(reasoning)} 字）。"
+                "推理模型要把思维链和正文的预算分开算。"
+            )
+
         return LLMResponse(
-            text=choice.message.content or "",
+            text=text,
             usage=TokenUsage(
                 input_tokens=getattr(usage, "prompt_tokens", 0) or 0,
                 output_tokens=getattr(usage, "completion_tokens", 0) or 0,
@@ -592,9 +663,10 @@ class OpenAILLMClient(LLMClient):
             ),
             model=self.model,
             tool_calls=tool_calls,
-            finish_reason=choice.finish_reason or "stop",
+            finish_reason=finish_reason,
             latency_ms=(time.perf_counter() - t0) * 1000,
             raw=resp,
+            reasoning=reasoning,
         )
 
 

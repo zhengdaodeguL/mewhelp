@@ -13,6 +13,7 @@ from __future__ import annotations
 import pytest
 
 from mewhelp.domain import Exit, Intent, RefusalReason
+from mewhelp.llm import LLMResponse, MockLLMClient
 from mewhelp.schemas import Turn
 from mewhelp.workflow.graph import build_deps, build_graph
 from mewhelp.workflow.state import new_state
@@ -233,6 +234,168 @@ def test_tool_error_is_reported_not_raised(graph_and_deps):
 
 
 # ============================================================
+# Agent 的两种工具协议
+#
+# 真模型按 OpenAI 的 function calling 回话：动作在 `tool_calls` 里，正文是空的
+# 或者一句"我先查一下订单"的旁白。而离线 mock 永远把 `{"action": ...}` 写在正文里，
+# 所以"只读正文"这种写法在整套离线测试里**全绿**，接上真模型却安静地一个工具
+# 都不调 —— 意图、出口、置信度都正常，就是没有数据，最后答一句"没有可用的证据"。
+# 下面三条就是钉住这个盲区的。
+# ============================================================
+
+
+class _ToolCallingLLM(MockLLMClient):
+    """规划那一步改用 function calling 协议回话，其余照旧走 mock。
+
+    正文刻意写成一句英文旁白（真模型常见）—— 里面没有任何 JSON，
+    只解析正文的实现会在这里收手。
+    """
+
+    def __init__(self, *plans: list[tuple[str, dict]]) -> None:
+        super().__init__()
+        self._plans = list(plans)
+
+    def chat(self, messages, **kw):  # type: ignore[override]
+        if kw.get("task") != "plan_tool":
+            return super().chat(messages, **kw)
+        self.calls.append({"task": "plan_tool", "messages": list(messages), "tools": kw.get("tools")})
+        plan = self._plans.pop(0) if self._plans else []
+        return LLMResponse(
+            text="I'll check that for you.",  # 旁白里没有 JSON
+            tool_calls=[
+                {"id": f"call_{i}", "name": name, "arguments": args}
+                for i, (name, args) in enumerate(plan)
+            ],
+            finish_reason="tool_calls" if plan else "stop",
+        )
+
+
+def agent_deps(*plans: list[tuple[str, dict]]):
+    return build_deps(llm=_ToolCallingLLM(*plans))
+
+
+def run_agent(deps, question="帮我查订单 ORD-1001 的状态"):
+    from mewhelp.workflow.nodes import make_agent_node
+
+    state = new_state(
+        request_id="req-agent", session_id="s", user_id="u", question=question
+    )
+    return make_agent_node(deps)(state)
+
+
+def test_agent_executes_function_calling_plan():
+    deps = agent_deps([("get_order", {"order_id": "ORD-1001"})])
+    out = run_agent(deps)
+    assert [c.name for c in out["tool_calls"]] == ["get_order"]
+    assert out["tool_calls"][0].ok, out["tool_calls"][0].error
+    assert out["tool_calls"][0].result["order_id"] == "ORD-1001"
+    assert out["errors"] == []
+
+
+def test_agent_runs_every_tool_the_model_asked_for():
+    """"查订单 + 查物流"是模型很自然的合并动作，不能只执行第一个。"""
+    deps = agent_deps(
+        [("get_order", {"order_id": "ORD-1001"}), ("track_logistics", {"order_id": "ORD-1001"})]
+    )
+    out = run_agent(deps)
+    assert [c.name for c in out["tool_calls"]] == ["get_order", "track_logistics"]
+    assert all(c.ok for c in out["tool_calls"])
+
+
+def test_function_calling_plan_is_fed_back_to_the_model():
+    """工具结果要回灌 —— 不回灌的话多步 ReAct 退化成"一步就收手"。"""
+    deps = agent_deps(
+        [("get_order", {"order_id": "ORD-1001"})],
+        [],  # 第二步：模型认为可以收尾了
+    )
+    run_agent(deps)
+    plans = [c for c in deps.llm.calls if c["task"] == "plan_tool"]
+    assert len(plans) == 2, "应该继续走第二步，而不是调完一次就结束"
+    fed_back = " ".join(str(m.get("content", "")) for m in plans[1]["messages"])
+    assert "ORD-1001" in fed_back, "第二步必须看得到第一步的工具结果"
+    # 正文为空时补的动作记录，让模型知道自己刚才要干什么
+    assert "get_order" in fed_back
+
+
+def test_high_risk_is_blocked_even_when_asked_via_function_calling():
+    """换一种协议回话，也越不过高风险这道门。"""
+    deps = agent_deps([("cancel_order", {"order_id": "ORD-1001"})])
+    out = run_agent(deps, question="取消订单 ORD-1001")
+    assert [c.error for c in out["tool_calls"]] == ["HIGH_RISK_REQUIRES_FLOW"]
+    assert not any(c.ok for c in out["tool_calls"])
+
+
+# ============================================================
+# 工具失败之后：答复、handoff 标志、飞轮三者必须一致
+# ============================================================
+
+
+def test_recovered_tool_failure_is_not_shown_to_the_user():
+    """模型先调错工具、下一轮自己改对 —— 答复里不该留那段故障前言。
+
+    真模型把工具名幻觉成 `get_logistics` 是常态，而 agent 循环会把错误回灌给
+    它自纠。用户要的是"订单正在备货"，不是"系统暂时不可用" ——
+    数据是对的、前言是假的，整条读起来像系统坏了。
+    """
+    deps = agent_deps(
+        [("get_logistics", {"order_id": "ORD-1002"})],       # 幻觉的工具名
+        [("track_logistics", {"order_id": "ORD-1002"})],     # 自己改对了
+    )
+    graph = build_graph(deps)
+    out = run(graph, "帮我查下订单 ORD-1002 的物流")
+
+    assert [c.ok for c in out["tool_calls"]] == [False, True]
+    assert out["handoff"] is False
+    for leaked in ("系统暂时", "没查出来", "UPSTREAM_ERROR", "get_logistics"):
+        assert leaked not in out["answer"], f"答复里漏了内部故障：{out['answer']}"
+
+
+def test_all_tools_failed_escalates_honestly():
+    """一条都没办成时，答复说转人工，handoff 标志就必须是真的。
+
+    这条曾经是坏的：正文写"我帮你转人工处理"，而 handoff 始终为 false，
+    前端因此不补那条"已为你转接人工客服"提示条 —— 用户读到一个不存在的转接。
+    """
+    deps = agent_deps([("get_logistics", {"order_id": "ORD-1002"})], [])
+    graph = build_graph(deps)
+    out = run(graph, "帮我查下订单 ORD-1002 的物流")
+
+    assert not any(c.ok for c in out["tool_calls"])
+    assert out["handoff"] is True
+    assert out["refusal_reason"] is RefusalReason.NO_EVIDENCE
+    assert "handoff" in out["path"], "转人工标志为真时必须真的走 handoff 节点"
+    assert "flywheel" in out["path"], "答不上来的问题要落进问题池"
+
+
+def test_business_refusal_does_not_escalate():
+    """业务侧拒绝（订单不存在）不该升级 —— 那是"查到了，结果是不同意"。"""
+    deps = agent_deps([("get_order", {"order_id": "ORD-9999"})], [])
+    graph = build_graph(deps)
+    out = run(graph, "帮我查订单 ORD-9999 的状态")
+
+    assert out["handoff"] is False
+    assert "ORDER_NOT_FOUND" not in out["answer"]
+
+
+def test_tool_plan_producing_nothing_escalates_instead_of_faking_an_answer():
+    """业务工具出口却一个工具都没调成 —— 不能说成"知识库没依据"。
+
+    原先这会掉进知识库那条通道，而 business_tool 出口不经过检索，
+    于是生成节点拿着**空证据**去问模型，模型只能编一句"没有依据"。
+    置信度闸门在这场里根本没参与过（它只服务知识出口），
+    一次工具规划的失败被静默粉饰成一次正常问答。
+    """
+    deps = build_deps(llm=_ToolCallingLLM())  # 永远不给计划
+    graph = build_graph(deps)
+    out = run(graph, "帮我查订单 ORD-1001 的状态")
+
+    assert out["exit"] is Exit.BUSINESS_TOOL
+    assert out["tool_calls"] == []
+    assert out["handoff"] is True
+    assert "知识库" not in out["answer"], "这不是知识库的事，不该那么说"
+
+
+# ============================================================
 # 高风险确定性子流程
 # ============================================================
 
@@ -424,6 +587,57 @@ def test_extract_order_id_normalizes_formats():
     assert extract_order_id("订单 ord 1007") == "ORD-1007"
     assert extract_order_id("ORD1007") == "ORD-1007"
     assert extract_order_id("没有订单号") is None
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "帮我取消订单ORD-1001",       # 中文紧挨着单号 —— 中文用户最常见的写法
+        "ORD-1001的物流怎么样了",      # 单号后面直接跟汉字
+        "我要退款ORD1001",            # 没有分隔符
+        "订单ORD_1001 取消掉",         # 下划线分隔
+    ],
+)
+def test_order_id_is_found_next_to_chinese(text):
+    """中文紧邻单号时必须抽得到。
+
+    这条曾经是坏的：正则为 `\\bORD[-\\s]?(\\d{4,8})\\b`，而 Python 的 `\\w`
+    包含中日韩字符 —— "订单ORD-1001"里"单"和"O"都是词字符，中间没有词边界，
+    `\\b` 匹配失败。于是用户明明报了单号，系统还是回一句"请把订单号发我"。
+    离线测试全是带空格的 fixture（"帮我取消订单 ORD-1001"），所以漏了很久。
+    """
+    assert extract_order_id(text) == "ORD-1001"
+
+
+def test_order_id_boundaries_still_reject_near_misses():
+    """放宽边界不等于不要边界：粘连在字母后、或从长数字里截一段，都不算。"""
+    assert extract_order_id("xORD-1001") is None
+    assert extract_order_id("ORD-100112345") is None
+    assert extract_order_id("ORD-100") is None  # 位数不够
+
+
+def test_order_id_agrees_across_layers():
+    """槽位层、高风险层、闸门层必须是同一个单号、同一个归一化。
+
+    三个模块原先各写一份正则和归一化，其中两份因 `\\b` 而失效、
+    归一化一个去前导零一个不去 —— 正是各自 docstring 里警告过的"口径分裂"。
+    """
+    from mewhelp.nlu.entities import find_order_id
+    from mewhelp.quality.gate import extract_entities
+
+    for text in ("帮我取消订单ORD-1001", "订单 ord 1001", "ORD1001"):
+        assert extract_order_id(text) == find_order_id(text) == "ORD-1001"
+    assert "ORD-1001" in extract_entities("帮我取消订单ORD-1001")
+
+
+def test_order_id_takes_the_first_match_for_money_actions():
+    """一句话里两个单号时，动钱的动作取**第一个**。
+
+    "取消 ORD-1001，不是 ORD-1002" —— 取最后一个会把用户明确否定的那一单
+    当成目标。指代消解那边取最后一个是对的（"最近提到的那一单"），
+    两条口径在此**刻意**不同，所以钉住。
+    """
+    assert extract_order_id("取消 ORD-1001，不是 ORD-1002") == "ORD-1001"
 
 
 def test_missing_slots_only_reads_current_turn():

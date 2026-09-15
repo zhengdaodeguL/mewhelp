@@ -207,17 +207,60 @@ def extract_candidates(llm: Any, question: str) -> list[MemoryCandidate]:
         return extract_by_rules(text)
 
     parsed = parse_candidates(data)
-    # 模型跑通了但一条都没抽到，是**正常结论**（这句话确实没有可记的），
-    # 不能再退回规则层 —— 那会把模型明确排除掉的东西又捡回来。
+    if parsed:
+        return parsed
+
+    # 一条都没抽到，要和"形状不认识"分开 —— 这两件事的处理方式完全相反。
+    #
+    #   模型明确说"没有"（`{"memories": []}`）→ 正常结论，返回空。
+    #   形状我们不认识（裸数组、多套一层 data、条目缺 key）→ **功能静默失效**。
+    #
+    # 后者原先直接返回空，且不打任何日志：用户档案在生产上会整体消失
+    # （他说"我穿 L 码"、面板空空如也、下一轮系统也不记得），而事后排查
+    # 一条线索都没有。这里退回规则层并留一条 warning，和异常那条通道对齐。
+    if not _says_nothing(data):
+        logger.warning("记忆抽取：模型返回的形状不认识，改用规则层。payload=%s", str(data)[:200])
+        return extract_by_rules(text)
     return parsed
 
 
+def _says_nothing(data: Any) -> bool:
+    """模型是否**明确**表达了"这句话没有可记的东西"。
+
+    只有 `{"memories": []}` 和 `[]` 算明确 —— 空字典、缺字段、缺 key 的条目
+    都不算：那些是"我们没读懂"，不是"模型说没有"。
+    """
+    if isinstance(data, list):
+        return not data
+    if isinstance(data, dict):
+        rows = data.get("memories")
+        return isinstance(rows, list) and not rows
+    return False
+
+
 def parse_candidates(data: Any) -> list[MemoryCandidate]:
-    """把模型输出整形成候选列表。任何形状不对的条目单独丢掉，不牵连其它条目。"""
-    if not isinstance(data, dict):
-        return []
-    rows = data.get("memories")
-    if not isinstance(rows, list):
+    """把模型输出整形成候选列表。任何形状不对的条目单独丢掉，不牵连其它条目。
+
+    对**形状**尽量宽容、对**内容**尽量严谨。宽容的部分：
+
+      * 顶层可以是 `{"memories": [...]}`、`{"data": {"memories": [...]}}`，
+        或者干脆就是个列表 —— 不同模型和中转的包装习惯不一样，
+        为这个丢掉整个功能不值当；
+      * 条目缺 `key` 时**不再整条丢弃**，改用 text 派生一个稳定键。
+        `key` 只是给去重用的内部字段，而提示词要求"稳定的英文短键"
+        恰恰是模型最容易不写的一项 —— 拿它当准入门槛，等于把用户档案
+        的存亡押在模型记不记得填一个内部字段上。
+
+    严谨的部分：`text` 为空才丢 —— 那才是真的没东西可记。
+    """
+    for candidate in (data, data.get("data") if isinstance(data, dict) else None):
+        if isinstance(candidate, list):
+            rows = candidate
+            break
+        if isinstance(candidate, dict) and isinstance(candidate.get("memories"), list):
+            rows = candidate["memories"]
+            break
+    else:
         return []
 
     out: list[MemoryCandidate] = []
@@ -226,12 +269,12 @@ def parse_candidates(data: Any) -> list[MemoryCandidate]:
         if not isinstance(raw, dict):
             continue
         text = str(raw.get("text") or "").strip()
-        key = str(raw.get("key") or "").strip()
         kind = str(raw.get("kind") or KIND_PREFERENCE).strip()
-        if not text or not key:
+        if not text:
             continue
         if kind not in (KIND_ORDER, KIND_PREFERENCE, KIND_MANUAL):
             kind = KIND_PREFERENCE
+        key = str(raw.get("key") or "").strip() or _derived_key(kind, text)
         if key in seen:
             continue
         text = text[:MAX_TEXT_CHARS]
@@ -240,6 +283,16 @@ def parse_candidates(data: Any) -> list[MemoryCandidate]:
         if len(out) >= MAX_PER_TURN:
             break
     return out
+
+
+def _derived_key(kind: str, text: str) -> str:
+    """模型没给 key 时，从内容派生一个稳定键。
+
+    必须**稳定**：同一个事实换个说法要能落到同一条记忆上（`upsert` 靠 key
+    去重），所以用内容哈希而不是自增序号 —— 序号每次调用都在变，
+    同一句话会被记成两条。
+    """
+    return f"{kind}:" + hashlib.sha1(text.encode("utf-8")).hexdigest()[:10]
 
 
 def candidates_from_json(raw: str) -> list[MemoryCandidate]:

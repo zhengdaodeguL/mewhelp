@@ -114,13 +114,19 @@ PYTHONPATH=src python -m mewhelp.cli serve              # 启动 FastAPI 服务�
 
 ```bash
 PYTHONPATH=src python -m mewhelp.cli serve --port 8123
-# 用户界面：GET /      接口文档：GET /docs      健康检查：GET /api/health
+# 用户界面：GET /      存活探针：GET /api/health（只回 {"status":"ok"}）
 ```
 
 > **请求体字段是 `message`，不是 `question`**；接口都在 `/api` 前缀下
 > （`/api/chat` 流式、`/api/chat/sync` 非流式、`/api/orders` 订单快捷选择、
 > `/api/sessions` 会话历史、`/api/memories` 长期记忆）。
 > 这两点是实际踩过的坑。
+
+> **开发者/调试者入口不开在 HTTP 上**：`/docs`、`/redoc`、`/openapi.json`、
+> `/api/trace/{id}` 都关闭了，`/api/health` 只回存活状态、不暴露组件模式，
+> `/api/flywheel/*` 审核台也不在 HTTP 服务里。运营侧走 CLI：
+> `python -m mewhelp.cli flywheel`（问题池统计）与 Python 侧的 `FlywheelStore`
+> 接口。这些信息面向的是部署与排查，不该敞给任何能访问这个域名的前端。
 
 > 会话与记忆接口一律带 `user_id`（`GET /api/sessions`、`GET /api/memories`、
 > `DELETE /api/memories/{id}` …）。演示环境没有登录态，这个查询参数是眼下
@@ -248,18 +254,18 @@ npm run build        # 产物输出到 src/mewhelp/api/static/
 配套地，`_mock_generate` 也改成**空行分块**输出（表格保持成块），
 否则整张表会被压成一行竖线塞进气泡。
 
-**界面只呈现用户该看的东西**：意图、节点路径、证据分数、工具名、耗时这些
-内部信息一律不渲染（开发者走 `/docs` 和 `/api/trace/{request_id}`）。
+**界面只呈现用户该看的东西**：意图、节点路径、证据分数、工具名、耗时、记忆
+命中次数这些内部信息一律不渲染 —— 连 HTTP 侧的开发者入口（`/docs`、
+`/api/trace/{id}`、飞轮审核台）也一并关闭了，接口只回用户视角的应答。
 知识库里的 Markdown 记号（`**加粗**`、表格分隔行）也会在推给前端前收拾干净，
-不会原样露在卡片上。这几条约束都有测试守着。
+不会原样露在卡片上。这几条约束都有测试守着（`test_frontend_does_not_render_internal_fields`、
+`test_dev_facing_endpoints_are_not_exposed`、`test_flywheel_review_and_pending_are_not_exposed_over_http`）。
 
 实测（本机真实运行）：
 
 ```
 GET /api/health → 200
-{"status":"ok","components":{"llm":"mock","embedding":"mock","vector_store":"memory",
- "reranker":"mock","database":"sqlite","observability":"local"},
- "fully_mocked":true,"kb_chunks":70,"db_ready":true, ...}
+{"status":"ok"}
 
 POST /api/chat/sync {"user_id":"u1","session_id":"s1","message":"运费怎么算"} → 200
   intent policy_faq | exit knowledge | path ['resolve','classify','retrieve','gate','generate']
@@ -444,6 +450,9 @@ MEWHELP_LLM_MODE=openai
 MEWHELP_LLM_MODEL=gpt-5-mini
 MEWHELP_OPENAI_API_KEY=sk-...
 MEWHELP_OPENAI_BASE_URL=          # 留空走官方
+#    推理模型（DeepSeek-R 系、o 系）必须打开：思维链也计入输出预算，
+#    不开的话会"想完了、话没说出来"（正文为空 + finish_reason=length）
+MEWHELP_LLM_REASONING=true
 
 # 2) 真实向量库（Milvus）
 MEWHELP_VECTOR_STORE_MODE=milvus
@@ -757,8 +766,10 @@ ORD-1007 那一单"这类事实，本来就不该随时间衰减 —— 它们�
   （`test_sessions_are_scoped_to_the_user` / 删别人的记忆会返回 `ok:false`），
   但它防不住"自己伪造一个 user_id"。真实系统里它必须来自登录态。
 - **`audit_log` 表建了、但运行时没有写入路径。** 节点级审计目前走内存里的
-  `Tracer`（`/api/trace/{request_id}`），落库这条链还没接上 —— 所以重启之后
+  `Tracer`（CLI / 评估脚本可用 `trace()`），落库这条链还没接上 —— 所以重启之后
   历史请求的调用树就查不到了。表结构本身是完整的（`tests/test_storage.py` 覆盖）。
+  （注意：`/api/trace/{id}` 这个 HTTP 读接口**故意不提供** —— 那是调试者视角，
+  不该开在面向用户的界面上。）
 - **长期记忆在 mock 下是规则表抽取**（订单号 / 尺码 / 联系方式偏好 / 会员 /
   称呼 / 备忘，共 7 类模式），自由表述（"我住杭州，一般周末在家"）要靠真模型。
   进 prompt 的是**最近 8 条**、没有做相关性排序 —— 条目少时够用，

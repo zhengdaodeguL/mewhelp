@@ -209,8 +209,13 @@ def test_disabled_step_and_flush_are_safe_noops():
     assert tracer.steps[0].details["top_score"] == 0.9
 
 
-def test_disabled_still_collects_trace_for_api():
-    """关闭观测 ≠ 不留痕：GET /api/trace/{id} 还得有数据可返回。"""
+def test_disabled_still_collects_trace_in_memory():
+    """关闭观测 ≠ 不留痕：本地 Tracer（`trace()`）还得有数据可返回。
+
+    注意 `trace()` 是**进程内**的诊断能力，走的是 CLI / 评估脚本，
+    不是暴露给前端的 HTTP 接口 —— 后者的 `/api/trace/{id}` 已关闭
+    （见 `test_dev_facing_endpoints_are_not_exposed`）。
+    """
     tracer = build_tracer(offline_settings())
     with tracer.bind("req-1"):
         with tracer.step(NodeName.RESOLVE):

@@ -14,7 +14,7 @@ from __future__ import annotations
 import pytest
 
 from mewhelp.domain import INTENT_SPECS, Exit, Intent
-from mewhelp.llm import MockLLMClient, LLMError
+from mewhelp.llm import LLMError, LLMResponse, MockLLMClient
 from mewhelp.nlu import CoreferenceResolver, IntentClassifier
 from mewhelp.schemas import SlotExtraction, Turn
 
@@ -316,6 +316,172 @@ def test_classify_long_keyword_weight_wins():
     result = clf.classify("我要退款")
     assert result.intent is Intent.REFUND_REQUEST
     assert "退款" in result.matched
+
+
+# ============================================================
+# 咨询 vs 请求：问规则的话不许触发动钱的流程
+#
+# 这是整份分类器里代价最不对称的一条：判成"请求"最多多问一次订单号，
+# 判成"咨询"却是用户说了"我要退款"而系统回一段政策。
+# 但反方向也不便宜 —— 「退货运费谁出？」被当成退货申请，系统会伸手向
+# 用户要订单号，而他只是想问运费。下面两组用例把两个方向都钉住。
+# ============================================================
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "你们家七天无理由是怎么规定的？",
+        "七天无理由怎么规定的",
+        "退货运费谁出？",
+        "退货的运费谁承担",
+        "退款要多久到账",
+        "退款多长时间到账",
+        "退货流程怎么走",
+        "退款政策是什么",
+        "生鲜类可以退款吗",
+    ],
+)
+def test_policy_questions_do_not_enter_high_risk(classifier, text):
+    """问规则的句子必须落到 policy_faq（knowledge 出口）。
+
+    这些句子里大多带着"退货""退款"这种**动作词** —— 规则层会先把它认成
+    高风险意图。区分靠的是 `_is_question` 加 `_demote_question_to_policy`：
+    祈使标记（"帮我""我要"）和指向自己那单的说法（"我的""这单"）一票否决，
+    剩下的看是不是在问定义、归属、时限。
+    """
+    result = classifier.classify(text)
+    assert result.intent is Intent.POLICY_FAQ, (
+        f"{text!r} → {result.intent}（matched={result.matched}）"
+    )
+    assert result.confidence >= 0.35, "低到闸门以下就等于答不出来"
+
+
+@pytest.mark.parametrize(
+    "text,expected",
+    [
+        # 带祈使标记：明确说了要做什么，句尾有"吗"也是请求
+        ("我要退货，七天无理由怎么走", Intent.RETURN_REQUEST),
+        ("能帮我退款吗", Intent.REFUND_REQUEST),
+        ("不要了，帮我退掉", Intent.RETURN_REQUEST),
+        ("麻烦帮我申请一下退货", Intent.RETURN_REQUEST),
+        # 指向自己那一单：问的是这笔单子能不能操作，不是品类规则
+        ("我的订单能退吗", Intent.RETURN_REQUEST),
+        ("订单能撤吗", Intent.CANCEL_ORDER),
+        ("这个订单我不要了", Intent.RETURN_REQUEST),
+        ("收货地址写错了帮我改一下", Intent.CHANGE_ADDRESS),
+    ],
+)
+def test_real_requests_still_enter_high_risk(classifier, text, expected):
+    """反方向：真请求不许被"咨询"这道闸门挡掉。
+
+    这组比上一组更重要 —— 用户明确说要退款，系统答一段政策，
+    是"没办成事"，不是"答错了话"。
+    """
+    result = classifier.classify(text)
+    assert result.intent is expected, f"{text!r} → {result.intent}"
+
+
+def test_policy_reading_outranks_the_action_word(classifier):
+    """"退货运费谁出？"里政策候选必须压过"退货"这个动作词。
+
+    这里踩过一个坑：POLICY_FAQ 命中了"运费"，但因为 RETURN_REQUEST 带动作词，
+    打分阶段给"运费"加了一道话题降权（×0.5）只剩 0.20，而"退货"降级后还有 0.44。
+    降级函数改了排序却没改胜负 —— "谁出"这个再明确不过的咨询信号被抵消掉了。
+    """
+    from mewhelp.nlu.intent import _is_question
+
+    assert _is_question("退货运费谁出？") is True
+    scored = classifier._score("退货运费谁出？")
+    assert scored[0][0] is Intent.POLICY_FAQ, f"第一名是 {scored[0][0]}，分数 {scored[:2]}"
+
+
+def test_model_action_intent_is_demoted_on_policy_questions():
+    """模型那一路也要被同一道业务铁律拦住。
+
+    `_demote_question_to_policy` 只在**规则候选**上生效，"退款要多久到账"
+    这种规则层不敢独断（覆盖度不够）的句子会被交给模型，而模型看着满句的
+    "退款"会答 refund_request —— 一句咨询就这样走进了高风险出口。
+    所以改判必须落在代码里，不能指望提示词里的 few-shot 每次都灵。
+    """
+
+    class ActionHappy(MockLLMClient):
+        """无论问什么都答"要退货"的模型。"""
+
+        def chat(self, messages, **kw):
+            if kw.get("task") == "classify":
+                self.calls.append({"task": "classify", "messages": list(messages)})
+                return LLMResponse(
+                    text='{"intent": "refund_request", "confidence": 0.95, "matched": ["退款"]}'
+                )
+            return super().chat(messages, **kw)
+
+    clf = IntentClassifier(llm=ActionHappy())
+    result = clf.classify("退款要多久到账")
+    assert result.intent is Intent.POLICY_FAQ
+    assert result.method == "demoted", "改判要能在 trace 里一眼看出来"
+
+
+def test_demotion_does_not_touch_real_requests():
+    """反方向同样要钉住：模型报了动作意图、句子又是真请求时，不许改判。"""
+
+    class ActionHappy(MockLLMClient):
+        def chat(self, messages, **kw):
+            if kw.get("task") == "classify":
+                self.calls.append({"task": "classify", "messages": list(messages)})
+                return LLMResponse(
+                    text='{"intent": "cancel_order", "confidence": 0.95, "matched": ["取消"]}'
+                )
+            return super().chat(messages, **kw)
+
+    clf = IntentClassifier(llm=ActionHappy())
+    result = clf.classify("帮我取消一下那笔单子")
+    assert result.intent is Intent.CANCEL_ORDER
+    assert result.method != "demoted"
+
+
+def test_transfer_to_human_is_never_demoted_to_policy(classifier):
+    """「可以转人工吗」必须是转人工，不能被"咨询降级"吞掉。
+
+    这条曾经真的写错过：降级集合用的是 `_ACTION_ONLY`，而它把 HUMAN_HANDOFF
+    也算成"动作"（"转人工"确实是用户要做的事）。于是"可以"两个字一命中咨询
+    判据，用户明确要人工就变成了一段政策正文 —— 而且 handoff=false。
+    比答错更糟：他以为有人会来，其实没有。
+    """
+    for text in ("转人工可以吗", "可以转人工吗", "可以找客服吗", "能转人工吗"):
+        result = classifier.classify(text)
+        assert result.intent is Intent.HUMAN_HANDOFF, f"{text!r} → {result.intent}"
+
+
+def test_policy_question_with_no_rule_evidence_still_refuses_to_act():
+    """规则层一个词都没命中时，"咨询不许动手"依然成立。
+
+    "能补吗"命中了能愿结构（判定为咨询），但关键词表里一个词都命不中 ——
+    此时若把模型给的 return_request 原样放行，一句咨询会直接走进高风险子流程；
+    当轮文本里恰好带单号时，系统会真的登记退货。
+    宁可退到一个低置信的咨询出口，让闸门去表达"答不上来"，也不能替用户退货。
+    """
+
+    class ActionHappy(MockLLMClient):
+        def chat(self, messages, **kw):
+            if kw.get("task") == "classify":
+                self.calls.append({"task": "classify", "messages": list(messages)})
+                return LLMResponse(
+                    text='{"intent": "return_request", "confidence": 0.86, "matched": []}'
+                )
+            return super().chat(messages, **kw)
+
+    from mewhelp.nlu.intent import _is_question
+
+    text = "能补吗"
+    assert _is_question(text), "前置条件：这句被判成咨询"
+    clf = IntentClassifier(llm=ActionHappy())
+    assert clf._score(text) == [], "前置条件：规则层没有任何候选"
+
+    result = clf.classify(text)
+    assert result.intent is Intent.POLICY_FAQ, f"→ {result.intent}"
+    assert result.method == "demoted"
+    assert result.confidence < 0.35, "低到闸门线以下，让'答不上来'由闸门表达"
 
 
 def test_classify_tie_goes_to_model(llm):
