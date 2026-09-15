@@ -72,9 +72,11 @@ interface Props {
   actions: PaletteAction[]
   themeChoice: 'system' | 'light' | 'dark'
   onClose: () => void
+  /** 正在退场（由 useDelayedUnmount 驱动）。这期间只播动画，不再接任何交互。 */
+  closing?: boolean
 }
 
-export function CommandPalette({ actions, themeChoice, onClose }: Props) {
+export function CommandPalette({ actions, themeChoice, onClose, closing = false }: Props) {
   const [query, setQuery] = useState('')
   const [active, setActive] = useState(0)
   const listRef = useRef<HTMLDivElement>(null)
@@ -123,7 +125,7 @@ export function CommandPalette({ actions, themeChoice, onClose }: Props) {
 
   return (
     <div
-      className="palette-backdrop"
+      className={`palette-backdrop${closing ? ' is-closing' : ''}`}
       onClick={onClose}
       role="presentation"
       // 自己管键盘：焦点在输入框上，方向键从那里冒泡上来

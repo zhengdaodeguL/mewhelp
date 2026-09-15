@@ -7,85 +7,113 @@
 
 :root,
 :root[data-theme='light'] {
-  --bg: #e9edf5;
-  --surface: #ffffff;
-  --surface-soft: #f4f6fb;
-  --surface-sunken: #eef1f7;
-  --border: #e3e7f0;
-  --border-strong: #d3d9e6;
-  --text: #1c2333;
-  --text-muted: #7c869c;
-  --accent: #3b6ef6;
-  --accent-strong: #2f5be0;
-  --accent-soft: #e8efff;
-  --notice-bg: #f0f1f5;
-  --notice-text: #6b7488;
-  --grid-line: rgba(59, 110, 246, 0.26);
-  --grid-glow: rgba(77, 124, 255, 0.16);
+  /* 底色取自清晨的水汽：偏青的灰白，不是灰也不是白 —— 它要在风景照片
+     上面当"雾"，太中性会把照片的色偏压成脏灰。 */
+  --bg: #e6eff0;
+  --bg-deep: #dbe7ea;
 
-  --kind-order: #3b6ef6;
-  --kind-order-soft: #e8efff;
-  --kind-logistics: #8b5cf6;
-  --kind-logistics-soft: #f1ebfe;
-  --kind-source: #0f9d76;
-  --kind-source-soft: #e4f6f0;
-  --kind-action: #12a150;
-  --kind-action-soft: #e6f6ec;
+  /* 玻璃。面板不再是实心色块，而是"压在风景上的一层磨砂"：
+     --glass 给最大块的外壳，--glass-strong 给浮层（抽屉、命令面板）。 */
+  --glass: rgba(255, 255, 255, 0.56);
+  --glass-strong: rgba(255, 255, 255, 0.82);
+  --surface: rgba(255, 255, 255, 0.62);
+  --surface-soft: rgba(255, 255, 255, 0.46);
+  --surface-sunken: rgba(238, 246, 247, 0.58);
+  --border: rgba(28, 74, 92, 0.11);
+  --border-strong: rgba(28, 74, 92, 0.2);
+  --hairline: rgba(255, 255, 255, 0.5); /* 玻璃上沿那道高光 */
 
-  --tone-warn: #b7791f;
-  --tone-warn-soft: #fdf3e2;
-  --tone-info: #3b6ef6;
-  --tone-info-soft: #e8efff;
-  --tone-active: #7c4ddb;
-  --tone-active-soft: #f1ebfe;
-  --tone-ok: #12a150;
-  --tone-ok-soft: #e6f6ec;
+  --text: #14242b;
+  --text-muted: #5f7787;
+  --accent: #2f7fe0;
+  --accent-strong: #1f66c4;
+  --accent-soft: rgba(47, 127, 224, 0.13);
+  /* 夕照金：只用在"当前/已选中"这种点缀上。整屏冷色里需要一点暖，
+     否则照片里的暖色一进来就显得界面在跟它打架。 */
+  --accent-warm: #d98324;
+  --accent-warm-soft: rgba(217, 131, 36, 0.14);
+
+  --notice-bg: rgba(255, 255, 255, 0.5);
+  --notice-text: #66798a;
+  --grid-line: rgba(47, 127, 224, 0.22);
+  --grid-glow: rgba(47, 127, 224, 0.14);
+
+  --kind-order: #2f7fe0;
+  --kind-order-soft: rgba(47, 127, 224, 0.13);
+  --kind-logistics: #7c5ad6;
+  --kind-logistics-soft: rgba(124, 90, 214, 0.13);
+  --kind-source: #0e8f6c;
+  --kind-source-soft: rgba(14, 143, 108, 0.13);
+  --kind-action: #12925c;
+  --kind-action-soft: rgba(18, 146, 92, 0.13);
+
+  --tone-warn: #a8701a;
+  --tone-warn-soft: rgba(217, 131, 36, 0.15);
+  --tone-info: #2f7fe0;
+  --tone-info-soft: rgba(47, 127, 224, 0.13);
+  --tone-active: #7c5ad6;
+  --tone-active-soft: rgba(124, 90, 214, 0.13);
+  --tone-ok: #12925c;
+  --tone-ok-soft: rgba(18, 146, 92, 0.13);
 
   --radius: 16px;
   --radius-sm: 11px;
-  --shadow-sm: 0 1px 2px rgba(24, 34, 62, 0.06);
-  --shadow-md: 0 8px 28px rgba(24, 34, 62, 0.08);
-  --shadow-lg: 0 18px 48px rgba(24, 34, 62, 0.16);
+  /* 阴影带一点青，而不是纯黑：纯黑阴影压在彩色照片上会发脏 */
+  --shadow-sm: 0 1px 2px rgba(16, 52, 66, 0.07);
+  --shadow-md: 0 8px 28px rgba(16, 52, 66, 0.1);
+  --shadow-lg: 0 22px 60px rgba(12, 42, 56, 0.18);
 }
 
 :root[data-theme='dark'] {
-  --bg: #0b0e14;
-  --surface: #161b25;
-  --surface-soft: #1c2230;
-  --surface-sunken: #12161f;
-  --border: #262d3d;
-  --border-strong: #333c50;
-  --text: #e7ebf3;
-  --text-muted: #8b96ad;
-  --accent: #5b86ff;
-  --accent-strong: #7aa0ff;
-  --accent-soft: #1d2946;
-  --notice-bg: #1e2431;
-  --notice-text: #98a2b8;
-  --grid-line: rgba(91, 134, 255, 0.30);
-  --grid-glow: rgba(91, 134, 255, 0.20);
+  /* **不是黑。** 深松绿偏蓝，颜色是从风景照片的暗部里取的 ——
+     纯黑会把照片压成一盏灯，而带色的暗部会让整屏看起来像"暮色里的一块玻璃"。
+     所有面板都是半透明：风景始终在动，界面只是浮在它上面。 */
+  --bg: #0e1b22;
+  --bg-deep: #0a141a;
 
-  --kind-order: #7aa0ff;
-  --kind-order-soft: #1d2946;
-  --kind-logistics: #b79bff;
-  --kind-logistics-soft: #271f42;
-  --kind-source: #4fd3a8;
-  --kind-source-soft: #12302a;
-  --kind-action: #57d68d;
-  --kind-action-soft: #12301f;
+  --glass: rgba(16, 31, 40, 0.62);
+  --glass-strong: rgba(20, 38, 48, 0.82);
+  --surface: rgba(22, 40, 50, 0.58);
+  --surface-soft: rgba(34, 56, 68, 0.5);
+  --surface-sunken: rgba(12, 25, 33, 0.54);
+  --border: rgba(150, 205, 214, 0.15);
+  --border-strong: rgba(150, 205, 214, 0.28);
+  --hairline: rgba(214, 245, 250, 0.1);
 
-  --tone-warn: #e3b341;
-  --tone-warn-soft: #332b16;
-  --tone-info: #7aa0ff;
-  --tone-info-soft: #1d2946;
-  --tone-active: #b79bff;
-  --tone-active-soft: #271f42;
-  --tone-ok: #57d68d;
-  --tone-ok-soft: #12301f;
+  --text: #e9f3f5;
+  --text-muted: #8fa8b2;
+  --accent: #5fb0ff;
+  --accent-strong: #86c6ff;
+  --accent-soft: rgba(95, 176, 255, 0.16);
+  --accent-warm: #f0a961;
+  --accent-warm-soft: rgba(240, 169, 97, 0.16);
 
-  --shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
-  --shadow-md: 0 10px 30px rgba(0, 0, 0, 0.45);
-  --shadow-lg: 0 20px 56px rgba(0, 0, 0, 0.6);
+  --notice-bg: rgba(30, 50, 60, 0.55);
+  --notice-text: #9cb1ba;
+  --grid-line: rgba(95, 176, 255, 0.28);
+  --grid-glow: rgba(95, 176, 255, 0.18);
+
+  --kind-order: #7cbaff;
+  --kind-order-soft: rgba(124, 186, 255, 0.15);
+  --kind-logistics: #b6a0ff;
+  --kind-logistics-soft: rgba(182, 160, 255, 0.15);
+  --kind-source: #52d6ac;
+  --kind-source-soft: rgba(82, 214, 172, 0.15);
+  --kind-action: #5fd894;
+  --kind-action-soft: rgba(95, 216, 148, 0.15);
+
+  --tone-warn: #e8b95e;
+  --tone-warn-soft: rgba(232, 185, 94, 0.16);
+  --tone-info: #7cbaff;
+  --tone-info-soft: rgba(124, 186, 255, 0.15);
+  --tone-active: #b6a0ff;
+  --tone-active-soft: rgba(182, 160, 255, 0.15);
+  --tone-ok: #5fd894;
+  --tone-ok-soft: rgba(95, 216, 148, 0.15);
+
+  --shadow-sm: 0 1px 2px rgba(2, 12, 18, 0.42);
+  --shadow-md: 0 10px 32px rgba(2, 12, 18, 0.46);
+  --shadow-lg: 0 24px 64px rgba(2, 12, 18, 0.62);
 }
 
 * {
@@ -186,6 +214,9 @@ body,
 }
 
 body {
+  /* 底色只作为"照片加载完之前的兜底"—— 真正在下面的是 <Landscape>。
+     没有它的话，首帧会是一块死白（浅色）或死黑（深色），
+     而这块颜色会一直闪到第一张照片解码完。 */
   background: var(--bg);
   color: var(--text);
   font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'PingFang SC',
@@ -193,6 +224,8 @@ body {
   font-size: 15px;
   line-height: 1.6;
   -webkit-font-smoothing: antialiased;
+  /* 窗口比照片窄时不要出现横向滚动条：scene 靠 inset:-6% 撑出位移余量 */
+  overflow: hidden;
 }
 
 kbd {
@@ -207,14 +240,22 @@ kbd {
 
 /* ---------------- 分栏骨架 ---------------- */
 
-/* 三栏：历史（可折叠） | 对话 + 工作区（中间可拖拽） */
+/* 三栏：历史（可折叠） | 对话 + 工作区（中间可拖拽）
+
+   `.app` 本身**不再有背景**。它只是一块"裁切框"：
+   overflow:hidden 把三块玻璃的边角修成同一个圆角，风景从它周围和缝隙里透出来。
+   玻璃效果落在每个面板自己身上（见下），而不是落在这里 ——
+   一旦 `.app` 带上 backdrop-filter，它会变成 fixed 子元素的包含块，
+   里头的 toast / 命令面板 / 抽屉遮罩全会被 overflow:hidden 裁掉。 */
 .app {
+  position: relative;
   display: flex;
   height: 100%;
   max-width: 1800px;
   margin: 0 auto;
   overflow: hidden;
-  background: var(--surface);
+  background: transparent;
+  isolation: isolate;
 }
 
 @media (min-width: 1100px) {
@@ -226,13 +267,37 @@ kbd {
   }
 }
 
+/* 环境光：跟着指针走的一团柔光，压在所有面板**下面**。
+   放在玻璃下面而不是上面，是为了让它像"玻璃背后的光" ——
+   backdrop-filter 会把它连同一并模糊掉，得到的是磨砂质感，
+   而不是一层贴在屏幕上的光斑。 */
+.ambient {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background: radial-gradient(
+    460px circle at var(--mx, 50%) var(--my, 30%),
+    var(--accent-warm-soft),
+    transparent 68%
+  );
+  opacity: 0.9;
+  transition: opacity var(--dur-3) var(--ease-out);
+}
+
 /* 历史栏的外壳。宽屏下它参与布局；窄屏下变成覆盖式抽屉（见文件末尾）。 */
 .rail-slot {
+  position: relative;
+  z-index: 1;
   display: flex;
   flex: 0 0 auto;
   min-height: 0;
   border-right: 1px solid var(--border);
+  /* 三块玻璃里最"实"的一块：它是导航区，底下的照片动得越明显，
+     列表文字越难扫。所以磨砂更厚、底色更沉。 */
   background: var(--surface-sunken);
+  backdrop-filter: blur(34px) saturate(160%);
+  -webkit-backdrop-filter: blur(34px) saturate(160%);
 }
 
 .rail-slot--hidden {
@@ -249,6 +314,8 @@ kbd {
 }
 
 .pane-chat {
+  position: relative;
+  z-index: 1;
   display: flex;
   flex-direction: column;
   /* 用 flex-grow 承载比例：窗口变宽时两栏一起变宽，
@@ -256,16 +323,25 @@ kbd {
   flex: var(--chat-grow, 46) 1 0;
   min-width: 260px;
   min-height: 0;
-  position: relative;
+  /* 对话区磨砂最薄 —— 它是主体，风景透得最多，
+     但配合下面的半透明底色仍能把文字衬住。 */
+  background: var(--glass);
+  backdrop-filter: blur(26px) saturate(150%);
+  -webkit-backdrop-filter: blur(26px) saturate(150%);
+  box-shadow: inset 0 1px 0 var(--hairline);
 }
 
 .pane-workspace {
+  position: relative;
+  z-index: 1;
   display: flex;
   flex: var(--ws-grow, 54) 1 0;
   min-width: 300px;
   min-height: 0;
   border-left: 1px solid var(--border);
   background: var(--surface-sunken);
+  backdrop-filter: blur(30px) saturate(155%);
+  -webkit-backdrop-filter: blur(30px) saturate(155%);
 }
 
 /* 双击复位、键盘微调时给宽度一个过渡，让"跳过去"变成"滑过去"。
@@ -287,7 +363,8 @@ kbd {
   place-items: center;
   flex: 0 0 7px;
   cursor: col-resize;
-  background: var(--surface);
+  /* 半透明：这道缝是两块玻璃之间的接缝，风景会从它中间透出来一条 */
+  background: transparent;
   border: none;
   padding: 0;
   touch-action: none; /* 触屏上把横向拖动交给拖拽逻辑，而不是页面滚动 */
@@ -570,7 +647,9 @@ body.resizing {
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  background: var(--surface);
+  /* 透明：玻璃效果已经在 .pane-chat 上做过了。这里再压一层底色，
+     会把风景挡掉两次，最后整块变成一堵墙。 */
+  background: transparent;
   scroll-behavior: smooth;
   /* 往上滚之后顶部压一层内阴影：内容"钻到页头下面去"的关系一眼可见。
      做在滚动容器自己身上，而不是去改页头的样式 —— 两个组件之间不需要为此连线。 */
@@ -2067,8 +2146,73 @@ body.resizing {
 }
 
 /* 标签内容切换时的入场：新面板浮上来，而不是硬切 */
-.workspace-body > * {
-  animation: rise-in var(--dur-2) var(--ease-out);
+/* ---------------- 转场：消失 / 隐退 ----------------
+
+   切标签、切会话时**不做硬切**。旧的一块先"化开"（淡出 + 轻微失焦 + 缩一点），
+   新的一块从失焦里浮起来。两块在场上重叠 200ms 左右 —— 这就是"转场"和
+   "换页"的全部区别：有没有那么一瞬间，两件事同时存在。
+
+   为什么是失焦而不是滑动：滑动带方向，而标签之间没有方向关系
+   （记忆和收藏谁在谁左边？）。失焦不带方向，它说的是"上一件事退到后面去了"，
+   对任意两块内容都成立。
+
+   旧层绝对定位盖在新层上、且 pointer-events:none —— 它只剩不到一秒的命，
+   不该再接收点击；新层留在正常流里，滚动位置、高度计算都不受影响。 */
+.swap-root {
+  position: relative;
+}
+
+/* 撑满父容器的一层。用在"父容器是 flex 列、子内容靠 flex:1 拿高度"的地方
+   （消息列表就是）—— 中间插进来的这一层必须把这根链子接上，
+   否则 .messages 的 flex:1 找不到有确定高度的父元素，整块塌成 0。 */
+.swap-fill {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
+.swap-out {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  display: flex;
+  flex-direction: column;
+  pointer-events: none;
+  overflow: hidden;
+  animation: dissolve-out var(--dur-2) var(--ease-out) forwards;
+}
+
+.swap-in {
+  /* 同 .app：用 backwards 而不是 both —— dissolve-in 的最后一帧带着
+     `filter: blur(0)`，扣住它等于把整块面板永久变成 fixed 后代的包含块。 */
+  animation: dissolve-in var(--dur-3) var(--ease-out) backwards;
+}
+
+@keyframes dissolve-out {
+  from {
+    opacity: 1;
+    filter: blur(0);
+    transform: scale(1);
+  }
+  to {
+    opacity: 0;
+    filter: blur(8px);
+    transform: scale(0.982);
+  }
+}
+
+@keyframes dissolve-in {
+  from {
+    opacity: 0;
+    filter: blur(8px);
+    transform: scale(1.014) translateY(7px);
+  }
+  to {
+    opacity: 1;
+    filter: blur(0);
+    transform: none;
+  }
 }
 
 .panel-empty {
@@ -2466,6 +2610,48 @@ body.resizing {
   animation: pop-in var(--dur-2) var(--ease-spring);
 }
 
+/* 退场。进场（pop-in）是"从中心放大到实处"，退场就顺着原路缩回去，
+   人会觉得是同一件东西走了，而不是换了件事发生。
+
+   在此之上额外朝上飘 6px：纯粹的原地缩小看起来像"被橡皮擦掉"，
+   加一点向上的位移才读得出"退到后面去了"（也就是"隐退"）。
+   幅度必须小 —— 大到能被明确看见，就变成"面板被甩出去了"。
+
+   `pointer-events: none` 不能省：这一层是 inset:0 的全屏遮罩，
+   退场的 180ms 里它还在 DOM 里，留着它接点击就等于界面卡住 180ms。 */
+.palette-backdrop.is-closing {
+  pointer-events: none;
+  animation: fade-out var(--dur-2) var(--ease-out) forwards;
+}
+
+.palette-backdrop.is-closing .palette {
+  animation: palette-card-out var(--dur-2) var(--ease-out) forwards;
+}
+
+/* 遮罩类的退场只有一件事要做：淡掉。命令面板和抽屉遮罩共用这一条 ——
+   两者的退场语义相同，各写一遍迟早会分叉成 0.18s / 0.2s 那种说不清的差别。 */
+@keyframes fade-out {
+  from {
+    opacity: 1;
+  }
+  to {
+    opacity: 0;
+  }
+}
+
+@keyframes palette-card-out {
+  from {
+    opacity: 1;
+    transform: none;
+    filter: blur(0);
+  }
+  to {
+    opacity: 0;
+    transform: translateY(-6px) scale(0.99);
+    filter: blur(3px);
+  }
+}
+
 .palette-head {
   display: flex;
   align-items: center;
@@ -2579,6 +2765,15 @@ body.resizing {
   animation: fade-in 0.18s ease-out;
 }
 
+/* 抽屉收起来的时候，压在其上的遮罩也要**跟到最后一刻**。
+   之前这里是硬消失：遮罩当帧没了、抽屉还在滑（220ms），
+   于是背景先亮回来、抽屉还在往边上走 —— 一眼就能看出是两件事各走各的。
+   退场时长跟抽屉的 transform 对齐，两边同时到位。 */
+.drawer-scrim.is-closing {
+  pointer-events: none;
+  animation: fade-out 220ms var(--ease-out) forwards;
+}
+
 @keyframes fade-in {
   from {
     opacity: 0;
@@ -2638,6 +2833,242 @@ body.resizing {
 }
 
 /* 尊重"减少动效"的系统设置 */
+/* ============================================================
+   活的风景 —— 铺在最底下的动态背景
+   ============================================================
+
+   五张自然风景照片轮换，每张都在极慢地推镜（scale 1.04 → 1.16 平移）。
+   观感目标不是"幻灯片"，而是**一片一直在动、但你不去注意它就没发现它在动的风景**：
+   · 推镜 26 秒走完一趟 —— 快到能看出来，慢到不会分心
+   · 层与层之间只做 2.4 秒的透明度交叉，不做位移 —— 位移会像"翻页"
+   · 每层的推镜方向都不同，否则轮换会被一眼看穿成一段循环动画
+
+   照片本身压在一层"色罩"下面，这是让它从"壁纸"变成"氛围"的关键：
+   不压色罩的话，照片会跟界面抢注意力，而且文字对比度随照片明暗乱跳。 */
+.scene {
+  position: fixed;
+  inset: 0;
+  /* 负层级：它在 .app 面板底下，但仍在 body 之上 */
+  z-index: -1;
+  overflow: hidden;
+  pointer-events: none;
+  background: var(--bg-deep);
+}
+
+/* 视差层。指针一动，整片风景反向挪十几个像素 —— 幅度只有 14px，
+   它唯一的作用是让风景显得"在玻璃后面"，而不是贴在屏幕上。
+   用一层 CSS 过渡去追一个每帧都在变的变量，得到的是轻微跟随延迟，
+   正好是"有重量"的观感。 */
+.scene-track {
+  position: absolute;
+  inset: 0;
+  transform: translate3d(var(--scene-x, 0px), var(--scene-y, 0px), 0);
+  transition: transform 420ms cubic-bezier(0.22, 0.61, 0.36, 1);
+}
+
+.scene-photo {
+  position: absolute;
+  /* 撑出 7% 的余量：推镜和视差位移都在这个余量里发生，
+     不留余量的话边缘会露出底色 */
+  inset: -7%;
+  background-position: center;
+  background-size: cover;
+  background-repeat: no-repeat;
+  opacity: 0;
+  transform: scale(1.04);
+  transition: opacity 2400ms var(--ease-out);
+  will-change: opacity, transform;
+  backface-visibility: hidden;
+}
+
+/* 每张的推镜方向单独给：五张都朝一个方向动，轮换就变成了循环 */
+.scene-photo:nth-child(1) { --kb-x1: -1.6%; --kb-y1: -1%; --kb-x2: 1.8%; --kb-y2: 1.4%; }
+.scene-photo:nth-child(2) { --kb-x1: 1.8%; --kb-y1: 1.2%; --kb-x2: -1.4%; --kb-y2: -1.6%; }
+.scene-photo:nth-child(3) { --kb-x1: -1.2%; --kb-y1: 1.6%; --kb-x2: 1.6%; --kb-y2: -1.2%; }
+.scene-photo:nth-child(4) { --kb-x1: 1.4%; --kb-y1: -1.6%; --kb-x2: -1.8%; --kb-y2: 1.2%; }
+.scene-photo:nth-child(5) { --kb-x1: -1.8%; --kb-y1: -0.8%; --kb-x2: 1.2%; --kb-y2: 1.8%; }
+
+.scene-photo.is-live {
+  opacity: var(--scene-opacity, 0.55);
+  /* 26 秒走完一趟推镜。写死而不用变量：这里的每张照片共用同一档速度，
+     只有**方向**需要分开（见上面的 nth-child），多一个没人设的变量
+     只会让下一个读到这里的人去找它在哪定义。 */
+  animation: kenburns 26s ease-in-out infinite alternate;
+}
+
+@keyframes kenburns {
+  from { transform: scale(1.04) translate3d(var(--kb-x1, 0), var(--kb-y1, 0), 0); }
+  to { transform: scale(1.16) translate3d(var(--kb-x2, 0), var(--kb-y2, 0), 0); }
+}
+
+/* 色罩：把照片压进本主题的色相里。深色主题偏深松绿 + 底部一抹夕照，
+   浅色主题偏晨雾青。这一层同时承担"保证文字对比度"的职责 ——
+   照片明暗再跳，面板上的字也一直能读。 */
+.scene-veil {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+}
+
+:root[data-theme='dark'] .scene-veil {
+  background:
+    linear-gradient(
+      165deg,
+      rgba(9, 32, 42, 0.6) 0%,
+      rgba(8, 22, 32, 0.7) 46%,
+      rgba(15, 18, 36, 0.84) 100%
+    ),
+    radial-gradient(120% 55% at 50% 104%, rgba(240, 169, 97, 0.2), transparent 62%);
+}
+
+:root[data-theme='light'] .scene-veil {
+  background:
+    linear-gradient(
+      165deg,
+      rgba(233, 245, 247, 0.6) 0%,
+      rgba(225, 238, 244, 0.7) 48%,
+      rgba(226, 232, 246, 0.8) 100%
+    ),
+    radial-gradient(120% 55% at 50% 104%, rgba(217, 131, 36, 0.14), transparent 62%);
+}
+
+/* 四角压暗：视线自然收到中间，也顺手把照片四边的杂色盖掉 */
+.scene-vignette {
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  background: radial-gradient(
+    130% 92% at 50% 42%,
+    transparent 42%,
+    rgba(4, 16, 22, 0.46) 100%
+  );
+}
+
+:root[data-theme='light'] .scene-vignette {
+  background: radial-gradient(
+    130% 92% at 50% 42%,
+    transparent 54%,
+    rgba(38, 70, 86, 0.2) 100%
+  );
+}
+
+/* 颗粒。大面积的平滑渐变在 8bit 屏上会出现色带（banding），
+   一层几乎看不见的噪声就能把它打散。用内联 SVG 的 fractalNoise，
+   不引外部图片 —— 这个界面承诺断网也能打开。 */
+.scene-grain {
+  position: absolute;
+  inset: 0;
+  z-index: 4;
+  opacity: 0.2;
+  mix-blend-mode: overlay;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* 首屏：整块界面从雾里浮出来。只做一次，之后所有转场都交给 .swap-* */
+.app {
+  /* fill-mode 必须是 backwards，不能是 both。
+     `both` 会把动画最后一帧**永久**留着 —— 也就是给 .app 挂上一个
+     `filter: blur(0px)`。而"非 none 的 filter"会让元素成为所有
+     position:fixed 后代的包含块：命令面板的遮罩、Toast 会改成按 .app 的盒子
+     定位，于是遮罩只盖住 720..980 那一段、上下各留 20px 没压暗，Toast 也高了 20px。
+     实测：both → 探针落在 top:20；backwards → top:0，filter 计算值回到 none。
+     另外它还等于给整块界面挂了一层永久栅格化，白烧一次合成。
+
+     backwards 与 both 在动画播放期间完全等价，只在**结束后**分道扬镳：
+     backwards 把元素还给样式表，both 把元素扣在最后一帧上。 */
+  animation: app-settle 700ms var(--ease-out) backwards;
+}
+
+@keyframes app-settle {
+  from {
+    opacity: 0;
+    transform: scale(1.012);
+    filter: blur(6px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+    filter: blur(0);
+  }
+}
+
+/* ---------------- 卡片的指向性倾斜 ----------------
+
+   鼠标在哪，卡片就往哪边微微转一点（最多 3 度），同时高光跟着移到那一侧。
+   幅度必须小：这是"卡片知道你在这儿"，不是"卡片在跳舞"。
+   onMouseMove 的坐标由 Workspace 统一算好写进 CSS 变量，
+   不是每张卡片挂一个监听 —— 二十张卡片就是二十个监听。 */
+.card-stack {
+  perspective: 900px;
+}
+
+@media (hover: hover) and (pointer: fine) {
+  .card-slot .card {
+    transform-style: preserve-3d;
+    transition: transform var(--dur-2) var(--ease-out), box-shadow var(--dur-2) var(--ease-out);
+  }
+
+  .card-slot:hover .card {
+    transform: rotateX(var(--tilt-x, 0deg)) rotateY(var(--tilt-y, 0deg)) translateZ(6px);
+    box-shadow: var(--shadow-md);
+  }
+
+  /* 高光：跟着指针在卡面上滑过的一道柔光，位置由 --sheen-x 控制 */
+  .card-slot .card::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    pointer-events: none;
+    opacity: 0;
+    background: radial-gradient(
+      220px circle at var(--sheen-x, 50%) 0%,
+      var(--hairline),
+      transparent 70%
+    );
+    transition: opacity var(--dur-2) var(--ease-out);
+  }
+
+  .card-slot:hover .card::after {
+    opacity: 1;
+  }
+}
+
+
+/* 主题切换的圆形揭示。
+
+   View Transitions 默认会给旧快照做淡出、新快照做淡入 —— 两件事叠在一起
+   就是一次"整屏闪"。这里把两个默认动画都关掉，改成只让**新快照**被一个
+   从指针位置扩散的圆裁出来：旧界面原地不动，新界面像被擦出来一样铺过去。
+
+   `mix-blend-mode: normal` 也是必须的：浏览器默认给新快照一个
+   `plus-lighter`，在深色底上会把中间过程提亮成一片灰白。 */
+::view-transition-old(root),
+::view-transition-new(root) {
+  animation: none;
+  mix-blend-mode: normal;
+}
+
+::view-transition-old(root) {
+  z-index: 1;
+}
+
+::view-transition-new(root) {
+  z-index: 2;
+}
+
+/* ============================================================
+   reduced motion
+   ============================================================
+
+   这一条比别处更重要了：现在界面里有一层**一直在动**的风景。
+   对前庭功能敏感的用户，这种"余光里永远有东西在缓慢移动"的干扰
+   比一次性的入场动画更难受 —— 它不是看一眼就过去了。
+
+   所以这里不只是把所有时长压到 0，还显式做了三件"关掉"的事：
+   · 推镜停住（只留一张照片，不再轮换）
+   · 颗粒和四角压暗保留（它们是静态的，不影响任何人的前庭）
+   · 指针光与卡片倾斜停用（跟随指针的位移是最容易引起不适的一类） */
 @media (prefers-reduced-motion: reduce) {
   *,
   *::before,
@@ -2646,5 +3077,20 @@ body.resizing {
     animation-iteration-count: 1 !important;
     transition-duration: 0.01ms !important;
     scroll-behavior: auto !important;
+  }
+
+  .scene-photo.is-live {
+    animation: none !important;
+    opacity: var(--scene-opacity, 0.55);
+    transform: scale(1.06);
+  }
+
+  .ambient {
+    display: none;
+  }
+
+  .card-slot:hover .card,
+  .card-slot .card {
+    transform: none !important;
   }
 }

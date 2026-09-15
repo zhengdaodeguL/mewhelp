@@ -5,6 +5,7 @@ import { Composer } from './components/Composer'
 import { FindBar } from './components/FindBar'
 import { Header } from './components/Header'
 import { HistoryRail } from './components/HistoryRail'
+import { Landscape } from './components/Landscape'
 import { MessageList } from './components/MessageList'
 import { SplitHandle } from './components/SplitHandle'
 import { Toaster } from './components/Toaster'
@@ -19,6 +20,7 @@ import { useStars } from './hooks/useStars'
 import { useTheme } from './hooks/useTheme'
 import { downloadText, exportFileName, sessionToMarkdown } from './session-export'
 import { toast } from './toast'
+import { prefersReducedMotion, trackPointer, useCrossfade, useDelayedUnmount, withThemeWipe } from './transition'
 import type { ChatMessage, MemoryItem, Rating } from './types'
 import { cardToText } from './workspace'
 
@@ -52,6 +54,17 @@ export default function App() {
   const [resizing, setResizing] = useState(false)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const flashTimer = useRef<number | undefined>(undefined)
+  const appRef = useRef<HTMLDivElement>(null)
+
+  //: 换会话时整段对话交叉淡出淡入 —— 切会话是"换了一件事在聊"，
+  //: 消息原地替换会让人以为界面卡了一下。
+  const conversation = useCrossfade(sessionId, 240)
+
+  //: 命令面板关闭时不要"啪"地消失。它是全屏浮层，硬切最显眼。
+  const palette = useDelayedUnmount(paletteOpen, 180)
+
+  //: 抽屉遮罩同理，时长跟抽屉的滑出（220ms）对齐
+  const scrim = useDelayedUnmount(isNarrow && drawer !== null, 220)
 
   const chat = useChat({
     userId,
@@ -63,6 +76,33 @@ export default function App() {
   const { rate, send } = chat
   const starsToggle = stars.toggle
 
+  //: 切会话时"正在退场的那一屏"必须**在切换的那一刻**拍下来。
+  //:
+  //: useChat 有一个 effect 专门在 sessionId 变化时把 messages 重置成开场白，
+  //: 而 effect 在同一轮里就跑完了 —— 等它跑完再读 chat.messages，拿到的是新会话
+  //: 的内容，"淡出的那一层"和"淡入的那一层"于是长得一模一样，转场退化成原地闪一下。
+  //:
+  //: 时机只有这里对：本次渲染时 sessionId 已经变了，但 useChat 的 effect 还没执行，
+  //: chat.messages 仍是**上一个会话**的消息。趁着这一帧把它存下来。
+  //: 释放条件放在 `current !== sessionId` 上，重复渲染（StrictMode 会跑两遍）不会覆盖。
+  const leavingMessages = useRef<ChatMessage[]>(chat.messages)
+  const frozenFor = useRef(sessionId)
+  if (frozenFor.current !== sessionId) {
+    leavingMessages.current = chat.messages
+    frozenFor.current = sessionId
+  }
+
+  //: 主题切换走"圆形揭示"：从指针位置扩散开，而不是整屏硬换一次色。
+  //: 三处入口（页头按钮、命令面板的三条）都走这两个包装过的版本，口径一致。
+  const applyTheme = useCallback(
+    (next: 'system' | 'light' | 'dark') => withThemeWipe(() => setThemeChoice(next)),
+    [setThemeChoice],
+  )
+  const cycleThemeWipe = useCallback(
+    () => withThemeWipe(() => cycleTheme()),
+    [cycleTheme],
+  )
+
   // 只用来点亮页头的状态灯；拿不到就当离线，不打扰用户
   useEffect(() => {
     const controller = new AbortController()
@@ -72,6 +112,43 @@ export default function App() {
     return () => {
       controller.abort()
       window.clearInterval(timer)
+    }
+  }, [])
+
+  //: 最近一次指针位置。主题切换的圆形揭示要拿它当圆心 ——
+  //: 从用户刚刚点的地方扩散开来，而不是从屏幕中间。
+  useEffect(() => trackPointer(), [])
+
+  //: 跟着指针走的环境光。它压在面板**下面**，会被面板的 backdrop-filter
+  //: 一并模糊掉，于是看起来是"玻璃背后的光"而不是贴在屏幕上的光斑。
+  useEffect(() => {
+    const el = appRef.current
+    if (!el || prefersReducedMotion()) return
+    let frame = 0
+    let x = 0
+    let y = 0
+    // .app 在宽屏是居中的一块（外边距 20px），指针坐标得减掉它的原点；
+    // 它在页面里不会移动（body 不滚动），所以量一次、窗口变化时再量
+    let box = el.getBoundingClientRect()
+    const measure = () => {
+      box = el.getBoundingClientRect()
+    }
+    const apply = () => {
+      frame = 0
+      el.style.setProperty('--mx', `${x - box.left}px`)
+      el.style.setProperty('--my', `${y - box.top}px`)
+    }
+    const onMove = (e: PointerEvent) => {
+      x = e.clientX
+      y = e.clientY
+      if (!frame) frame = window.requestAnimationFrame(apply)
+    }
+    window.addEventListener('pointermove', onMove, { passive: true })
+    window.addEventListener('resize', measure)
+    return () => {
+      window.removeEventListener('pointermove', onMove)
+      window.removeEventListener('resize', measure)
+      if (frame) window.cancelAnimationFrame(frame)
     }
   }, [])
 
@@ -318,21 +395,21 @@ export default function App() {
         label: `切换主题（当前：${themeChoice === 'system' ? '跟随系统' : themeChoice === 'light' ? '浅色' : '深色'}）`,
         group: '外观',
         icon: 'theme',
-        run: cycleTheme,
+        run: cycleThemeWipe,
       },
       {
         id: 'theme-light',
         label: '浅色主题',
         group: '外观',
         icon: 'theme',
-        run: () => setThemeChoice('light'),
+        run: () => applyTheme('light'),
       },
       {
         id: 'theme-dark',
         label: '深色主题',
         group: '外观',
         icon: 'theme',
-        run: () => setThemeChoice('dark'),
+        run: () => applyTheme('dark'),
       },
       {
         id: 'tab-memory',
@@ -384,7 +461,8 @@ export default function App() {
     return list
   }, [
     chat.cards.length,
-    cycleTheme,
+    applyTheme,
+    cycleThemeWipe,
     exportSession,
     history.sessions,
     isNarrow,
@@ -393,7 +471,6 @@ export default function App() {
     pickSession,
     railOpen,
     sessionId,
-    setThemeChoice,
     starred.length,
     themeChoice,
     toggleWorkspace,
@@ -402,8 +479,14 @@ export default function App() {
   ])
 
   return (
-    <div className="app">
-      <div className={`rail-slot${railClass}`}>
+    <>
+      <Landscape />
+
+      <div className="app" ref={appRef}>
+        {/* 环境光：跟着指针的一团柔光，压在所有面板下面 */}
+        <div className="ambient" aria-hidden="true" />
+
+        <div className={`rail-slot${railClass}`}>
         <HistoryRail
           sessions={history.sessions}
           activeId={sessionId}
@@ -437,7 +520,7 @@ export default function App() {
             workspaceCount={wsCount}
             onToggleWorkspace={toggleWorkspace}
             themeChoice={themeChoice}
-            onCycleTheme={cycleTheme}
+            onCycleTheme={cycleThemeWipe}
           />
 
           {findOpen && (
@@ -451,19 +534,42 @@ export default function App() {
             />
           )}
 
-          <MessageList
-            messages={chat.messages}
-            canRetry={chat.canRetry}
-            onRetry={chat.retryLast}
-            query={findQuery}
-            flashId={flashId}
-            quotedId={quote?.id ?? ''}
-            starredIds={stars.ids}
-            onRate={onRate}
-            onStar={onStar}
-            onQuote={onQuote}
-            streaming={chat.isStreaming}
-          />
+          <div className="messages-wrap swap-root">
+            {conversation.leaving !== null && (
+              <div className="swap-out" aria-hidden="true">
+                <MessageList
+                  /* 退场的那一屏用**冻住的那份**，不是 chat.messages ——
+                     后者此刻已经是新会话的内容了（见上面 leavingMessages 的说明） */
+                  messages={leavingMessages.current}
+                  canRetry={false}
+                  onRetry={chat.retryLast}
+                  query=""
+                  flashId=""
+                  quotedId=""
+                  starredIds={stars.ids}
+                  onRate={onRate}
+                  onStar={onStar}
+                  onQuote={onQuote}
+                  streaming={false}
+                />
+              </div>
+            )}
+            <div className="swap-in swap-fill" key={conversation.current}>
+              <MessageList
+                messages={chat.messages}
+                canRetry={chat.canRetry}
+                onRetry={chat.retryLast}
+                query={findQuery}
+                flashId={flashId}
+                quotedId={quote?.id ?? ''}
+                starredIds={stars.ids}
+                onRate={onRate}
+                onStar={onStar}
+                onQuote={onQuote}
+                streaming={chat.isStreaming}
+              />
+            </div>
+          </div>
 
           <Composer
             isStreaming={chat.isStreaming}
@@ -509,25 +615,30 @@ export default function App() {
         </div>
       </div>
 
-      {/* 抽屉打开时的遮罩：点空白处收起 */}
-      {isNarrow && drawer && (
+      {/* 抽屉打开时的遮罩：点空白处收起。
+          退场要跟抽屉的滑出（220ms）一起走完，所以用 useDelayedUnmount 把它多留一会儿；
+          外层的 isNarrow 判断是给"窄屏转宽屏"准备的 —— 那种情况下抽屉是被 effect
+          直接清掉的，遮罩不该还留 220ms 在桌面端糊一层黑。 */}
+      {isNarrow && scrim.mounted && (
         <button
           type="button"
-          className="drawer-scrim"
+          className={`drawer-scrim${scrim.closing ? ' is-closing' : ''}`}
           aria-label="收起面板"
           onClick={() => setDrawer(null)}
         />
       )}
 
-      {paletteOpen && (
+      {palette.mounted && (
         <CommandPalette
           actions={actions}
           themeChoice={themeChoice}
           onClose={() => setPaletteOpen(false)}
+          closing={palette.closing}
         />
       )}
 
       <Toaster />
-    </div>
+      </div>
+    </>
   )
 }

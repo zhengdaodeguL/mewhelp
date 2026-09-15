@@ -543,6 +543,13 @@ def create_app(deps: GraphDeps | None = None) -> FastAPI:
     if assets_dir.is_dir():
         app.mount("/assets", StaticFiles(directory=assets_dir), name="assets")
 
+    # 界面底层的风景照片。单独挂一条，因为它**不是**构建产物（没有 hash 文件名），
+    # 而是从 web/public/ 原样拷过来的资源 —— 和 /assets 混在一个挂载点里，
+    # 下次有人按"带 hash 的产物"去清理目录时会把它一起删掉。
+    scene_dir = STATIC_DIR / "scene"
+    if scene_dir.is_dir():
+        app.mount("/scene", StaticFiles(directory=scene_dir), name="scene")
+
     return app
 
 

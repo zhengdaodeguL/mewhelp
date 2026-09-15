@@ -13,6 +13,19 @@ export type ResolvedTheme = 'light' | 'dark'
 
 const STORAGE_KEY = 'mewhelp.theme'
 
+/**
+ * 浏览器界面那条颜色（`<meta name="theme-color">`）。
+ *
+ * 值和 styles.css 里 `--bg` 的两个取值一致 —— 界面的底是风景照片，
+ * 顶部这条对不上时，看起来就像页面被切掉一条。
+ * index.html 里的内联脚本也各写了一遍（它跑在首次绘制之前，来不及 import）；
+ * 三处任何一处改了，另外两处要跟着改。
+ */
+const THEME_COLOR: Record<ResolvedTheme, string> = {
+  light: '#e6eff0',
+  dark: '#0e1b22',
+}
+
 /** 三态循环，用于点一下就切换的按钮。 */
 const NEXT: Record<ThemeChoice, ThemeChoice> = {
   system: 'light',
@@ -44,6 +57,11 @@ export function useTheme() {
     const sync = () => {
       const next = resolveTheme(choice)
       document.documentElement.dataset.theme = next
+      // 浏览器界面那条颜色也要跟着走，否则用户在深色下切到浅色，
+      // 页面亮了、浏览器那条还是深色
+      document
+        .querySelector('meta[name="theme-color"]')
+        ?.setAttribute('content', THEME_COLOR[next])
       setTheme(next)
     }
     sync()

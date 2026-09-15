@@ -3,14 +3,19 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <meta name="theme-color" content="#f6f7fb" />
+    <!-- 浏览器自己的界面（安卓地址栏、iOS 状态栏区域）跟着主题走。
+         底色要和 styles.css 里 --bg 的两个值一致 —— 界面底下是风景照片，
+         顶部这条颜色对不上时，看起来就像页面被切掉了一条。
+         下面内联脚本会把深色那个值补上；用户手动切主题时由 useTheme 更新。 -->
+    <meta name="theme-color" content="#e6eff0" />
     <title>MewHelp 智能客服</title>
     <!-- 图标内联成 data URI，不引外部文件：这套界面承诺"断网也能打开"，
          一个挂在 CDN 上的 favicon 会让每次加载都多一条 404。
-         `#` 必须写成 %23，否则会被当成 URL 的片段标识符截断。 -->
+         `#` 必须写成 %23，否则会被当成 URL 的片段标识符截断。
+         填充色取浅色主题的 --accent（#2f7fe0）。 -->
     <link
       rel="icon"
-      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%234d7cff'/%3E%3Ctext x='16' y='23' font-family='sans-serif' font-size='19' font-weight='700' fill='%23fff' text-anchor='middle'%3EM%3C/text%3E%3C/svg%3E"
+      href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='8' fill='%232f7fe0'/%3E%3Ctext x='16' y='23' font-family='sans-serif' font-size='19' font-weight='700' fill='%23fff' text-anchor='middle'%3EM%3C/text%3E%3C/svg%3E"
     />
     <script>
       // 首次绘制之前把主题定下来，避免"先闪一下白再变深色"。
@@ -23,6 +28,11 @@
             (saved === 'system' &&
               window.matchMedia('(prefers-color-scheme: dark)').matches)
           document.documentElement.dataset.theme = dark ? 'dark' : 'light'
+          // 浏览器界面那条颜色也一起定下来，否则深色主题会顶着一条浅色边
+          if (dark) {
+            var meta = document.querySelector('meta[name="theme-color"]')
+            if (meta) meta.setAttribute('content', '#0e1b22')
+          }
         } catch (e) {
           document.documentElement.dataset.theme = 'light'
         }

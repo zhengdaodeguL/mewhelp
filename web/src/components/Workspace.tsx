@@ -1,5 +1,6 @@
 import { useLayoutEffect, useRef, useState, type ReactNode } from 'react'
 import { useCopy } from '../hooks/useCopy'
+import { useCrossfade } from '../transition'
 import type { ChatMessage, MemoryItem } from '../types'
 import { cardToText, formatAmount, statusTone, type WorkspaceCard } from '../workspace'
 import { MemoryPanel } from './MemoryPanel'
@@ -230,6 +231,39 @@ function Card({ card, index }: { card: WorkspaceCard; index: number }) {
   )
 }
 
+/**
+ * 卡片的指向性倾斜。
+ *
+ * 鼠标在卡面上哪个位置，卡片就往哪个方向转一点点，高光也跟着移过去。
+ * 幅度压得很小（最多 3 度）—— 这是"卡片知道你在这儿"，不是"卡片在跳舞"。
+ *
+ * 用事件委托在 `.card-stack` 上算，而不是给每张卡片挂监听：
+ * 一次推出七八张卡片就是七八个监听器，而它们做的事完全一样。
+ * 代价是要手动找最近的 `.card-slot` —— 用 closest 一行就够。
+ */
+const TILT_ENABLED =
+  typeof window !== 'undefined' && window.matchMedia?.('(hover: hover) and (pointer: fine)').matches
+
+function tiltCards(e: React.PointerEvent<HTMLDivElement>) {
+  if (!TILT_ENABLED) return
+  const slot = (e.target as HTMLElement).closest<HTMLElement>('.card-slot')
+  const card = slot?.querySelector<HTMLElement>('.card')
+  if (!slot || !card) return
+  const box = slot.getBoundingClientRect()
+  const px = (e.clientX - box.left) / box.width
+  const py = (e.clientY - box.top) / box.height
+  card.style.setProperty('--tilt-y', `${((px - 0.5) * 5.5).toFixed(2)}deg`)
+  card.style.setProperty('--tilt-x', `${((0.5 - py) * 4.5).toFixed(2)}deg`)
+  card.style.setProperty('--sheen-x', `${(px * 100).toFixed(1)}%`)
+}
+
+function untiltCards(e: React.PointerEvent<HTMLDivElement>) {
+  for (const card of e.currentTarget.querySelectorAll<HTMLElement>('.card')) {
+    card.style.removeProperty('--tilt-x')
+    card.style.removeProperty('--tilt-y')
+  }
+}
+
 function CardsView({ cards }: { cards: WorkspaceCard[] }) {
   const summary = cards.reduce<Record<string, number>>((acc, c) => {
     acc[c.kind] = (acc[c.kind] ?? 0) + 1
@@ -261,7 +295,7 @@ function CardsView({ cards }: { cards: WorkspaceCard[] }) {
             </span>
           ))}
       </div>
-      <div className="card-stack">
+      <div className="card-stack" onPointerMove={tiltCards} onPointerLeave={untiltCards}>
         {cards.map((c, i) => (
           <Card key={c.id} card={c} index={i} />
         ))}
@@ -310,6 +344,25 @@ export function Workspace({
   //: 活动标签底块的几何（x / 宽）。测出来，而不是"每个标签自己画背景"：
   //: 切换时看到的是同一块底色挪过去，而不是两个元素一灭一亮 —— 连续性。
   const [indicator, setIndicator] = useState({ x: 0, w: 0 })
+
+  //: 标签内容的交叉转场。`current` 在正常流里，`leaving` 绝对定位盖在上面化开。
+  const { current, leaving } = useCrossfade(tab, 200)
+
+  const panel = (which: WorkspaceTab) => {
+    if (which === 'cards') return <CardsView cards={cards} />
+    if (which === 'stars') return <StarsPanel items={starred} onJump={onJumpTo} onUnstar={onUnstar} />
+    return (
+      <MemoryPanel
+        items={memories}
+        loading={memoryLoading}
+        busy={memoryBusy}
+        error={memoryError}
+        onAdd={onAddMemory}
+        onTogglePin={onToggleMemoryPin}
+        onDelete={onDeleteMemory}
+      />
+    )
+  }
 
   const activeIndex = TABS.findIndex((t) => t.key === tab)
 
@@ -401,21 +454,20 @@ export function Workspace({
         id={`tabpanel-${tab}`}
         aria-labelledby={`tab-${tab}`}
       >
-        {tab === 'cards' && <CardsView cards={cards} />}
-        {tab === 'memory' && (
-          <MemoryPanel
-            items={memories}
-            loading={memoryLoading}
-            busy={memoryBusy}
-            error={memoryError}
-            onAdd={onAddMemory}
-            onTogglePin={onToggleMemoryPin}
-            onDelete={onDeleteMemory}
-          />
-        )}
-        {tab === 'stars' && (
-          <StarsPanel items={starred} onJump={onJumpTo} onUnstar={onUnstar} />
-        )}
+        {/* 切标签不是一个"换页"动作，是同一块地方换了内容 ——
+            所以旧的一块要先化开再让新的浮起来，两块在场上重叠 200ms。
+            没有这一重叠，视觉上就只是"啪"地换了一下，人会下意识地
+            重新找一遍"我刚才看的那条去哪了"。 */}
+        <div className="swap-root">
+          {leaving !== null && (
+            <div className="swap-out" aria-hidden="true">
+              {panel(leaving)}
+            </div>
+          )}
+          <div className="swap-in" key={current}>
+            {panel(current)}
+          </div>
+        </div>
       </div>
     </section>
   )
