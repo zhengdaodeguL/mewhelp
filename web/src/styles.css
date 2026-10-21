@@ -9,52 +9,76 @@
 :root[data-theme='light'] {
   /* 底色取自清晨的水汽：偏青的灰白，不是灰也不是白 —— 它要在风景照片
      上面当"雾"，太中性会把照片的色偏压成脏灰。 */
-  --bg: #e6eff0;
-  --bg-deep: #dbe7ea;
+  --bg: #e9f1f3;
+  --bg-deep: #dce8ec;
 
-  /* 玻璃。面板不再是实心色块，而是"压在风景上的一层磨砂"：
-     --glass 给最大块的外壳，--glass-strong 给浮层（抽屉、命令面板）。 */
-  --glass: rgba(255, 255, 255, 0.56);
-  --glass-strong: rgba(255, 255, 255, 0.82);
-  --surface: rgba(255, 255, 255, 0.62);
-  --surface-soft: rgba(255, 255, 255, 0.46);
-  --surface-sunken: rgba(238, 246, 247, 0.58);
-  --border: rgba(28, 74, 92, 0.11);
-  --border-strong: rgba(28, 74, 92, 0.2);
-  --hairline: rgba(255, 255, 255, 0.5); /* 玻璃上沿那道高光 */
+  /* 与 dark **反着来**：浅色主题里面板越白，深色文字越稳。所以内容面
+     （页头、输入区、卡片、助手气泡）升到 0.86 / 0.80 让文字坐实，
+     而让风景多透的那一档留给 --surface-sunken（0.58 → 0.50）。
+     浅色主题的风景只能透到这个程度：白玻璃上一亮就压不住深色正文。 */
+  --glass: rgba(255, 255, 255, 0.4);
+  --glass-strong: rgba(255, 255, 255, 0.92);
+  --surface: rgba(255, 255, 255, 0.86);
+  --surface-soft: rgba(255, 255, 255, 0.8);
+  --surface-sunken: rgba(248, 251, 252, 0.5);
+  /* 分段控件的滑块。浅色下必须是纯白，才能从灰白面板上"抬起来" */
+  --surface-raised: #ffffff;
 
-  --text: #14242b;
-  --text-muted: #5f7787;
+  /* 0.11 → 0.16：改之前那道 1px 分栏线在照片上基本看不见，
+     "三栏"读起来是一堵墙而不是三块。 */
+  --border: rgba(26, 72, 92, 0.16);
+  --border-strong: rgba(26, 72, 92, 0.3);
+  --hairline: rgba(255, 255, 255, 0.6); /* 玻璃上沿那道高光 */
+
+  --text: #12232b;
+  /* 从 #5f7787 压深。**理由不是审美**：照片透上来之后浅色面板最暗处落到
+     L* 78，旧值在那上面只有 3.20:1，次要信息直接读不了。
+     旧值在最坏合成底上实测 4.47:1 —— 本来就压线，透上照片就破了。 */
+  --text-muted: #35505e;
+
   --accent: #2f7fe0;
   --accent-strong: #1f66c4;
-  --accent-soft: rgba(47, 127, 224, 0.13);
-  /* 夕照金：只用在"当前/已选中"这种点缀上。整屏冷色里需要一点暖，
-     否则照片里的暖色一进来就显得界面在跟它打架。 */
+  --accent-soft: rgba(47, 127, 224, 0.14);
+  /* 填充蓝：白字压上去要够。见 dark 主题里 --accent-fill 的说明。 */
+  --accent-fill: #1c5cb5;
+  --accent-fill-strong: #2a72d0;
+  /* 夕照金：只用在"当前/已选中"这种点缀上（右栏"收藏"标签那道色相条）。
+     整屏冷色里需要一点暖，否则照片里的暖色一进来就显得界面在跟它打架。 */
   --accent-warm: #d98324;
-  --accent-warm-soft: rgba(217, 131, 36, 0.14);
+  /* 跟着指针走的那团环境光的颜色。原名 --accent-warm-soft，改版后
+     .ambient 是它唯一的用处，"暖色"只是它的默认值不是它的定义 ——
+     将来若让它随当前照片换色，改的就是这一个值。 */
+  --scene-glow: rgba(217, 131, 36, 0.15);
 
-  --notice-bg: rgba(255, 255, 255, 0.5);
-  --notice-text: #66798a;
-  --grid-line: rgba(47, 127, 224, 0.22);
-  --grid-glow: rgba(47, 127, 224, 0.14);
+  /* 用户气泡专用，见 --accent-fill */
+  --bubble-user-a: var(--accent-fill);
+  --bubble-user-b: var(--accent-fill-strong);
+
+  --avatar-a: #4b3aa8;
+  --avatar-b: #6a48c4;
+
+  --notice-bg: rgba(255, 255, 255, 0.72);
+  --notice-text: #4a6270;
+  --grid-line: rgba(47, 127, 224, 0.26);
+  --grid-glow: rgba(47, 127, 224, 0.18);
 
   --kind-order: #2f7fe0;
-  --kind-order-soft: rgba(47, 127, 224, 0.13);
+  --kind-order-soft: rgba(47, 127, 224, 0.14);
   --kind-logistics: #7c5ad6;
-  --kind-logistics-soft: rgba(124, 90, 214, 0.13);
+  --kind-logistics-soft: rgba(124, 90, 214, 0.14);
   --kind-source: #0e8f6c;
-  --kind-source-soft: rgba(14, 143, 108, 0.13);
+  --kind-source-soft: rgba(14, 143, 108, 0.14);
   --kind-action: #12925c;
-  --kind-action-soft: rgba(18, 146, 92, 0.13);
+  --kind-action-soft: rgba(18, 146, 92, 0.14);
 
   --tone-warn: #a8701a;
   --tone-warn-soft: rgba(217, 131, 36, 0.15);
   --tone-info: #2f7fe0;
-  --tone-info-soft: rgba(47, 127, 224, 0.13);
+  --tone-info-soft: rgba(47, 127, 224, 0.14);
   --tone-active: #7c5ad6;
-  --tone-active-soft: rgba(124, 90, 214, 0.13);
+  --tone-active-soft: rgba(124, 90, 214, 0.14);
   --tone-ok: #12925c;
-  --tone-ok-soft: rgba(18, 146, 92, 0.13);
+  --tone-ok-soft: rgba(18, 146, 92, 0.14);
 
   --radius: 16px;
   --radius-sm: 11px;
@@ -65,51 +89,92 @@
 }
 
 :root[data-theme='dark'] {
-  /* **不是黑。** 深松绿偏蓝，颜色是从风景照片的暗部里取的 ——
-     纯黑会把照片压成一盏灯，而带色的暗部会让整屏看起来像"暮色里的一块玻璃"。
-     所有面板都是半透明：风景始终在动，界面只是浮在它上面。 */
-  --bg: #0e1b22;
-  --bg-deep: #0a141a;
+  /* 深板岩青，从 L* 10 抬到 L* 14.6。**仍然不是黑** —— 黑会把照片压成一盏灯，
+     也让整屏退化成同一块平涂。色相仍是青蓝（H≈200°），整体提亮一档半。 */
+  --bg: #17272f;
+  --bg-deep: #101d24;
 
-  --glass: rgba(16, 31, 40, 0.62);
-  --glass-strong: rgba(20, 38, 48, 0.82);
-  --surface: rgba(22, 40, 50, 0.58);
-  --surface-soft: rgba(34, 56, 68, 0.5);
-  --surface-sunken: rgba(12, 25, 33, 0.54);
-  --border: rgba(150, 205, 214, 0.15);
-  --border-strong: rgba(150, 205, 214, 0.28);
-  --hairline: rgba(214, 245, 250, 0.1);
+  /* 玻璃。**透明度的分配是这套配色的核心手法**：面板往下走（风景透出来），
+     内容面往上走（文字坐得更实）。改之前三层 alpha 是连乘的 ——
+     照片 0.45 × 色罩 0.70 × 玻璃 0.62，照片对最终画面的有效贡献只剩 5%，
+     底层那五张风景等于白铺。现在面板更透、文字面更实，
+     "风景看得见"和"字读得清"不再互相抵消，而是各归各位。
 
-  --text: #e9f3f5;
-  --text-muted: #8fa8b2;
-  --accent: #5fb0ff;
-  --accent-strong: #86c6ff;
-  --accent-soft: rgba(95, 176, 255, 0.16);
-  --accent-warm: #f0a961;
-  --accent-warm-soft: rgba(240, 169, 97, 0.16);
+     --glass 是最大块的外壳、也是最薄的一层；--surface 给页头、输入区、卡片、
+     助手气泡，是"抬起来"的那一档，比它所在的面板亮约 1.3:1。 */
+  --glass: rgba(36, 66, 78, 0.42);
+  --glass-strong: rgba(38, 70, 83, 0.9);
+  --surface: rgba(52, 82, 94, 0.8);
+  --surface-soft: rgba(47, 77, 89, 0.74);
+  --surface-sunken: rgba(28, 54, 64, 0.56);
+  /* 抬升块：分段控件的滑块。刻意**不透明** —— 半透明滑块与它所在的面板只差
+     1.03:1 时控件会"消失"，这正是改之前右栏那三个标签看起来像裸文字的原因。 */
+  --surface-raised: #2f4b58;
 
-  --notice-bg: rgba(30, 50, 60, 0.55);
-  --notice-text: #9cb1ba;
-  --grid-line: rgba(95, 176, 255, 0.28);
-  --grid-glow: rgba(95, 176, 255, 0.18);
+  --border: rgba(168, 220, 228, 0.22);
+  --border-strong: rgba(168, 220, 228, 0.4);
+  --hairline: rgba(220, 248, 252, 0.12);
 
+  --text: #ecf5f7;
+  /* 比改之前（#8fa8b2）**变亮**。原因不是审美：面板因为照片透上来而变亮，
+     沿用旧值在最坏合成底上只剩 3.39:1。次要文字是压线的那一档，
+     它守住 4.5 就意味着正文一定稳在 7.5 以上。 */
+  --text-muted: #adc6cf;
+
+  /* **强调色有两种用法，必须分成两个 token** —— 这是本次审计翻出来的一整类 bug：
+     `--accent` 是**前景色**（图标、焦点环、深色底上的文字），它必须够亮；
+     但拿它当**填充**、再压白字，就只有 2.30:1。气泡、发送按钮、计数徽章
+     三处都踩了这个坑。所以另开一组"白字压上去也读得清的填充蓝"。
+
+     不能用"把 --accent 调暗"来修：它同时是"哪里能点"的唯一信号，
+     在深色底上必须保持亮（#63b3ff 压 --bg-deep 是 7.70:1）。 */
+  --accent: #63b3ff;
+  --accent-strong: #8dc9ff;
+  --accent-soft: rgba(99, 179, 255, 0.18);
+  --accent-fill: #1a63aa;
+  --accent-fill-strong: #2775c0;
+  /* 夕照金：只用在"当前/已选中"这种点缀上（右栏"收藏"标签那道色相条）。
+     整屏冷色里需要一点暖，否则照片里的暖色一进来就显得界面在跟它打架。 */
+  --accent-warm: #f2ab68;
+  /* 环境光的色相，见 light 主题里的说明 */
+  --scene-glow: rgba(242, 171, 104, 0.16);
+
+  /* 用户气泡专用，见上面 --accent-fill 的说明。 */
+  --bubble-user-a: var(--accent-fill);
+  --bubble-user-b: var(--accent-fill-strong);
+
+  /* 助手头像（品牌标记）。原来写死的是 #4d7cff / #7b5cff —— 那是**上一版**
+     的强调蓝，改版之后它跟整套配色已经没关系了。换成一组够深的紫罗兰，
+     白字压上去才读得清（实测 3.98:1 → 提深后 6:1 以上）。 */
+  --avatar-a: #5b45c0;
+  --avatar-b: #7a55d8;
+
+  --notice-bg: rgba(36, 62, 73, 0.72);
+  --notice-text: #b6cdd5;
+  --grid-line: rgba(120, 190, 230, 0.3);
+  --grid-glow: rgba(120, 190, 230, 0.2);
+
+  /* 分类色：色相即语义，五张照片轮换时 byte 不变。
+     填充从 0.15 提到 0.18 只是让色片更看得见 —— 文字已经改成中性色，
+     不再依赖"把底色提亮"来提对比（实测那条路只会让彩色小字更糊）。 */
   --kind-order: #7cbaff;
-  --kind-order-soft: rgba(124, 186, 255, 0.15);
+  --kind-order-soft: rgba(124, 186, 255, 0.18);
   --kind-logistics: #b6a0ff;
-  --kind-logistics-soft: rgba(182, 160, 255, 0.15);
+  --kind-logistics-soft: rgba(182, 160, 255, 0.18);
   --kind-source: #52d6ac;
-  --kind-source-soft: rgba(82, 214, 172, 0.15);
+  --kind-source-soft: rgba(82, 214, 172, 0.18);
   --kind-action: #5fd894;
-  --kind-action-soft: rgba(95, 216, 148, 0.15);
+  --kind-action-soft: rgba(95, 216, 148, 0.18);
 
+  /* 语义色：绿=成功、黄=待处理、紫=进行中。跟着照片变色会直接骗人，钉死。 */
   --tone-warn: #e8b95e;
   --tone-warn-soft: rgba(232, 185, 94, 0.16);
   --tone-info: #7cbaff;
-  --tone-info-soft: rgba(124, 186, 255, 0.15);
+  --tone-info-soft: rgba(124, 186, 255, 0.16);
   --tone-active: #b6a0ff;
-  --tone-active-soft: rgba(182, 160, 255, 0.15);
+  --tone-active-soft: rgba(182, 160, 255, 0.16);
   --tone-ok: #5fd894;
-  --tone-ok-soft: rgba(95, 216, 148, 0.15);
+  --tone-ok-soft: rgba(95, 216, 148, 0.16);
 
   --shadow-sm: 0 1px 2px rgba(2, 12, 18, 0.42);
   --shadow-md: 0 10px 32px rgba(2, 12, 18, 0.46);
@@ -267,6 +332,45 @@ kbd {
   }
 }
 
+/* ---------------- 跟着照片走的色相 ----------------
+
+   环境光（.ambient，跟着指针的那团柔光）的颜色随**当前这张照片**变：
+   轮到峡湾是冷蓝、峡谷是暖橘、瀑布是青绿、草甸是金、山谷是绿。
+   43 秒一轮里界面真的换四次调子 —— 而不是五张照片在同一个暖橘灯下轮播。
+   Landscape.tsx 把当前下标写到 <html data-scene> 上，下面五组规则消费它。
+
+   **只有色相变，alpha 和身份色一个都不动**（--text / --kind-* / --tone-*
+   全部钉死）。五张照片轮换时对比度读数因此完全不跳，
+   这也是"随照片换调子"这件事敢做的全部理由。 */
+@property --scene-glow {
+  syntax: '<color>';
+  inherits: true;
+  /* 不写 initial-value 的话 @property 整条规则作废（inherits: true 时它是必填的），
+     --scene-glow 会退化成一个普通自定义属性，过渡也就没了。 */
+  initial-value: rgba(242, 171, 104, 0.16);
+}
+
+:root {
+  /* 换色跟着照片的 2.4 秒交叉淡入一起化开，而不是在换图那一帧硬跳。
+     不支持 @property 的浏览器：这一行无效，退化成硬切 —— 在这个幅度下
+     （alpha 0.16 上下）几乎看不出来，属于可接受的降级。 */
+  transition: --scene-glow 2400ms var(--ease-out);
+}
+
+/* 五个色相取自照片自己，但一律压到低饱和 —— 这是客服界面，要平静可信，
+   不能荧光。冷色（湖/瀑布）与暖色（峡谷/草甸）交替，轮换时冷暖真的在换。 */
+:root[data-theme='dark'][data-scene='0'] { --scene-glow: rgba(96, 168, 230, 0.18); } /* 峡湾：冷蓝 */
+:root[data-theme='dark'][data-scene='1'] { --scene-glow: rgba(255, 166, 96, 0.18); } /* 峡谷：暖橘 */
+:root[data-theme='dark'][data-scene='2'] { --scene-glow: rgba(96, 214, 176, 0.17); } /* 瀑布：青绿 */
+:root[data-theme='dark'][data-scene='3'] { --scene-glow: rgba(240, 194, 104, 0.17); } /* 草甸：金 */
+:root[data-theme='dark'][data-scene='4'] { --scene-glow: rgba(150, 212, 128, 0.17); } /* 山谷：绿 */
+
+:root[data-theme='light'][data-scene='0'] { --scene-glow: rgba(70, 140, 210, 0.16); }
+:root[data-theme='light'][data-scene='1'] { --scene-glow: rgba(226, 140, 60, 0.16); }
+:root[data-theme='light'][data-scene='2'] { --scene-glow: rgba(60, 176, 142, 0.15); }
+:root[data-theme='light'][data-scene='3'] { --scene-glow: rgba(214, 166, 60, 0.15); }
+:root[data-theme='light'][data-scene='4'] { --scene-glow: rgba(112, 178, 92, 0.15); }
+
 /* 环境光：跟着指针走的一团柔光，压在所有面板**下面**。
    放在玻璃下面而不是上面，是为了让它像"玻璃背后的光" ——
    backdrop-filter 会把它连同一并模糊掉，得到的是磨砂质感，
@@ -278,7 +382,7 @@ kbd {
   pointer-events: none;
   background: radial-gradient(
     460px circle at var(--mx, 50%) var(--my, 30%),
-    var(--accent-warm-soft),
+    var(--scene-glow),
     transparent 68%
   );
   opacity: 0.9;
@@ -361,11 +465,15 @@ kbd {
   position: relative;
   display: grid;
   place-items: center;
-  flex: 0 0 7px;
+  /* 7px → 10px：改之前这道缝在照片上基本看不见，"两栏可以拖"这件事
+     没有任何可见提示。加宽之后它从"一条缝"变成"一块凹槽" ——
+     铺上全屏最深的 --bg-deep，两侧再压 1px 描边，它就抓得住了。 */
+  flex: 0 0 10px;
   cursor: col-resize;
-  /* 半透明：这道缝是两块玻璃之间的接缝，风景会从它中间透出来一条 */
-  background: transparent;
+  background: var(--bg-deep);
   border: none;
+  border-left: 1px solid var(--border);
+  border-right: 1px solid var(--border);
   padding: 0;
   touch-action: none; /* 触屏上把横向拖动交给拖拽逻辑，而不是页面滚动 */
   transition: background var(--dur-1) var(--ease-out), flex-basis var(--dur-1);
@@ -385,8 +493,8 @@ kbd {
 
 /* 平时只是一道浅痕：它占的是内容的宽度，视觉上不该抢戏 */
 .split-grip {
-  width: 2px;
-  height: 34px;
+  width: 3px;
+  height: 28px;
   border-radius: 2px;
   background: var(--border-strong);
   transition: background var(--dur-1), height var(--dur-2) var(--ease-out);
@@ -413,7 +521,7 @@ kbd {
   transform: translateX(-50%);
   padding: 3px 8px;
   border-radius: 999px;
-  background: var(--accent);
+  background: var(--accent-fill);
   color: #fff;
   font-size: 11px;
   font-weight: 700;
@@ -506,7 +614,9 @@ body.resizing {
   height: 16px;
   padding: 0 4px;
   border-radius: 999px;
-  background: var(--accent);
+  /* 白字压 --accent 只有 2.23:1（浅色主题 1.22:1）。换成填充蓝 ——
+     这个徽章是"有新内容"的提示，读不清就等于没有。 */
+  background: var(--accent-fill);
   color: #fff;
   font-size: 10px;
   font-weight: 700;
@@ -550,7 +660,7 @@ body.resizing {
   display: grid;
   place-items: center;
   border-radius: 50%;
-  background: linear-gradient(135deg, #4d7cff, #7b5cff);
+  background: linear-gradient(135deg, var(--avatar-a), var(--avatar-b));
   color: #fff;
   font-weight: 700;
   flex-shrink: 0;
@@ -804,7 +914,12 @@ body.resizing {
 }
 
 .bubble--user {
-  background: linear-gradient(135deg, var(--accent), var(--accent-strong));
+  /* **不能直接用 --accent。** 它在深色主题里是亮蓝（#63b3ff），白字压上去
+     只有 2.30:1 —— 连大字号要的 3:1 都不到，是本次审计翻出来的现存缺陷
+     （改之前 #5fb0ff 是 2.30:1，提亮之后只会更糟）。也不能把 --accent 调暗：
+     它同时是图标色、焦点环和"哪里能点"的信号，在深色底上必须保持亮。
+     所以另开一组更深的蓝，只给气泡用 —— 组件契约不变，只是换了 token。 */
+  background: linear-gradient(135deg, var(--bubble-user-a), var(--bubble-user-b));
   color: #fff;
   border-bottom-right-radius: 6px;
 }
@@ -1040,7 +1155,9 @@ body.resizing {
 .order-chip-id {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 12px;
-  color: var(--kind-order);
+  /* 中性色。改之前是 var(--kind-order)（#7cbaff）压在 kind 色 chip 底上，
+     实测 4.11:1，12px 不达标 —— 和 .card-kind 同一类问题，同一套修法。 */
+  color: var(--text);
   font-weight: 600;
   white-space: nowrap;
 }
@@ -1160,7 +1277,9 @@ body.resizing {
   flex-shrink: 0;
   border: none;
   border-radius: 10px;
-  background: var(--accent);
+  /* 填充蓝，不是 --accent：白字压强调色只有 2.30:1。
+     注意这个是**启用态**的底色，禁用态另有规则（见下）。 */
+  background: var(--accent-fill);
   color: #fff;
   font-size: 13.5px;
   font-weight: 600;
@@ -1171,11 +1290,15 @@ body.resizing {
 }
 
 .send:hover:not(:disabled) {
-  background: var(--accent-strong);
+  background: var(--accent-fill-strong);
 }
 
 .send:disabled {
-  opacity: 0.45;
+  /* 不要把整颗按钮压到 45% 透明。"发送"两个字会掉到 2.1:1 ——
+     禁用是"现在不能用"，不是"这里没有东西"，用户仍然需要读得出
+     这颗按钮是干什么的。换成一套中性色，用颜色差而不是透明度说话。 */
+  background: var(--surface-soft);
+  color: var(--text-muted);
   cursor: not-allowed;
 }
 
@@ -1215,6 +1338,11 @@ body.resizing {
   display: flex;
   align-items: center;
   gap: 10px;
+  /* 放不下就换行，别压缩轨道。轨道现在是有形状的控件（槽 + 滑块），
+     被压窄时滑块会跟着变窄、末尾那个标签的文字会被 overflow 裁掉一小截 ——
+     实测窄屏抽屉里"收藏"就剩半个字。换行是这里唯一不破坏控件的退路。 */
+  flex-wrap: wrap;
+  row-gap: 8px;
   padding: 15px 18px 10px;
   flex-shrink: 0;
 }
@@ -1239,6 +1367,10 @@ body.resizing {
 }
 
 .tally {
+  /* inline-flex + gap：分类计数前面有一枚承担色相的圆点（见 .tally--order 那组） */
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   font-size: 10.5px;
   font-weight: 600;
   padding: 1px 7px;
@@ -1249,34 +1381,56 @@ body.resizing {
   border: 1px solid var(--border);
 }
 
+/* 分类计数：和 .card-kind 同一套规格 —— **文字中性色，色相由圆点承担**。
+   改之前这里是 kind 色文字压 kind 色底，实测 3.65~3.80:1（deep 深色主题），
+   10.5px 的小字不达标。这三枚徽章本来就带着"订单 / 物流 / 依据"的语义，
+   色相搬去圆点之后语义一点没丢，可读性回来了。 */
+.tally--order,
+.tally--logistics,
+.tally--source,
+.tally--action {
+  color: var(--text);
+  border-color: var(--kind);
+}
+
+.tally--order::before,
+.tally--logistics::before,
+.tally--source::before,
+.tally--action::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--kind);
+  flex-shrink: 0;
+}
+
 .tally--order {
-  color: var(--kind-order);
+  --kind: var(--kind-order);
   background: var(--kind-order-soft);
-  border-color: transparent;
 }
 
 .tally--logistics {
-  color: var(--kind-logistics);
+  --kind: var(--kind-logistics);
   background: var(--kind-logistics-soft);
-  border-color: transparent;
 }
 
 .tally--source {
-  color: var(--kind-source);
+  --kind: var(--kind-source);
   background: var(--kind-source-soft);
-  border-color: transparent;
 }
 
 .tally--action {
-  color: var(--kind-action);
+  --kind: var(--kind-action);
   background: var(--kind-action-soft);
-  border-color: transparent;
 }
 
 .workspace-actions {
   display: flex;
   gap: 6px;
   flex-shrink: 0;
+  /* 轨道不再撑满整行之后，右边这一组要自己靠过去 */
+  margin-left: auto;
 }
 
 .workspace-body {
@@ -1284,6 +1438,44 @@ body.resizing {
   min-height: 0;
   overflow-y: auto;
   padding: 0 18px 18px;
+  /* 面板内容要拿到一路下来的确定高度。
+     图谱是一棵自己滚的树 + 一条钉在底部的计数，它靠父级高度找位置；
+     而中间隔着的 .swap-root / .swap-in 默认是普通块（高度由内容撑），
+     百分比在那条链条上解析成 auto —— 实测 .graph 被撑到 3160px 的内容高度，
+     树自己不滚、底部那条「70 条 · 6 篇文档」掉到屏幕外 2400px，
+     变成整个 .workspace-body 在滚。这里把同一根链子接上：
+     三层都是 flex 列 + min-height: 0，高度才传得下来。
+     注意下面那行 flex-shrink: 0 —— 接上链子之后所有面板都成了 flex 项，
+     默认 shrink:1 会把记忆/收藏的长列表压扁到面板高度、多出来的部分被裁掉
+     且外层不滚。只有图谱要收缩（它自己滚），别的一律不许缩。 */
+  display: flex;
+  flex-direction: column;
+}
+
+.workspace-body > .swap-root {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.workspace-body .swap-in {
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.workspace-body .swap-in > * {
+  flex: 0 0 auto;
+}
+
+/* 图谱是唯一需要收缩的面板：它内部再分三档（搜索条 / 树 / 计数），
+   树吃掉剩下的高度并自己滚。这里不靠 height:100% 而是直接蹭成 flex 项，
+   免得哪天中间又插一层，百分比又一次悄悄解析成 auto。 */
+.workspace-body .swap-in > .graph {
+  flex: 1 1 0;
+  height: auto;
 }
 
 /* 空状态：一块"画布"网格 —— 暗示这里等着放东西。
@@ -1392,17 +1584,19 @@ body.resizing {
   border-color: var(--border-strong);
 }
 
-/* 左侧一道细色条：一眼分清卡片类型，比只靠小标签快得多 */
+/* 左侧一道色脊：一眼分清卡片类型，比只靠小标签快得多。
+   加厚到 4px、去掉 0.85 的透明度让它全饱和（实测对卡片 4.2~5.2:1，
+   够图形元素要的 3:1），上下收到 10px 让它更像一条"脊"而不是悬空的短线 ——
+   卡片一多，这一列竖向色条是最省力的节奏来源。 */
 .card::before {
   content: '';
   position: absolute;
   left: 0;
-  top: 13px;
-  bottom: 13px;
-  width: 3px;
+  top: 10px;
+  bottom: 10px;
+  width: 4px;
   border-radius: 0 3px 3px 0;
   background: var(--kind);
-  opacity: 0.85;
 }
 
 .card--order {
@@ -1425,12 +1619,22 @@ body.resizing {
   --kind-soft: var(--kind-action-soft);
 }
 
+/* 标题行整行铺一层 kind 色底，下缘压一条分界线。
+   改之前「物流 / ORD-1002 / 备货中」那一行和正文之间几乎没有分界，
+   而照片透上来之后 0.18 alpha 的 kind 色会彻底糊掉。
+   整行着色之后每张卡片立刻有了自己的标题栏，卡片堆叠的层次就长在这里。
+   负外边距把底色推到卡片边缘（卡片自己有 padding），
+   再加上圆角上半，底色才不会在四个角上露出空隙。 */
 .card-head {
   display: flex;
   align-items: center;
   gap: 8px;
   flex-wrap: wrap;
-  margin-bottom: 9px;
+  margin: -13px -15px 9px;
+  padding: 9px 15px;
+  border-bottom: 1px solid var(--border);
+  border-radius: calc(var(--radius) - 1px) calc(var(--radius) - 1px) 0 0;
+  background: var(--kind-soft);
 }
 
 .card-kind {
@@ -1440,16 +1644,43 @@ body.resizing {
   font-size: 11px;
   font-weight: 600;
   letter-spacing: 0.3px;
-  color: var(--kind);
-  background: var(--kind-soft);
+  /* **文字用中性色，色相交给前面那枚圆点和描边。**
+     改之前这里是"彩色文字压同色底"（color: var(--kind) + background:
+     var(--kind-soft)），实测只有 3.32~3.93:1，小字不达标 —— 这是现存的
+     accessibility 缺陷。而且"把底色提亮"这条直觉路是错的：
+     填充从 0.15 提到 0.22，对比度反而掉到 2.98:1。同色底越亮，彩色字越糊。
+     改成圆点承担色相之后，文字回到 5.5:1 以上，色相反而比原来更明确。
+
+     底色用 --surface 而不是 --kind-soft：这枚 chip 是坐在**已经着了色的**
+     标题行（.card-head）上的，再叠一层同色 fill 会让底色更亮、对比度更低 ——
+     实测最坏只剩 4.52:1（要求 4.5），而这个值会随场景色相浮动，余量太薄。
+     换成卡片自己的底色，chip 就成了色带上一枚"贴上去的"小标签，既好看又稳。 */
+  color: var(--text);
+  background: var(--surface);
+  /* 同色描边，接近实色 —— 图形元素只要 3:1，这条实测有 4.2:1 以上 */
+  border: 1px solid var(--kind);
   border-radius: 6px;
   padding: 2px 8px;
+}
+
+/* 承担色相的那枚圆点。色相从文字上搬到这里之后，
+   它就成了卡片类型唯一的视觉标识，所以要是实心的、6px。 */
+.card-kind::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--kind);
+  flex-shrink: 0;
 }
 
 .card-id {
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 12.5px;
-  color: var(--text-muted);
+  /* 用 --text 而不是 --text-muted：它现在坐在 .card-head 那层 kind 色底上，
+     muted 在那上面只有 3.71:1。订单号是这张卡的主键，本来也该更实。 */
+  color: var(--text);
+  opacity: 0.82;
 }
 
 .card-title {
@@ -1480,6 +1711,10 @@ body.resizing {
 
 /* 状态标签：同一件事在不同单上长得一样，用户才不用重读 */
 .pill {
+  /* inline-flex + gap：语义 pill 前面有一枚承担色相的圆点（见 .pill--warn 那组） */
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
   font-size: 11.5px;
   font-weight: 600;
   padding: 1.5px 9px;
@@ -1502,28 +1737,49 @@ body.resizing {
   white-space: nowrap;
 }
 
+/* 语义 pill：和 .card-kind 同一套规格 —— **文字中性色，色相由圆点 + 描边承担**。
+   改之前这四个都是"语义色文字压同色底"（例如 .pill--warn 的 #e8b95e 压在
+   rgba(232,185,94,0.16) 上），实测 3.15~3.85:1，11.5px 的小字不达标。
+   语义色（绿=成功、黄=待处理、紫=进行中）必须保留 —— 它们是状态的语言，
+   只是不该再兼职当文字色。 */
+.pill--warn,
+.pill--info,
+.pill--active,
+.pill--ok {
+  color: var(--text);
+  border-color: var(--tone, var(--border));
+}
+
+.pill--warn::before,
+.pill--info::before,
+.pill--active::before,
+.pill--ok::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--tone, var(--text-muted));
+  flex-shrink: 0;
+}
+
 .pill--warn {
-  color: var(--tone-warn);
+  --tone: var(--tone-warn);
   background: var(--tone-warn-soft);
-  border-color: transparent;
 }
 
 .pill--info {
-  color: var(--tone-info);
+  --tone: var(--tone-info);
   background: var(--tone-info-soft);
-  border-color: transparent;
 }
 
 .pill--active {
-  color: var(--tone-active);
+  --tone: var(--tone-active);
   background: var(--tone-active-soft);
-  border-color: transparent;
 }
 
 .pill--ok {
-  color: var(--tone-ok);
+  --tone: var(--tone-ok);
   background: var(--tone-ok-soft);
-  border-color: transparent;
 }
 
 .pill--muted {
@@ -1769,16 +2025,38 @@ body.resizing {
 
 /* 会话按时间分组：今天 / 昨天 / 更早 的标签。
    它存在的意义不是分类学，是**定位** —— "昨天那通"比"列表第 7 条"好找得多。 */
+/* 「今天 / 昨天 / 更早」是**分组头**，不是列表里的一条。
+   改之前它是一行 11px 裸文字，读起来像漏进列表的一条消息。
+   做成粘性 + 铺底色 + 上分隔线之后，滚动时组名始终在，
+   列表就有了"章"的节奏；右侧那条 ::after 补一条延伸到底的横线，
+   把"这一组从这里开始"说到位。 */
 .session-group {
+  position: sticky;
+  top: 0;
+  z-index: 1;
   display: flex;
   align-items: center;
   gap: 7px;
-  padding: 10px 9px 4px;
-  font-size: 10.5px;
+  margin-top: 12px;
+  padding: 8px 9px 5px;
+  font-size: 11px;
   font-weight: 700;
   letter-spacing: 0.4px;
   color: var(--text-muted);
-  text-transform: uppercase;
+  /* 粘性头必须**不透**，否则滚到它底下的会话条目会透上来把字糊掉。
+     但也不能直接铺 --surface-sunken：.rail-slot 本身已经是那层半透明玻璃，
+     再叠一层半透明，合成出来的颜色和列表其余部分对不上 —— 滚动时能看见
+     一条横向色带。这里用 color-mix 把同一个玻璃色"夯"到接近不透明：
+     色相一致，只是不再透光。 */
+  background: color-mix(in srgb, var(--surface-sunken) 88%, var(--bg-deep));
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+  border-top: 1px solid var(--border);
+}
+
+.session-group:first-child {
+  margin-top: 0;
+  border-top: none;
 }
 
 .session-group::after {
@@ -2073,12 +2351,45 @@ body.resizing {
 
 /* ---------------- 工作区标签页 ---------------- */
 
+/* 分段控件的槽（track）+ 滑块（indicator）。
+
+   分段的本质是"有一个槽、有一个滑块"，所以槽要暗、滑块要亮、两者之间要有
+   看得见的落差。**改之前滑块用的是 var(--surface)，和它所在的面板只差
+   1.03:1** —— 于是三个标签读起来是三段裸文字，而不是一个控件。
+   现在槽铺 --surface-sunken、滑块用不透明的 --surface-raised，
+   落差 1.5:1 上下，再加 1px 描边就够看了。 */
 .tabs {
   position: relative;
   display: flex;
   gap: 3px;
-  flex: 1;
+  /* 轨道贴合内容，不再 flex:1 撑满整行。
+     滑块变成看得见的控件之后，"一条 690px 长的槽里挤着三个标签、
+     右边空一大截"就成了显眼的破绽 —— 分段控件该有多大，
+     由它分几段决定，不由它所在的容器有多宽决定。 */
+  flex: 0 1 auto;
   min-width: 0;
+  /* 真的挤不下时裁掉，而不是让内容溢出轨道。
+     但不能用 overflow: hidden：它是四边都裁，把标签右上角那个未读气泡
+     （top: -7px）也一起裁了 —— 实测气泡顶边 33、轨道顶边 35，整个气泡
+     都不在可见区域里，用户只看到数字从计数里变了。切到
+     overflow-x: clip; overflow-y: visible 可以只要横向裁剪。
+
+     不过"裁掉"本身是有代价的：四个标签都不许压缩（见 .tab 的 flex-shrink），
+     360px 视口下抽屉只有 323px、轨道拿到 287px，而标签一共要 310px ——
+     实测「图谱」被裁掉 23.5px，右半个按钮点不到，而这个功能只能从这里进。
+     clip 不给滚动条，等于把第四个标签锁在门外。所以窄屏下（见文件末尾的
+     媒体查询）把标签收成"只留图标"的形态：四个都在，都能点，省下的宽度
+     刚好够。这里只保留下面的裁剪作为极端情况的兜底。 */
+  overflow-x: clip;
+  overflow-y: visible;
+  padding: 3px;
+  border-radius: 12px;
+  /* 槽必须比它所在的面板更**深**。第一版铺的是 --surface-sunken，
+     而 .pane-workspace 本身就是 --surface-sunken —— 同一块色，槽等于不存在，
+     三个标签还是三段裸文字。用 --bg-deep：它是这套配色里最深的一档，
+     槽与面板、槽与滑块（--surface-raised）就都有了落差。 */
+  background: var(--bg-deep);
+  border: 1px solid var(--border);
 }
 
 /* 活动标签的底色块。它**不是**给每个标签自己画背景，而是用一个绝对定位的
@@ -2086,15 +2397,54 @@ body.resizing {
    而不是"原来那块没了、新的一块冒出来"。连续性就是这么来的。 */
 .tab-indicator {
   position: absolute;
-  top: 0;
-  bottom: 0;
+  /* left 显式写 0：滑块的定位原点是轨道的**内边距盒**（绝对定位元素的包含块），
+     不写的话它会用"静态位置"（内容盒起点），量出来的 x 就整体偏一个 padding。
+     组件的 measureTab() 正是按内边距盒算的，两边对齐。 */
+  left: 0;
+  top: 3px;
+  bottom: 3px;
   border-radius: 9px;
-  background: var(--surface);
-  border: 1px solid var(--border);
+  background: var(--surface-raised);
+  border: 1px solid var(--border-strong);
   box-shadow: var(--shadow-sm);
   transition: transform var(--dur-2) var(--ease-out), width var(--dur-2) var(--ease-out);
   pointer-events: none;
 }
+
+/* 滑块底部那道 2px 色相条：四个标签各一个色相。
+   色相只落在这条 2px 和图标上，**不落在文字上** ——
+   实测 --accent 压在抬升块上只有 4.15:1，够图形元素要的 3:1，
+   但不够 12.5px 文字要的 4.5:1。所以文字一律中性色。
+   用户每切一次标签，屏幕就换一次色相，而不用动任何大面积背景。 */
+.tab-indicator::after {
+  content: '';
+  position: absolute;
+  left: 8px;
+  right: 8px;
+  bottom: -1px;
+  height: 2px;
+  border-radius: 2px;
+  background: var(--tab-hue, var(--accent));
+  /* 色相跟着滑块一起"飞"到新标签：切换瞬间 aria-selected 已翻转，
+     没有这条过渡的话，颜色会先于滑块到位，读起来是"两件事"。 */
+  transition: background-color var(--dur-2) var(--ease-out);
+}
+
+#tab-cards { --tab-hue: var(--accent); }
+#tab-memory { --tab-hue: var(--kind-logistics); }
+#tab-stars { --tab-hue: var(--accent-warm); }
+#tab-graph { --tab-hue: var(--kind-source); }
+
+/* 上面那组变量只对**标签自己**生效 —— 图标规则（.tab--active svg）匹配的
+   是标签的后代，能继承到；而 .tab-indicator 是标签的兄弟节点，不是任何
+   #tab-* 的后代，自定义变量只沿 DOM 树向下继承、绝不横传，所以在它身上
+   var(--tab-hue, …) 永远命中 fallback —— 实测四个标签底下那条 2px 全是
+   同一个蓝色，"每切一次标签换一次色相"从来没有发生过。这里用 :has 把
+   当前选中标签的色相同步到滑块上，::after 才读得到。 */
+.tabs:has(#tab-cards[aria-selected='true']) .tab-indicator { --tab-hue: var(--accent); }
+.tabs:has(#tab-memory[aria-selected='true']) .tab-indicator { --tab-hue: var(--kind-logistics); }
+.tabs:has(#tab-stars[aria-selected='true']) .tab-indicator { --tab-hue: var(--accent-warm); }
+.tabs:has(#tab-graph[aria-selected='true']) .tab-indicator { --tab-hue: var(--kind-source); }
 
 .tab {
   position: relative;
@@ -2102,6 +2452,11 @@ body.resizing {
   display: inline-flex;
   align-items: center;
   gap: 5px;
+  /* 不许被压缩。默认 flex-shrink:1 会让标签窄于内容，而内容是 nowrap 的，
+     于是计数徽章被挤到盒子外 —— 实测徽章右缘 1024.8、滑块止于 1015，
+     那个"2"有一半悬在滑块外面，看起来像渲染坏了。
+     宁可让 .tabs 整体裁剪，也不要单个标签内部错位。 */
+  flex: 0 0 auto;
   border: 1px solid transparent;
   background: transparent;
   color: var(--text-muted);
@@ -2115,6 +2470,12 @@ body.resizing {
   transition: color var(--dur-1), transform var(--dur-1);
 }
 
+/* 窄屏下 .tab-label 会被隐藏（见 1024px 媒体查询）。给它一个类名而不是
+   直接藏文字节点，是因为 CSS 只能选择元素 —— 裸文本没有可挂的钩子。 */
+.tab-label {
+  white-space: nowrap;
+}
+
 .tab:hover {
   color: var(--text);
 }
@@ -2123,8 +2484,14 @@ body.resizing {
   transform: scale(0.96);
 }
 
+/* 选中态的文字保持中性色（理由见上面那道 2px 条），色相交给图标 ——
+   图标是图形元素，3:1 就够。 */
 .tab--active {
-  color: var(--accent);
+  color: var(--text);
+}
+
+.tab--active svg {
+  color: var(--tab-hue, var(--accent));
 }
 
 .tab-count {
@@ -2139,9 +2506,32 @@ body.resizing {
   transition: background var(--dur-1), color var(--dur-1);
 }
 
+/* 数字变化时弹一下。和页头那个总计数徽标（.badge--bump）是同一个意思：
+   "哪里变了"要能一眼看到，只是这里弹的是标签自己的计数。
+   动的是背景色而不是 scale：未读状态（.tab--notify）已经在这个元素上跑
+   一个无限循环的 transform 呼吸动画，两条动画同时写 transform 时只有
+   一条能赢 —— 实测呼吸把弹跳整段压掉，计数变化时什么都没发生。 */
+.tab-count--bump {
+  animation: tab-count-flash var(--dur-2) var(--ease-out);
+}
+
+@keyframes tab-count-flash {
+  from {
+    background-color: var(--accent-fill);
+    color: #fff;
+  }
+  to {
+    background-color: var(--surface-soft);
+    color: var(--text-muted);
+  }
+}
+
 .tab--active .tab-count {
+  /* 文字中性色。改之前是 --accent 压在 accent-soft 上，实测 1.66:1
+     （浅色主题 2.61:1）—— 10.5px 的数字几乎读不出来。
+     这块底坐在滑块（--surface-raised）上，本来就比面板亮，彩色字更压不住。 */
   background: var(--accent-soft);
-  color: var(--accent);
+  color: var(--text);
   animation: pop-in var(--dur-2) var(--ease-spring);
 }
 
@@ -2830,6 +3220,27 @@ body.resizing {
   .composer-hint {
     display: none;
   }
+
+  /* 窄屏下四个标签只留图标。
+     抽屉宽 min(90vw, 460px)，360px 的手机上只有 323px，扣掉左右各 18px
+     的内边距，轨道拿到 287px；而"图标 + 两个字 + 计数"的四个标签要 310px。
+     原来靠 overflow-x: clip 裁掉多出来的部分 —— 被裁的正好是「图谱」，
+     23.5px 的按钮点不到，而这个功能只有这一个入口。
+     收成图标（每个约 34px）后总宽降到 ~160px，四个都在、都能点；
+     标签文字进 title / aria-label，读屏和悬停都还知道它是什么。 */
+  .tab {
+    padding: 4px 8px;
+    gap: 0;
+  }
+
+  .tab-label {
+    display: none;
+  }
+
+  .tab-count {
+    /* 图标形态下计数贴得太近会连成一个字，补回一点间距 */
+    margin-left: 3px;
+  }
 }
 
 /* 尊重"减少动效"的系统设置 */
@@ -2889,11 +3300,22 @@ body.resizing {
 .scene-photo:nth-child(5) { --kb-x1: -1.8%; --kb-y1: -0.8%; --kb-x2: 1.2%; --kb-y2: 1.8%; }
 
 .scene-photo.is-live {
-  opacity: var(--scene-opacity, 0.55);
+  /* 每张照片的不透明度由 Landscape.tsx 的 PHOTOS 表逐张给出 ——
+     五张的曝光差得很远（湖最亮、峡谷最暗），用同一个值会让 8.6 秒一次的
+     轮换变成整屏明暗闪烁。**两套主题各给一套**：深色是"在暮色里看见峡谷"，
+     照片越透越好看；浅色是"白玻璃上透出一点色温"，越透越危险。 */
+  opacity: var(--scene-opacity, 0.56);
   /* 26 秒走完一趟推镜。写死而不用变量：这里的每张照片共用同一档速度，
      只有**方向**需要分开（见上面的 nth-child），多一个没人设的变量
      只会让下一个读到这里的人去找它在哪定义。 */
   animation: kenburns 26s ease-in-out infinite alternate;
+}
+
+/* 浅色主题逐张覆盖。这里直接写 opacity、不再走 --scene-opacity ——
+   那个变量是内联样式给的，样式表盖不过它（内联优先级更高），
+   所以另开一个变量由 JSX 一起提供。 */
+:root[data-theme='light'] .scene-photo.is-live {
+  opacity: var(--scene-opacity-light, 0.46);
 }
 
 @keyframes kenburns {
@@ -2911,44 +3333,79 @@ body.resizing {
 }
 
 :root[data-theme='dark'] .scene-veil {
+  /* 三团极光写在 165deg linear-gradient **之前**。同一元素内先写的画在上层 ——
+     这是它们不被下面那层 0.46~0.62 的色罩吃掉的唯一原因。改之前那团暖光
+     就排在 linear 之后（下层），所以一直被压死，等于白写。
+
+     色罩三段 alpha 钉死在主题里、**不随照片变**，所以五张轮换时对比度读数不跳；
+     随照片变的是照片自己的色相（由上面 .scene-photo 提供）。 */
   background:
+    /* 光：屏幕下缘外的一团，圆心压在 y=114%（大半在屏幕外），屏内只剩一片余晖 ——
+       刻意避开正下方的输入区：那是全屏最需要"零装饰"的地方。
+       它的色相**跟着当前这张照片走**（见上面 :root[data-scene] 那几组），
+       所以这一片光的冷暖每 8.6 秒换一次，整屏的调子跟着换。
+       注意只有色相在动 —— 这一层和另外两团极光的 alpha 全是钉死的，
+       对比度读数不会跟着跳。 */
+    radial-gradient(150% 48% at 50% 114%, var(--scene-glow), transparent 66%),
+    /* 冷：顶部一圈青。接住照片最亮的天空，同时给画面一条"上冷下暖"的温度轴 ——
+       整屏只有一个色相是"寡淡"的第一来源，这两团就是第二个色相。 */
+    radial-gradient(104% 56% at 50% -12%, rgba(120, 198, 234, 0.17), transparent 66%),
+    /* 紫罗兰：约占 10% 面积，呼应"选中 / AI / 依据"这三种语义用的紫 */
+    radial-gradient(62% 34% at 68% 2%, rgba(162, 146, 255, 0.09), transparent 72%),
+    /* 色罩本体：**顶部最厚**。五张照片的天空都在上三分之一且都接近过曝
+       （实测最亮 0.5% 像素：草甸 (248,243,236) / 湖 (245,243,231)），
+       所以保护要加在真会出事的那一端，而不是均匀地摊。 */
     linear-gradient(
       165deg,
-      rgba(9, 32, 42, 0.6) 0%,
-      rgba(8, 22, 32, 0.7) 46%,
-      rgba(15, 18, 36, 0.84) 100%
-    ),
-    radial-gradient(120% 55% at 50% 104%, rgba(240, 169, 97, 0.2), transparent 62%);
+      rgba(26, 52, 66, 0.62) 0%,
+      rgba(26, 50, 62, 0.49) 46%,
+      rgba(32, 38, 66, 0.46) 100%
+    );
 }
 
 :root[data-theme='light'] .scene-veil {
+  /* 浅色主题的"色调不单一"主要靠这一层，而不是靠照片 ——
+     白玻璃上一亮就压不住深色正文，照片在这里只能透到 8.8%。 */
   background:
+    /* 光：与 dark 同构，同样跟着当前照片走（浅色下更淡 —— 白玻璃上一亮就
+       压不住深色正文，所以浅色的风景和光都只能更克制） */
+    radial-gradient(150% 48% at 50% 114%, var(--scene-glow), transparent 66%),
+    /* 冷：顶部的青，接住照片里的天空 */
+    radial-gradient(104% 56% at 50% -12%, rgba(122, 192, 226, 0.15), transparent 66%),
+    /* 紫罗兰：呼应"依据 / 选中" */
+    radial-gradient(62% 34% at 68% 2%, rgba(152, 142, 236, 0.08), transparent 72%),
+    /* 色罩本体：冷白 → 中性 → 微紫，压到低饱和（S 约 8~14%）。
+       客服界面要平静可信，不能荧光。 */
     linear-gradient(
       165deg,
-      rgba(233, 245, 247, 0.6) 0%,
-      rgba(225, 238, 244, 0.7) 48%,
-      rgba(226, 232, 246, 0.8) 100%
-    ),
-    radial-gradient(120% 55% at 50% 104%, rgba(217, 131, 36, 0.14), transparent 62%);
+      rgba(240, 246, 249, 0.74) 0%,
+      rgba(234, 243, 247, 0.7) 46%,
+      rgba(238, 236, 250, 0.66) 100%
+    );
 }
 
-/* 四角压暗：视线自然收到中间，也顺手把照片四边的杂色盖掉 */
+/* 四角压暗：视线自然收到中间，也顺手把照片四边的杂色盖掉。
+
+   强度从 0.46 降到 0.28，圆心从 42% 挪到 38% —— 两个数都不是随便动的：
+   不降就会把刚放出来的下缘暖光重新按死（那团光的可见度只有几个百分点，
+   经不起再压一层）；不挪就会在消息区正中央压出一块暗斑（42% 正好是视线落点）。 */
 .scene-vignette {
   position: absolute;
   inset: 0;
   z-index: 3;
   background: radial-gradient(
-    130% 92% at 50% 42%,
-    transparent 42%,
-    rgba(4, 16, 22, 0.46) 100%
+    130% 92% at 50% 38%,
+    transparent 44%,
+    rgba(6, 18, 24, 0.28) 100%
   );
 }
 
+/* 浅色主题的暗角是"把四角压灰"，不是压黑 */
 :root[data-theme='light'] .scene-vignette {
   background: radial-gradient(
-    130% 92% at 50% 42%,
-    transparent 54%,
-    rgba(38, 70, 86, 0.2) 100%
+    130% 92% at 50% 38%,
+    transparent 46%,
+    rgba(62, 90, 102, 0.14) 100%
   );
 }
 
@@ -3058,6 +3515,304 @@ body.resizing {
 }
 
 /* ============================================================
+   灵动式选项卡（Dynamic Island tabs）
+   ============================================================
+
+   三个改动叠加在原有的"滑块分段控件"上，让它从"一个指示器"变成
+   "一个活物"：
+
+   1. **弹性变形**：滑块在平移途中会被拉伸成水滴、到达时回弹。
+      同一时间只改 transform，不触发 layout —— 这是把"切换"从
+      "两块颜色互换"变成"一块有形体的东西飞过去"的关键。
+   2. **呼吸点亮**：不在场的标签收到新内容时不再只靠数字变化，
+      图标上有节奏地呼吸，直到被看见（点过去）为止。
+   3. **弹出气泡**：新内容的条数从标签里冒出来，停留一下再退场，
+      只留下呼吸。冒出来的是"刚刚发生了什么"，呼吸是"还有事没看"。 */
+
+/* 滑块走"先拉伸再回弹"的路线：transition 的时长不变，弹性全靠
+   cubic-bezier 的过冲。220ms 拉伸到位，280ms 回弹收平 —— 拉伸量
+   由 JS 按目标距离写在 --stretch 上（见 Workspace.tsx）。 */
+.tab-indicator {
+  transition:
+    transform 260ms cubic-bezier(0.22, 1.2, 0.36, 1),
+    width 260ms cubic-bezier(0.22, 1.2, 0.36, 1),
+    border-radius 200ms var(--ease-out);
+}
+
+/* 呼吸：不在场的标签收到新内容时点亮。动画无限循环 —— 它是"还有事
+   没看"的持续状态，直到用户点过去为止；点过去那一刻由 goTo 清掉
+   tab--notify 类，动画自然停。
+   呼吸只落在图标上，不落在计数上：计数自己有"数字变化时闪一下"
+   （.tab-count--bump），两条动画写在同一个元素上时只有一条能赢，
+   实测呼吸把闪动整段压掉。图标呼吸 + 计数闪动，各说各的事。 */
+.tab--notify svg {
+  animation: tab-breathe 1.6s ease-in-out infinite;
+}
+
+@keyframes tab-breathe {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 0.55;
+    transform: scale(0.93);
+  }
+}
+
+/* 弹出气泡：新增条数从标签上方冒出来。位置挂在标签的右上角而不是
+   挤进内容流 —— 标签宽度会因为数字位数变化，挤在内容流里的徽章
+   会让滑块的几何跟着抖。 */
+.tab {
+  /* 给 .tab-bubble 的绝对定位一个稳定的锚点 */
+  position: relative;
+}
+
+.tab-bubble {
+  position: absolute;
+  top: -7px;
+  right: -4px;
+  min-width: 15px;
+  padding: 0 4px;
+  height: 15px;
+  line-height: 14px;
+  border-radius: 999px;
+  /* 白字压 --accent 只有 2.23:1（深色主题）/更快接近 3:1（浅色）——
+     这个气泡说的是"+N 条新内容"，读不清就等于没有提示。和页头计数徽标
+     用同一个填充色 token：那是整套配色里唯一保证"白字压上去读得清"的。 */
+  background: var(--accent-fill);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 800;
+  text-align: center;
+  border: 1.5px solid var(--bg-deep);
+  box-shadow: var(--shadow-sm);
+  pointer-events: none;
+  animation: bubble-pop 240ms var(--ease-spring);
+}
+
+@keyframes bubble-pop {
+  from {
+    opacity: 0;
+    transform: translateY(4px) scale(0.6);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+/* ============================================================
+   知识节点图谱
+   ============================================================
+
+   树用缩进和连线画，不用缩放/拖拽的画布：这棵树的深度最多三层
+   （文档 → 章节 → 小节），全部展开也不过六十几行，画布式交互
+   （拖、缩放、找节点）在这个规模下是纯负担。连线用 ::before 画
+   L 形，纯 CSS，不引入任何图形库。 */
+
+.graph {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  min-height: 0;
+}
+
+.graph-bar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 10px;
+}
+
+.graph-input {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--surface);
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  padding: 8px 11px;
+  outline: none;
+  transition: border-color 0.14s, box-shadow 0.14s;
+}
+
+.graph-input:focus {
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+
+.graph-roots {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  overflow-y: auto;
+  min-height: 0;
+  flex: 1;
+}
+
+/* 节点行：标题 + 片段计数。计数用最轻的方式给（一个灰色小数字），
+   它回答"这一枝有几条规则"，不是需要强调的东西。 */
+.graph-node-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+  border: none;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 13px;
+  font-weight: 600;
+  text-align: left;
+  padding: 5px 4px;
+  padding-left: calc(6px + var(--depth, 0) * 16px);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: background 0.14s;
+}
+
+/* 标题本身可以省略，计数徽章不能被挤走（见 .graph-node-count）。
+   省略号落在文字上，而不是让整行横向溢出 —— 图谱的层级全靠左边界
+   对齐来表达，横向滚动的树是读不出层级的。 */
+.graph-node-title {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.graph-node-label:hover {
+  background: var(--surface-soft);
+}
+
+.graph-caret {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 14px;
+  height: 14px;
+  border-radius: 4px;
+  font-size: 11px;
+  line-height: 1;
+  color: var(--text-muted);
+  background: var(--surface-sunken);
+  flex: 0 0 auto;
+  transition: transform 0.16s var(--ease-out);
+}
+
+.graph-node-count {
+  margin-left: auto;
+  font-size: 10.5px;
+  font-weight: 700;
+  color: var(--text-muted);
+  background: var(--surface-soft);
+  border-radius: 999px;
+  min-width: 16px;
+  padding: 0 4px;
+  text-align: center;
+  /* 计数是"这一枝有多少条"，标题长的时候它会被挤出可视宽度。
+     给 label 留出缩进之后的那点空间，超长标题先省略，数字必须看得见。 */
+  flex: 0 0 auto;
+}
+
+/* L 形连线：竖段 + 横段。挂在 children 的每个直接子项上而不是挂在
+   children 自己身上 —— 连线是"每个孩子各自连到父节点"的形状，
+   一个容器上画不出多份。
+
+   连线的横向位置对齐**父节点**的折叠箭头中心：父节点在 depth d 时
+   箭头占 6+d*16 ~ 20+d*16，中点 13+d*16。`--depth` 写在 li 上记的是
+   **自己的**层次（父节点是 d，自己是 d+1），所以这里要减一。
+   写 `--depth` 在 label 上是不行的：label 是 li 的子元素，它的自定义
+   属性不会反向传给 li::before，结果所有层的连线都落在同一列。 */
+.graph-children {
+  list-style: none;
+  margin: 0;
+  padding: 0 0 4px 0;
+}
+
+.graph-children > li {
+  position: relative;
+}
+
+.graph-children > li::before {
+  content: '';
+  position: absolute;
+  left: calc(13px + (var(--depth, 1) - 1) * 16px);
+  top: -4px;
+  bottom: 0;
+  width: 10px;
+  border-left: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  border-bottom-left-radius: 8px;
+  pointer-events: none;
+}
+
+/* 最后一个孩子不留"往下继续"的竖线 */
+.graph-children > li:last-child::before {
+  bottom: auto;
+  height: 14px;
+}
+
+/* 知识片段（叶子）：点开才露出原文。它和「依据」卡片是同一份内容
+   的两种出场方式 —— 这里是主动翻阅，那里是跟着答复出现。 */
+.graph-leaf {
+  position: relative;
+}
+
+.graph-leaf-label {
+  display: block;
+  width: 100%;
+  border: none;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 12.5px;
+  text-align: left;
+  padding: 4px 6px;
+  /* 叶子记的是自己这一层的深度（父节点 depth + 1），而缩进要落在
+     父节点文字的内侧一格 —— 所以减 1，而不是直接用 depth。 */
+  padding-left: calc(24px + (var(--depth, 1) - 1) * 16px);
+  border-radius: 8px;
+  cursor: pointer;
+  transition: color 0.14s, background 0.14s;
+}
+
+.graph-leaf-label:hover {
+  color: var(--text);
+  background: var(--surface-soft);
+}
+
+.graph-leaf-text {
+  margin: 2px 0 6px 0;
+  padding: 8px 10px;
+  padding-left: calc(24px + (var(--depth, 1) - 1) * 16px);
+  font-size: 12.5px;
+  line-height: 1.8;
+  color: var(--text-muted);
+  border-left: 2px solid var(--accent-soft);
+  animation: bubble-pop 200ms var(--ease-out);
+}
+
+.graph-meta {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  margin: 10px 0 0;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+.graph-meta svg {
+  flex: 0 0 auto;
+}
+
+/* ============================================================
    reduced motion
    ============================================================
 
@@ -3081,8 +3836,14 @@ body.resizing {
 
   .scene-photo.is-live {
     animation: none !important;
-    opacity: var(--scene-opacity, 0.55);
+    opacity: var(--scene-opacity, 0.56);
     transform: scale(1.06);
+  }
+
+  /* 这一条要排在 .scene-photo.is-live 之后：reduced-motion 下浅色主题同样
+     得用浅色那一套，而上面那条已经把 opacity 写成了深色的值。 */
+  :root[data-theme='light'] .scene-photo.is-live {
+    opacity: var(--scene-opacity-light, 0.46);
   }
 
   .ambient {
@@ -3092,5 +3853,17 @@ body.resizing {
   .card-slot:hover .card,
   .card-slot .card {
     transform: none !important;
+  }
+
+  /* 灵动条的呼吸是无限循环动画，reduced-motion 的通用规则已把
+     iteration-count 压到 1，这里再显式清一次 —— 它一旦留在"半透明
+     停顿"那一帧上，比没有动画更让人困惑。 */
+  .tab--notify svg {
+    animation: none !important;
+  }
+
+  /* 图谱连线是静态元素，保留；只有片段展开的入场动画需要关掉 */
+  .graph-leaf-text {
+    animation: none !important;
   }
 }

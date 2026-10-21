@@ -320,6 +320,18 @@ export function IconQuote(props: IconProps) {
   )
 }
 
+/** 图谱：父节点分出两条子枝（知识结构的形状） */
+export function IconGraph(props: IconProps) {
+  return (
+    <Base {...props}>
+      <circle cx="12" cy="5" r="2.2" />
+      <circle cx="5.5" cy="19" r="2.2" />
+      <circle cx="18.5" cy="19" r="2.2" />
+      <path d="M12 7.2v3.6M12 10.8 6.3 16.9M12 10.8l5.7 6.1" />
+    </Base>
+  )
+}
+
 /** 对话气泡 */
 export function IconChat(props: IconProps) {
   return (

@@ -390,6 +390,21 @@ class RetrievalPipeline:
     def get_chunk(self, chunk_id: str) -> KbChunk | None:
         return self._chunks.get(chunk_id)
 
+    def list_chunks(self) -> list[KbChunk]:
+        """全量 chunk，按 chunk_id 升序 —— chunk_id 的口径是 `doc_id#序号`，
+        升序正好等于"文档内按原文顺序"（doc_id 是中文文件名时也是稳定的
+        字典序）。给知识图谱接口用：图需要的不只是检索单元，还有整份
+        文档的层级结构，这里是重建那份结构唯一的数据源。
+
+        先 `_hydrate_from_store()`：这个接口是**服务启动后、任何一次检索
+        之前**就会被调用的（图谱标签一点就拉）。如果进程重启后知识库目录
+        读不到、只有向量库里留着内容，`_chunks` 在构造期是空的 ——
+        不回捞的话图谱接口永远返回空树，而聊天检索完全正常，用户在两个
+        地方看到两个互相矛盾的世界。
+        """
+        self._hydrate_from_store()
+        return [self._chunks[cid] for cid in sorted(self._chunks)]
+
     def stats(self) -> dict:
         """给 /api/health 和评估脚本用的自检信息。"""
         return {

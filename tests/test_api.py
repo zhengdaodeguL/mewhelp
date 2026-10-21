@@ -899,3 +899,162 @@ def test_frontend_export_keeps_the_conversation_and_drops_state_notices(tmp_path
     # 文件名要能直接落盘：标题里的斜杠不能变成目录分隔符
     assert "/" not in got["name"] and "\\" not in got["name"]
     assert got["name"].startswith("mewhelp-2026-09-14-") and got["name"].endswith(".md")
+
+
+# ============================================================
+# 18. 知识节点图谱
+# ============================================================
+def test_knowledge_graph_folds_breadcrumbs_into_tree(client):
+    """图谱接口：把切分时留下的面包屑折叠成「文档 → 章节」的树。
+
+    图谱是切分策略的直接受益者 —— 定长滑窗没有面包屑可折，这里
+    也就无从测试起。所以测试盯的是结构口径而不是具体文案：
+    顺序、层级、叶子片段这三样定了，界面怎么渲染都不会跑偏。
+    """
+    resp = client.get("/api/knowledge/graph")
+    assert resp.status_code == 200
+    body = resp.json()
+
+    assert body["count"] > 0, "知识库没灌进来，图谱就是个空壳"
+    assert len(body["docs"]) > 0
+
+    doc = body["docs"][0]
+    # 文档节点：id / title / sections，三个键一个不多一个不少
+    assert set(doc.keys()) == {"id", "title", "sections", "leafs"}
+    assert doc["title"]
+    assert isinstance(doc["sections"], list)
+
+    section = doc["sections"][0]
+    assert set(section.keys()) == {"id", "title", "sections", "leafs"}
+    # 每个文档至少有一个带内容的章节（这批知识库没有"只有 H1 的空文档"）
+    assert section["title"]
+    leafs = section["leafs"]
+    assert leafs, "章节下面没有片段，图谱只剩一层空壳"
+    leaf = leafs[0]
+    assert set(leaf.keys()) == {"id", "label", "text"}
+    assert leaf["text"], "片段摘要为空 —— 点开节点什么都看不到"
+
+
+def test_knowledge_graph_is_stable_across_calls(client):
+    """同一份知识库两次请求返回同一棵树。
+
+    图谱是"知识结构的地图"，地图每天长得不一样，用户就没法靠
+    记忆回到上次看过的位置。
+    """
+    a = client.get("/api/knowledge/graph").json()
+    b = client.get("/api/knowledge/graph").json()
+    assert a == b
+
+
+def test_knowledge_graph_leaf_labels_are_not_just_section_titles(client):
+    """同一小节下的几条片段，标签必须彼此不同。
+
+    标签原先取的是 chunk.title —— 它就是最近的标题，于是「生鲜类」
+    底下的三条规则全叫「生鲜类」。树读起来像标题被复制了几遍，
+    用户没法判断该点哪一条。标签必须带上这一条**自己**的内容。
+    """
+    body = client.get("/api/knowledge/graph").json()
+
+    def walk(section):
+        yield section
+        for child in section["sections"]:
+            yield from walk(child)
+
+    for doc in body["docs"]:
+        for section in walk(doc):
+            labels = [leaf["label"] for leaf in section["leafs"]]
+            assert len(labels) == len(set(labels)), (
+                f"「{section['title']}」下有重复片段标签：{labels}"
+            )
+
+
+def test_knowledge_graph_recurses_through_nested_sections():
+    """三层标题也要展开成三层 list —— 不能只转顶层。
+
+    `_graph_from_chunks` 先把面包屑折成 dict 树，再转成接口的 list 树。
+    只转顶层的话，第二层往下的 `sections` 仍是 dict；前端按
+    `Array.isArray` 判断，整个分支会被静默丢掉 —— 数据变成三层时
+    用户会发现"图谱里少了半棵树"，而接口本身不报任何错。
+    """
+    from mewhelp.api.app import _graph_from_chunks
+    from mewhelp.schemas import KbChunk
+
+    def chunk(seq: int, breadcrumb: list[str]) -> KbChunk:
+        return KbChunk(
+            chunk_id=f"深层文档#{seq:04d}",
+            doc_id="深层文档",
+            title=breadcrumb[-1],
+            breadcrumb=breadcrumb,
+            text=f"第 {seq} 条规则的正文。",
+        )
+
+    docs = _graph_from_chunks(
+        [
+            chunk(1, ["深层文档"]),
+            chunk(2, ["深层文档", "第二章", "第一节", "第一小节"]),
+            chunk(3, ["深层文档", "第二章", "第一节", "第二小节"]),
+        ]
+    )
+    assert len(docs) == 1
+    chapter = next(s for s in docs[0]["sections"] if s["title"] == "第二章")
+    part = chapter["sections"][0]
+    assert part["title"] == "第一节"
+    assert isinstance(part["sections"], list), "第三层仍是 dict —— 前端会整枝丢掉"
+    assert [s["title"] for s in part["sections"]] == ["第一小节", "第二小节"]
+    # 每层的 id 都能独立定位（面包屑路径拼进去，不只是一层标题）
+    assert part["id"] == "深层文档#第二章/第一节"
+
+
+def test_knowledge_graph_keeps_document_order():
+    """章节顺序必须跟原文一致，不能按标题排序。
+
+    以前 `_fold_sections` 里写的是 `sorted(tree)` —— 按标题的 Unicode
+    码点排。结果是《退款政策》的「退款总则」被推到「退款到账时效」后面，
+    六篇文档全都对不上原文。图谱是"知识结构的地图"，地图上的章节顺序
+    和书里不一样，这张地图就没法用来找东西。
+    """
+    from mewhelp.api.app import _graph_from_chunks
+    from mewhelp.schemas import KbChunk
+
+    def chunk(seq: int, title: str) -> KbChunk:
+        return KbChunk(
+            chunk_id=f"文档#{seq:04d}",
+            doc_id="文档",
+            title=title,
+            breadcrumb=["文档", title],
+            text=f"{title}的正文。",
+        )
+
+    # 原文顺序 乙 → 甲 → 丙，而按码点排是 丙(U+4E19) → 乙(U+4E59) → 甲(U+7532)，
+    # 两者不同 —— 断言能真正区分"按原文"和"按排序"。
+    docs = _graph_from_chunks(
+        [chunk(1, "乙"), chunk(2, "甲"), chunk(3, "丙")]
+    )
+    assert [s["title"] for s in docs[0]["sections"]] == ["乙", "甲", "丙"]
+
+
+def test_knowledge_graph_leaf_labels_are_unique_across_the_whole_tree(client):
+    """标签在整个图谱里都不能重复，而不只是同一小节内。
+
+    三张退款速查表的列头完全一样（商品状态 / 申请时间窗 / 退款比例），
+    只取前三列的话三张叶子都叫「速查表：商品状态、申请时间窗、退款比例…」，
+    分别挂在「数码类 / 服饰类 / 生鲜类」下 —— 用户看到三个一模一样的条目，
+    不知道自己点的是哪一张。上一版测试只在小节内部去重，所以它一直是绿的。
+    """
+    body = client.get("/api/knowledge/graph").json()
+
+    def walk(section):
+        yield section
+        for child in section["sections"]:
+            yield from walk(child)
+
+    seen: dict[str, str] = {}
+    for doc in body["docs"]:
+        for section in walk(doc):
+            for leaf in section["leafs"]:
+                label = leaf["label"]
+                assert label not in seen, (
+                    f"标签「{label}」在「{seen.get(label)}」和「{section['title']}」下重复"
+                )
+                seen[label] = section["title"]
+    assert seen, "图谱里一条片段都没有"

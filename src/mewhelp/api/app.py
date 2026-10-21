@@ -133,6 +133,126 @@ def _demo_user(user_id: str | None) -> str:
     return user_id or "u-anonymous"
 
 
+def _graph_leaf_label(chunk: Any) -> str:
+    """图谱叶子的标签：取**这一条**的内容摘要，而不是它所在小节的标题。
+
+    切分后的 `chunk.title` 就是最近的标题，同一个章节下的几条规则会得到
+    完全一样的标签（实测「生鲜类」下面三条都叫「生鲜类」）—— 树看起来
+    像标题被复制了几遍，用户点哪一条都分不出来。正文第一句才是这一条
+    真正在讲什么；表格没有"第一句"，退回列头，至少说明这张表覆盖哪些字段。
+    """
+    from .service import _user_snippet
+
+    if chunk.is_table and chunk.table:
+        head = [c.strip() for c in chunk.table[0] if c.strip()]
+        if head:
+            # 表格的列头往往一模一样（三张退款表都叫「商品状态、申请时间窗、
+            # 退款比例」），只取前三列的话三张叶子标签完全相同，用户还是
+            # 分不出点哪一张。最后一列才是各表自己的差异（是否需要寄回 /
+            # 检测要求 / 备注），所以中间用省略号跳过、把尾列带上。
+            if len(head) > 3:
+                return "速查表：" + "、".join(head[:2]) + "…" + head[-1]
+            return "速查表：" + "、".join(head)
+
+    snippet = _user_snippet(chunk, limit=80)
+    # 在第一个句号/分号处收住：标签是给人一眼扫的，不是给人读完的。
+    # 但只在句号落在合理位置时才收 —— 一句 80 字的规则截在 28 字处
+    # 也比截在逗号处更像一句完整的话。
+    for sep in ("。", "；"):
+        cut = snippet.find(sep)
+        if 0 < cut <= 28:
+            return snippet[:cut]
+    return snippet[:28] + ("…" if len(snippet) > 28 else "")
+
+
+def _fold_sections(
+    doc_id: str, tree: dict[str, Any], path: tuple[str, ...] = ()
+) -> list[dict[str, Any]]:
+    """把面包屑折叠出来的 dict 树递归转成接口约定的 list 树。
+
+    必须递归：前端按 `Array.isArray` 判断"有没有子章节"，中间某一层
+    还是 dict 的话，那一层以下的所有章节都会被静默丢掉 —— 数据现在是
+    两层，看起来没坏，但三层的知识文档一加进来就会整枝消失。
+
+    顺序用 dict 的**插入顺序**，不排序：这棵树是按 chunk_id 升序遍历
+    chunk 时逐条建出来的，而 chunk_id 的序号就是原文顺序，所以插入顺序
+    恰好就是文档里的章节顺序。以前这里写的是 `sorted(tree)` —— 按标题
+    的 Unicode 码点排，结果是「退款总则」被推到「退款到账时效」后面、
+    每篇文档的章节都和原文对不上。同一份知识库两次请求仍然返回同一棵树
+    （chunk 输入顺序本身是确定的），稳定性不受影响。
+    """
+    out: list[dict[str, Any]] = []
+    for key, value in tree.items():
+        here = (*path, key)
+        out.append(
+            {
+                "id": f"{doc_id}#{'/'.join(here)}",
+                "title": key,
+                "sections": _fold_sections(doc_id, value["sections"], here),
+                "leafs": value["leafs"],
+            }
+        )
+    return out
+
+
+def _graph_from_chunks(chunks: list[Any]) -> list[dict[str, Any]]:
+    """把切分时留下的面包屑折叠成一棵「文档 → 章节 → 小节」的树。
+
+    这是 `retrieval/chunking.py` 那条工程主张的免费红利：切分时严格按
+    标题层级、条件句永不断开，于是每个 chunk 都带着完整的祖先链。
+    图谱不需要任何新的解析步骤 —— 反过来，如果切分是定长滑窗，
+    这里就没有面包屑可折，图谱也就无从谈起。
+
+    折叠时做三件收纳：
+      * 跳级标题会产生空层（breadcrumb 里的 ""），跳过 —— 它只是切分
+        时补的占位，不是真实存在的章节；
+      * 小节下挂着该小节的原文片段，作为点开时的预览（和「依据」卡片
+        同一份口径：`_user_snippet` 在 service.py）；
+      * doc_id / seq 从 chunk_id 里拆出来排序，保证同一份知识库
+        两次请求返回同一棵树。
+    """
+    from .service import _user_snippet
+
+    docs: dict[str, dict[str, Any]] = {}
+    for chunk in chunks:
+        doc = docs.setdefault(
+            chunk.doc_id,
+            # 文档节点自己也带 leafs：H1 底下没有小节、直接是正文的片段
+            # 会挂在文档这一层 —— 没有这个口子，这类片段就从图上消失了
+            {"id": chunk.doc_id, "title": chunk.title, "sections": {}, "leafs": []},
+        )
+        # 文档层标题取文档名而非最后一个面包屑：面包屑的最后一段是"当前
+        # 小节"，文档节点的标题应该一直是它自己（chunking 把 H1 当根）
+        if not doc["sections"] and chunk.breadcrumb:
+            doc["title"] = chunk.breadcrumb[0] or doc["title"]
+
+        node = doc
+        # 面包屑[1:]：第 0 段是文档根，已经消费掉了
+        for name in chunk.breadcrumb[1:]:
+            if not name:
+                continue  # 跳级标题补出来的空层
+            node = node["sections"].setdefault(name, {"sections": {}, "leafs": []})
+        node["leafs"].append(
+            {
+                "id": chunk.chunk_id,
+                "label": _graph_leaf_label(chunk),
+                "text": _user_snippet(chunk),
+            }
+        )
+
+    out: list[dict[str, Any]] = []
+    for doc_id, doc in docs.items():
+        out.append(
+            {
+                "id": doc_id,
+                "title": doc["title"],
+                "sections": _fold_sections(doc_id, doc["sections"]),
+                "leafs": doc["leafs"],
+            }
+        )
+    return out
+
+
 # ============================================================
 # 装配辅助
 # ============================================================
@@ -522,6 +642,32 @@ def create_app(deps: GraphDeps | None = None) -> FastAPI:
         而不是暴露给任何能访问这个域名的前端。
         """
         return {"status": "ok"}
+
+    # ------------------------------------------------------------
+    # 知识图谱
+    # ------------------------------------------------------------
+    @app.get("/api/knowledge/graph")
+    async def knowledge_graph() -> dict[str, Any]:
+        """知识库的知识节点图谱。
+
+        检索层的 `_chunks` 里有每一个片段的**面包屑**（按标题层级切分时
+        天然留下的痕迹）—— 不用再解析一遍 Markdown，直接把面包屑折叠成
+        一棵树：文档 → 章节 → 小节。原文片段作为小节的摘要附在叶子上，
+        让图谱是"知识结构的地图"，而不是一张只有标题的空壳。
+
+        拿不到检索器或里面没东西（比如启动时知识库目录没配）就回空树，
+        界面按空状态处理 —— 这和其它读接口的纪律一致：缺一块比白屏好。
+        """
+        retriever = getattr(deps, "retriever", None)
+        list_chunks = getattr(retriever, "list_chunks", None)
+        if not callable(list_chunks):
+            return {"count": 0, "docs": []}
+        try:
+            chunks = list_chunks()
+        except Exception as exc:  # noqa: BLE001 — 图谱缺一块不该让服务报错
+            logger.warning("[api] /api/knowledge/graph 读取失败：%s", exc)
+            return {"count": 0, "docs": []}
+        return {"count": len(chunks), "docs": _graph_from_chunks(chunks)}
 
     # ------------------------------------------------------------
     # 前端（React 构建产物）

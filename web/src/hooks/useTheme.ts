@@ -22,8 +22,8 @@ const STORAGE_KEY = 'mewhelp.theme'
  * 三处任何一处改了，另外两处要跟着改。
  */
 const THEME_COLOR: Record<ResolvedTheme, string> = {
-  light: '#e6eff0',
-  dark: '#0e1b22',
+  light: '#e9f1f3',
+  dark: '#17272f',
 }
 
 /** 三态循环，用于点一下就切换的按钮。 */

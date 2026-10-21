@@ -106,6 +106,11 @@ export function CommandPalette({ actions, themeChoice, onClose, closing = false 
   }
 
   const onKeyDown = (e: React.KeyboardEvent) => {
+    // 退场的那 180ms 里面板还在 DOM 里（留着播淡出），键盘事件也照样冒泡上来。
+    // 此时用户已经按过 Esc / Enter 认为它关了 —— 再按一次 Enter 却会在
+    // 一个正在化开的面板上执行动作（新对话、导出……），"我明明取消了"。
+    // 指针事件在 CSS 里已经关掉（.is-closing），键盘必须在这里关。
+    if (closing) return
     if (e.key === 'ArrowDown') {
       e.preventDefault()
       setActive((i) => (visible.length ? (i + 1) % visible.length : 0))

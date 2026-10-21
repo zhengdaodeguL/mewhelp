@@ -13,6 +13,7 @@ import { Workspace, type WorkspaceTab } from './components/Workspace'
 import { useChat } from './hooks/useChat'
 import { useHistory } from './hooks/useHistory'
 import { useIdentity } from './hooks/useIdentity'
+import { useGraph } from './hooks/useGraph'
 import { useMediaQuery } from './hooks/useMediaQuery'
 import { useMemory } from './hooks/useMemory'
 import { useSplit } from './hooks/useSplit'
@@ -45,6 +46,8 @@ export default function App() {
   //: 窄屏下同一时刻只开一个抽屉 —— 两个都开在手机上什么都看不见
   const [drawer, setDrawer] = useState<'rail' | 'workspace' | null>(null)
   const [tab, setTab] = useState<WorkspaceTab>('cards')
+  //: 图谱只在标签第一次被打开时才拉数据（理由见 useGraph）
+  const graph = useGraph(useMemo(() => tab === 'graph', [tab]))
   const [findOpen, setFindOpen] = useState(false)
   const [findQuery, setFindQuery] = useState('')
   const [findIndex, setFindIndex] = useState(0)
@@ -351,6 +354,9 @@ export default function App() {
     else setWsOpen((v) => !v)
   }
 
+  //: 图谱计数不进徽章：徽章回答的是"工作区有几件**与这次对话有关**的东西"，
+  //: 图谱是整个知识库的常驻地图，把它算进来，这个数字从会话开始就不再是 0，
+  //: 徽章也就失去了"有东西可看"的信号意义
   const wsCount = chat.cards.length + memory.items.length + starred.length
 
   // ---------------- 命令面板的动作清单 ----------------
@@ -444,6 +450,17 @@ export default function App() {
           if (!isNarrow && !wsOpen) setWsOpen(true)
         },
       },
+      {
+        id: 'tab-graph',
+        label: '看知识库图谱',
+        hint: `${graph.graph.count} 条知识`,
+        group: '跳到',
+        icon: 'history',
+        run: () => {
+          setTab('graph')
+          if (!isNarrow && !wsOpen) setWsOpen(true)
+        },
+      },
     ]
 
     // 最近的历史对话也进面板：切会话是"用得多、但每次都要去左边找"的动作，
@@ -464,6 +481,7 @@ export default function App() {
     applyTheme,
     cycleThemeWipe,
     exportSession,
+    graph.graph.count,
     history.sessions,
     isNarrow,
     memory.items.length,
@@ -610,6 +628,10 @@ export default function App() {
             starred={starred}
             onJumpTo={jumpTo}
             onUnstar={(m) => starsToggle(m.turnId)}
+            graph={graph.graph}
+            graphLoading={graph.loading}
+            graphError={graph.error}
+            onRefreshGraph={() => void graph.refresh()}
             onClose={isNarrow ? () => setDrawer(null) : undefined}
           />
         </div>

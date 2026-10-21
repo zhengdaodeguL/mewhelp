@@ -270,6 +270,8 @@ POST /api/chat          {user_id, session_id, message, quote?} → SSE 流（逐
 POST /api/chat/sync     同上但返回完整 JSON
 POST /api/feedback      {session_id, request_id, thumbs_down, comment} → 只回 {"ok": bool}
 GET  /api/health        → 只回 {"status": "ok"}（存活探针，不暴露组件模式）
+# 知识节点图谱 —— 整棵树由后端从切分面包屑折叠出来，结构只有这一份口径
+GET    /api/knowledge/graph              → {"count":..,"docs":[{id,title,sections,leafs}]}
 # 会话历史（所有权靠 user_id 查询参数，没有鉴权 —— 见 README 已知限制）
 GET    /api/sessions?user_id=            → 列表（标题 / 轮数 / 预览 / 更新时间）
 GET    /api/sessions/{id}?user_id=       → 恢复对话（只回用户视角字段）

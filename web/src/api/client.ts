@@ -1,11 +1,12 @@
 /**
  * 后端接口客户端。
  *
- * 分四组：
+ * 分五组：
  *   - 对话：`streamChat`（POST /api/chat 读 SSE）、`checkHealth`
  *   - 订单快捷选择：`fetchOrders`
  *   - 会话历史：列表 / 恢复 / 改名 / 删除
  *   - 长期记忆：列表 / 新增 / 置顶 / 删除
+ *   - 知识节点图谱：`fetchKnowledgeGraph`
  *
  * SSE 走 fetch + ReadableStream 而不是 EventSource —— 因为要 POST 请求体，
  * 而 EventSource 只支持 GET。解析规则在 ./sse.ts（纯函数，测试会直接跑它）。
@@ -371,6 +372,90 @@ export async function deleteMemory(userId: string, id: number): Promise<boolean>
   } catch {
     return false
   }
+}
+
+// ---------------------------------------------------------------
+// 知识节点图谱
+// ---------------------------------------------------------------
+
+export interface GraphLeaf {
+  id: string
+  label: string
+  text: string
+}
+
+export interface GraphSection {
+  id: string
+  title: string
+  sections: GraphSection[]
+  leafs: GraphLeaf[]
+}
+
+export interface GraphDoc extends GraphSection {
+  /** 文档名（doc_id），例如「退款政策」 */
+  docId: string
+}
+
+export interface KnowledgeGraph {
+  count: number
+  docs: GraphDoc[]
+}
+
+/**
+ * 取知识库的知识节点图谱。
+ *
+ * 拿不到就返回空树 —— 图谱退化为空状态即可，不该因为它没加载出来
+ * 让整个工作区打不开。
+ *
+ * 但"空"有两种，界面要分开讲：**知识库本来就没有内容**（正常空状态）和
+ * **这次请求失败了**（值得重试）。所以返回值上带一个 `failed`：调用方
+ * 据此决定要不要出错误提示。返回值仍然遵守"不抛"的纪律 —— 多一个字段，
+ * 不是多一种失败。
+ */
+export async function fetchKnowledgeGraph(
+  signal?: AbortSignal,
+): Promise<KnowledgeGraph & { failed: boolean }> {
+  const empty: KnowledgeGraph = { count: 0, docs: [] }
+  try {
+    const res = await fetch(`${API_BASE}/api/knowledge/graph`, { signal })
+    if (!res.ok) return { ...empty, failed: true }
+    const body = (await res.json()) as Record<string, unknown>
+    const rows = Array.isArray(body.docs) ? body.docs.filter(isRecord) : []
+    return {
+      count: Number(body.count) || 0,
+      docs: rows.map((r) => ({
+        id: str(r.id),
+        docId: str(r.id),
+        title: str(r.title) || '未命名',
+        sections: graphSections(r.sections),
+        leafs: graphLeafs(r.leafs),
+      })),
+      failed: false,
+    }
+  } catch {
+    // 主动取消（切标签）不算失败：用户已经不看这个面板了
+    if (signal?.aborted) return { ...empty, failed: false }
+    return { ...empty, failed: true }
+  }
+}
+
+function graphSections(raw: unknown): GraphSection[] {
+  if (!Array.isArray(raw)) return []
+  return raw.filter(isRecord).map((r) => ({
+    id: str(r.id),
+    title: str(r.title),
+    sections: graphSections(r.sections),
+    leafs: graphLeafs(r.leafs),
+  }))
+}
+
+function graphLeafs(raw: unknown): GraphLeaf[] {
+  if (!Array.isArray(raw)) return []
+  return raw.filter(isRecord).map((r) => ({
+    id: str(r.id),
+    label: str(r.label),
+    text: str(r.text),
+  }))
 }
 
 // ---------------------------------------------------------------

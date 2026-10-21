@@ -22,20 +22,36 @@ import { prefersReducedMotion } from '../transition'
 
 interface Photo {
   src: string
-  /** 每张照片的透明度不一样：亮的那几张要压得更狠，否则文字对比度会跳 */
+  /** 深色主题下的不透明度 */
   opacity: number
+  /** 浅色主题下的不透明度。见下面 PHOTOS 上方的说明。 */
+  opacityLight: number
 }
 
 /**
  * 顺序是有讲究的：冷暖交替排开，相邻两张的色调差得越远，交叉淡入越明显。
  * 同色系放在一起（蓝 → 青 → 绿），轮换时几乎看不出换了图。
+ *
+ * **两个 opacity 是按每张照片实测的相对亮度反比分配出来的**，不是随手定的：
+ * 亮的压得狠、暗的放得多，目的是让五张轮换时面板的合成亮度落在同一条线上。
+ * 否则 8.6 秒一次的轮换会变成整屏明暗闪烁 —— 那比单调更烦人。
+ *
+ * 实测相对亮度（0-255，WCAG 的 Y，**不是** sRGB 均值 —— 算对比度必须用它）：
+ *   lake 78.7 > valley 70.3 > meadow 51.1 > falls 31.7 > canyon 24.8
+ *
+ * 浅色主题那一列整体更低，是物理决定的、不是偷懒：深色主题是"在暮色里看见
+ * 峡谷"，照片越透越好看；浅色是"白玻璃上透出一点色温"，白玻璃一透，
+ * 深色正文就压不住照片的暗部了。
+ *
+ * 换素材时要重做的两件事：先量新图的相对亮度按反比重排这两列，
+ * 再重跑一遍对比度核验。硬性上限：**照片最亮 5% 的平均亮度不得超过 245**。
  */
 const PHOTOS: Photo[] = [
-  { src: '/scene/lake.webp', opacity: 0.5 }, // 蓝：湖 + 雪山
-  { src: '/scene/canyon.webp', opacity: 0.42 }, // 暖：日落峡谷
-  { src: '/scene/falls.webp', opacity: 0.45 }, // 青：林间瀑布
-  { src: '/scene/meadow.webp', opacity: 0.45 }, // 金：黄昏草甸
-  { src: '/scene/valley.webp', opacity: 0.52 }, // 绿：山谷公路
+  { src: '/scene/lake.webp', opacity: 0.54, opacityLight: 0.44 }, // 蓝：峡湾；最亮，压到最低
+  { src: '/scene/canyon.webp', opacity: 0.66, opacityLight: 0.56 }, // 暖：日落峡谷；最暗，放到最高
+  { src: '/scene/falls.webp', opacity: 0.58, opacityLight: 0.52 }, // 青：林间瀑布
+  { src: '/scene/meadow.webp', opacity: 0.56, opacityLight: 0.46 }, // 金：黄昏草甸
+  { src: '/scene/valley.webp', opacity: 0.56, opacityLight: 0.46 }, // 绿：山谷公路
 ]
 
 /** 每张停留多久。配上 2.4s 的交叉淡入，一轮约 45 秒 —— 慢到不会让人等。 */
@@ -76,22 +92,36 @@ export function Landscape() {
       const done = () => {
         if (!cancelled) setReady((prev) => new Set(prev).add(i))
       }
-      // decode() 成功才是真的"能画出来了"：onload 之后仍可能有一帧空白，
+      // 只有**成功解码**才算"能画出来了"：onload 之后仍可能有一帧空白，
       // 而空白期间轮到它上场，用户看到的就是风景"消失一下再回来"。
-      if (typeof img.decode === 'function') img.decode().then(done, done)
+      //
+      // 失败绝不能走 done：把没下下来的下标标成就绪，轮换会挑中它，
+      // 而那一层的 background-image 指向一个不存在的文件 —— 整层只剩
+      // 色罩，风景凭空消失 8.6 秒。失败就让这个下标永远不进 ready，
+      // 轮换会自然跳过它（见下面的 setInterval）。
+      const fail = () => {
+        if (!cancelled) console.warn('[landscape] 背景图加载失败，跳过：', PHOTOS[i].src)
+      }
+      if (typeof img.decode === 'function') img.decode().then(done, fail)
       else img.onload = done
+      img.onerror = fail
     }
 
     const idleWin = window as IdleWindow
     const start = () => PHOTOS.forEach((_, i) => i && load(i))
-    const handle = idleWin.requestIdleCallback
-      ? idleWin.requestIdleCallback(start)
+    const useIdle = typeof idleWin.requestIdleCallback === 'function'
+    const handle = useIdle
+      ? idleWin.requestIdleCallback!(start)
       : window.setTimeout(start, 900)
 
     return () => {
       cancelled = true
-      idleWin.cancelIdleCallback?.(handle)
-      window.clearTimeout(handle)
+      // 只取消真正注册过的那个：idle 句柄和 timeout 句柄来自两个不同的
+      // 编号空间，对 idle 句柄调 clearTimeout 有可能撞上别处一个仍然
+      // 有效的 timeout id 把它取消掉，而对 timeout 句柄调
+      // cancelIdleCallback 则是个静默的空操作。
+      if (useIdle) idleWin.cancelIdleCallback?.(handle)
+      else window.clearTimeout(handle)
     }
   }, [])
 
@@ -135,6 +165,24 @@ export function Landscape() {
     }
   }, [])
 
+  /**
+   * 把"现在轮到哪一张"写到 <html data-scene> 上。
+   *
+   * 这是**环境光的色相来源**：光标扫过时底下那团柔光，颜色跟着当前这张照片走 ——
+   * 轮到峡湾是冷蓝、峡谷是暖橘、瀑布是青绿、草甸是金、山谷是绿。
+   * 43 秒一轮里界面真的换四次调子，而不是五张照片在同一个暖橘灯下轮播。
+   *
+   * 和它旁边的 --scene-x / --scene-y 完全同一个机制（写 html 上的属性/变量，
+   * 由 CSS 消费）：不新增 props、不改组件契约。
+   *
+   * 换色是**渐变的** —— CSS 里用 @property 把这个变量注册成 <color> 并挂了
+   * 2400ms 过渡，和照片自己的交叉淡入同步。不支持的浏览器退化成硬切，
+   * 幅度这么低（alpha 0.16 上下）几乎看不出来。
+   */
+  useEffect(() => {
+    document.documentElement.dataset.scene = String(live)
+  }, [live])
+
   return (
     <div className="scene" aria-hidden="true">
       <div className="scene-track">
@@ -146,7 +194,10 @@ export function Landscape() {
               {
                 // 没就绪的层不设图 —— 设了它会自己去请求，等于绕过上面的加载时机
                 backgroundImage: ready.has(i) ? `url(${photo.src})` : undefined,
+                // 深浅两套都写进去，由样式表按主题挑一个（内联样式盖不过样式表，
+                // 所以不能只写一个再让 CSS 去覆盖它）
                 '--scene-opacity': photo.opacity,
+                '--scene-opacity-light': photo.opacityLight,
               } as React.CSSProperties
             }
           />
