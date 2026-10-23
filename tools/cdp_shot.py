@@ -5,6 +5,11 @@
 
 用法：
     python tools/cdp_shot.py <url> <逗号分隔的选择器> <输出前缀> [每次点击后等待毫秒]
+
+    先跑一段准备 JS（比如发一条消息把对话铺开），用环境变量传：
+    CDP_SETUP_JS='...' python tools/cdp_shot.py ...
+
+每轮只留一个标签页（见 _cdp.pick）。
 """
 
 from __future__ import annotations
@@ -12,47 +17,10 @@ from __future__ import annotations
 import asyncio
 import base64
 import json
+import os
 import sys
-import urllib.parse
-import urllib.request
 
-import websockets
-
-CDP_HTTP = "http://127.0.0.1:9222"
-
-
-def new_tab(url: str) -> str:
-    """开一个新标签页，返回它的 WebSocket 调试地址。"""
-    req = urllib.request.Request(
-        f"{CDP_HTTP}/json/new?{urllib.parse.quote(url, safe='')}", method="PUT"
-    )
-    with urllib.request.urlopen(req) as resp:
-        return json.loads(resp.read())["webSocketDebuggerUrl"]
-
-
-class Session:
-    """极简 CDP 会话：发一条命令、等它对应的那条回包。"""
-
-    def __init__(self, ws) -> None:
-        self.ws = ws
-        self.seq = 0
-
-    async def call(self, method: str, **params):
-        self.seq += 1
-        mid = self.seq
-        await self.ws.send(json.dumps({"id": mid, "method": method, "params": params}))
-        while True:
-            msg = json.loads(await self.ws.recv())
-            if msg.get("id") == mid:
-                if "error" in msg:
-                    raise RuntimeError(f"{method}: {msg['error']}")
-                return msg.get("result", {})
-
-    async def eval(self, expr: str):
-        r = await self.call(
-            "Runtime.evaluate", expression=expr, returnByValue=True, awaitPromise=True
-        )
-        return r.get("result", {}).get("value")
+from _cdp import connect
 
 
 async def main() -> None:
@@ -61,10 +29,10 @@ async def main() -> None:
     prefix = sys.argv[3] if len(sys.argv) > 3 else "shot"
     wait_ms = int(sys.argv[4]) if len(sys.argv) > 4 else 1500
 
-    async with websockets.connect(new_tab(url), max_size=64 * 1024 * 1024) as ws:
-        s = Session(ws)
-        await s.call("Page.enable")
-        await s.call("Runtime.enable")
+    async with connect(url) as s:
+        setup = os.environ.get("CDP_SETUP_JS", "").strip()
+        if setup:
+            print(f"[setup] {await s.eval(setup)}")
         await asyncio.sleep(wait_ms / 1000)
 
         for sel in selectors:

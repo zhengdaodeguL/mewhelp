@@ -28,6 +28,13 @@ interface Props {
   /** 正在被引用 */
   quoted?: boolean
   starred: boolean
+  /**
+   * 这是不是一段连续答复的第一条。
+   *
+   * 助手答复不再画成气泡之后，连续几条之间只靠间距分组；
+   * 组与组之间需要一次"这是谁在说"的交代 —— 就是下面那个小署名。
+   */
+  showAuthor?: boolean
   onRate: (message: ChatMessage, rating: Rating) => void
   onStar: (message: ChatMessage) => void
   onQuote: (message: ChatMessage) => void
@@ -41,6 +48,7 @@ export function MessageBubble({
   flash = false,
   quoted = false,
   starred,
+  showAuthor = false,
   onRate,
   onStar,
   onQuote,
@@ -69,11 +77,10 @@ export function MessageBubble({
         quoted ? ' row--quoted' : ''
       }`}
     >
-      {!isUser && (
-        <div className="avatar" aria-hidden="true">
-          M
-        </div>
-      )}
+      {/* 署名只在**一组连续答复的开头**出现一次。
+          每一条都挂头像的话，一屏七八条答复就是七八个重复的圆点 ——
+          头像本来回答的是"这是谁"，同一个说话人连续说话时这个问题只问一次。 */}
+      {!isUser && showAuthor && <span className="row-author">MewHelp</span>}
 
       <div className="bubble-wrap">
         <div

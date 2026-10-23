@@ -585,6 +585,7 @@ export default function App() {
                 onStar={onStar}
                 onQuote={onQuote}
                 streaming={chat.isStreaming}
+                onSuggest={sendWithQuote}
               />
             </div>
           </div>
@@ -594,7 +595,6 @@ export default function App() {
             onSend={sendWithQuote}
             onStop={chat.stop}
             inputRef={inputRef}
-            showQuickReplies={!chat.messages.some((m) => m.role === 'user')}
             quote={quote}
             onClearQuote={() => setQuote(null)}
           />

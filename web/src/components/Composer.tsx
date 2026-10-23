@@ -1,9 +1,8 @@
 import { useEffect, useRef, useState, type RefObject } from 'react'
 import type { OrderBrief } from '../api/client'
 import type { ChatMessage } from '../types'
-import { IconClose, IconSend, IconStop } from './icons'
+import { IconArrowUp, IconClose, IconStop } from './icons'
 import { OrderPicker } from './OrderPicker'
-import { QuickReplies } from './QuickReplies'
 
 const MAX_CHARS = 2000
 
@@ -13,22 +12,28 @@ interface Props {
   onStop: () => void
   /** 交给上层，好让 Ctrl/⌘+K 能聚焦到输入框 */
   inputRef: RefObject<HTMLTextAreaElement | null>
-  /** 快捷问题只是"不知道怎么开口"时的引子，聊起来之后就该让位 */
-  showQuickReplies: boolean
   /** 正在引用的那条消息（引用提问） */
   quote: ChatMessage | null
   onClearQuote: () => void
 }
 
-export function Composer({
-  isStreaming,
-  onSend,
-  onStop,
-  inputRef,
-  showQuickReplies,
-  quote,
-  onClearQuote,
-}: Props) {
+/**
+ * 输入区：一块大圆角面板，里面分两层 —— 上面写字，下面放操作。
+ *
+ * 上一版是"一条输入框 + 一颗带文字的发送按钮"并排。两种形态的区别不在
+ * 好看，而在**输入区是这块界面的主入口还是附属件**：并排的窄条读起来像
+ * 一个表单字段，分层的面板读起来像一张"可以往里写的纸"。客服场景里
+ * 用户 90% 的时间是在这里打字，它值得占住底部那一整块。
+ *
+ * 发送键收成圆形上箭头：文字"发送"在禁用态下最容易被压成灰糊一片，
+ * 而一个圆形的形状在禁用态依然清楚是"送出去的键"。禁用时用中性灰底
+ * 而不是降透明度 —— 理由和上一版一致：禁用是"现在不能用"，不是
+ * "这里没有东西"。
+ *
+ * 快捷问题已经搬去首屏空态（EmptyState）。它们本来就是"不知道怎么开口"
+ * 时的引子，而对话一旦开始，这一排就一直挤在输入框上面占地方。
+ */
+export function Composer({ isStreaming, onSend, onStop, inputRef, quote, onClearQuote }: Props) {
   const [text, setText] = useState('')
   const innerRef = useRef<HTMLTextAreaElement>(null)
 
@@ -47,7 +52,6 @@ export function Composer({
   }, [quote])
 
   // Esc 停止生成 —— 流式输出时最想按的一个键。
-  // 引用条存在时 Esc 先取消引用（就近原则），再按一次才是停止。
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.key !== 'Escape') return
@@ -82,27 +86,26 @@ export function Composer({
   return (
     <div className="composer">
       <OrderPicker disabled={isStreaming} onPick={pickOrder} />
-      {showQuickReplies && <QuickReplies disabled={isStreaming} onPick={onSend} />}
 
-      {quote && (
-        <div className="quote-bar">
-          <span className="quote-label">
-            {quote.role === 'user' ? '引用我的上一句' : '引用上一条答复'}
-          </span>
-          <span className="quote-text">{quote.content.replace(/\s+/g, ' ').slice(0, 90)}</span>
-          <button
-            type="button"
-            className="icon-btn"
-            title="取消引用"
-            aria-label="取消引用"
-            onClick={onClearQuote}
-          >
-            <IconClose width={13} height={13} />
-          </button>
-        </div>
-      )}
+      <div className={`composer-box${quote ? ' composer-box--quoted' : ''}`}>
+        {quote && (
+          <div className="quote-bar">
+            <span className="quote-label">
+              {quote.role === 'user' ? '引用我的上一句' : '引用上一条答复'}
+            </span>
+            <span className="quote-text">{quote.content.replace(/\s+/g, ' ').slice(0, 90)}</span>
+            <button
+              type="button"
+              className="icon-btn"
+              title="取消引用"
+              aria-label="取消引用"
+              onClick={onClearQuote}
+            >
+              <IconClose width={13} height={13} />
+            </button>
+          </div>
+        )}
 
-      <div className="composer-box">
         <textarea
           ref={(el) => {
             innerRef.current = el
@@ -112,7 +115,7 @@ export function Composer({
           value={text}
           rows={1}
           maxLength={MAX_CHARS}
-          placeholder="描述你的问题，例如：帮我查下订单 ORD-1001 到哪了"
+          placeholder="问点什么…"
           aria-label="输入消息"
           onChange={(e) => setText(e.target.value)}
           onKeyDown={(e) => {
@@ -125,23 +128,36 @@ export function Composer({
           }}
         />
 
-        {isStreaming ? (
-          <button type="button" className="send send--stop" onClick={onStop} title="停止生成（Esc）">
-            <IconStop />
-            停止
-          </button>
-        ) : (
-          <button type="button" className="send" disabled={!canSend} onClick={submit}>
-            <IconSend />
-            发送
-          </button>
-        )}
-      </div>
+        <div className="composer-foot">
+          <span className="composer-hint">
+            <kbd>Enter</kbd> 发送 · <kbd>Shift</kbd>+<kbd>Enter</kbd> 换行 · <kbd>Ctrl</kbd>+
+            <kbd>K</kbd> 命令面板
+          </span>
 
-      <p className="composer-hint">
-        <kbd>Enter</kbd> 发送 · <kbd>Shift</kbd>+<kbd>Enter</kbd> 换行 · <kbd>Esc</kbd> 停止 ·{' '}
-        <kbd>Ctrl</kbd>+<kbd>K</kbd> 命令面板 · <kbd>Ctrl</kbd>+<kbd>F</kbd> 查找
-      </p>
+          {isStreaming ? (
+            <button
+              type="button"
+              className="send send--stop"
+              onClick={onStop}
+              title="停止生成（Esc）"
+              aria-label="停止生成"
+            >
+              <IconStop width={14} height={14} />
+            </button>
+          ) : (
+            <button
+              type="button"
+              className="send"
+              disabled={!canSend}
+              onClick={submit}
+              title="发送（Enter）"
+              aria-label="发送"
+            >
+              <IconArrowUp width={16} height={16} />
+            </button>
+          )}
+        </div>
+      </div>
     </div>
   )
 }

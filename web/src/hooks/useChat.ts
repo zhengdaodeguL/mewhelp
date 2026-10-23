@@ -26,13 +26,18 @@ function randomId(prefix: string): string {
   return `${prefix}_${rand}`
 }
 
-/** 开场白：让用户知道这是谁能干什么，而不是对着空白框发呆。 */
-const GREETING: ChatMessage = {
-  id: 'greeting',
-  role: 'assistant',
-  kind: 'normal',
-  content: '你好，我是 MewHelp 客服助手 👋\n可以帮你查订单、查物流、了解退换货和会员规则，也可以直接帮你转人工。',
-}
+/**
+ * 空对话就是空对话。
+ *
+ * 上一版这里塞了一条开场白消息（"你好，我是 MewHelp 客服助手 👋"），
+ * 让它长得像一条真答复。问题在于它**占着最新一条的位置**：用户发出第一句，
+ * 真消息把它顶上去，看起来像一句话凭空消失了；而且它和真答复同形同色，
+ * 用户分不清"已经聊过"还是"还没开始"。
+ *
+ * 现在首屏交给 EmptyState（不属于对话流的另一块区域），消息列表老实为空。
+ * 好处不只是视觉：`messages.length === 0` 从此就是"这个会话还没开始"
+ * 的准确判据，不用再靠 id === 'greeting' 这种字符串去认。
+ */
 
 /** 转人工时补的那条提示 —— 恢复历史时也要补回来，否则用户会以为没转成。 */
 const HANDOFF_NOTICE = '已为你转接人工客服，稍后会有同事继续跟进。'
@@ -71,7 +76,7 @@ interface Options {
 }
 
 export function useChat({ userId, sessionId, quote, onTurnEnd, onMemory }: Options) {
-  const [messages, setMessages] = useState<ChatMessage[]>([GREETING])
+  const [messages, setMessages] = useState<ChatMessage[]>([])
   const [cards, setCards] = useState<WorkspaceCard[]>([])
   const [isStreaming, setIsStreaming] = useState(false)
   const abortRef = useRef<AbortController | null>(null)
@@ -94,7 +99,7 @@ export function useChat({ userId, sessionId, quote, onTurnEnd, onMemory }: Optio
     abortRef.current = null
     setIsStreaming(false)
     setCards([])
-    setMessages([GREETING])
+    setMessages([])
     sentRef.current = false
 
     if (!sessionId || !userId) return

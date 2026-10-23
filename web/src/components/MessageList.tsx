@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { ChatMessage, Rating } from '../types'
+import { EmptyState } from './EmptyState'
 import { IconArrowDown } from './icons'
 import { MessageBubble } from './MessageBubble'
 
@@ -7,9 +8,6 @@ import { MessageBubble } from './MessageBubble'
 function TypingIndicator() {
   return (
     <div className="row row--assistant">
-      <div className="avatar avatar--thinking" aria-hidden="true">
-        M
-      </div>
       <div className="bubble bubble--assistant bubble--typing" aria-label="正在查询">
         <div className="typing-dots">
           <span className="dot" />
@@ -21,6 +19,23 @@ function TypingIndicator() {
       </div>
     </div>
   )
+}
+
+/**
+ * 这一条是不是"一组连续答复"的开头。
+ *
+ * 助手答复不再画成气泡之后，连续几条之间只能靠间距分组 —— 而组与组之间
+ * 需要一次"这是谁在说"的交代。判据是"上一条不是助手答复"：
+ * 用户的发言、系统提示条、以及对话开头，都算一次新的开口。
+ *
+ * 提示条（转人工、出错）夹在中间时也要重新署名：它是一条独立的系统事件，
+ * 后面那一段答复已经不是"接着上一句往下说"了。
+ */
+function startsReplyBlock(messages: ChatMessage[], i: number): boolean {
+  const cur = messages[i]
+  if (cur.role !== 'assistant' || cur.kind !== 'normal') return false
+  const prev = messages[i - 1]
+  return !prev || prev.role !== 'assistant' || prev.kind !== 'normal'
 }
 
 interface Props {
@@ -38,6 +53,8 @@ interface Props {
   onQuote: (message: ChatMessage) => void
   /** 生成中：页头下方那条进度光带 */
   streaming: boolean
+  /** 首屏空态里点一个建议问题 —— 等同于把它发出去 */
+  onSuggest?: (question: string) => void
 }
 
 export function MessageList({
@@ -52,6 +69,7 @@ export function MessageList({
   onStar,
   onQuote,
   streaming,
+  onSuggest,
 }: Props) {
   const scrollRef = useRef<HTMLDivElement>(null)
   const bottomRef = useRef<HTMLDivElement>(null)
@@ -90,37 +108,50 @@ export function MessageList({
     })
   }
 
+  //: 首屏空态：一条用户消息都还没有。它不是"对话里的第一条消息"，
+  //: 而是对话还没开始时的整块区域 —— 所以换掉整个滚动内容，而不是塞进消息流。
+  const empty = messages.length === 0 && !waitingFirstToken
+
   return (
     <div className="messages-wrap">
       {streaming && <div className="stream-bar" aria-hidden="true" />}
 
       <div
-        className={`messages${scrolled ? ' messages--scrolled' : ''}`}
+        className={`messages${scrolled ? ' messages--scrolled' : ''}${empty ? ' messages--empty' : ''}`}
         ref={scrollRef}
         onScroll={handleScroll}
-        role="log"
-        aria-live="polite"
-        aria-label="对话记录"
+        // 空态时不能挂 role="log"：那是一块 live region，读屏会把整块
+        // 首屏（标题 + 五个按钮）当成"新来的一条消息"念一遍。空态不是
+        // 对话记录，它是一块普通区域。
+        role={empty ? 'region' : 'log'}
+        aria-live={empty ? undefined : 'polite'}
+        aria-label={empty ? '开始新对话' : '对话记录'}
       >
-        <div className="messages-inner">
-          {messages.map((m, i) => (
-            <MessageBubble
-              key={m.id}
-              message={m}
-              canRetry={canRetry && i === lastAssistant}
-              onRetry={onRetry}
-              query={query}
-              flash={Boolean(flashId) && flashId === m.id}
-              quoted={Boolean(quotedId) && quotedId === m.id}
-              starred={Boolean(m.turnId) && starredIds.includes(m.turnId as string)}
-              onRate={onRate}
-              onStar={onStar}
-              onQuote={onQuote}
-            />
-          ))}
-          {waitingFirstToken && <TypingIndicator />}
-          <div ref={bottomRef} />
-        </div>
+        {empty ? (
+          <EmptyState disabled={streaming} onPick={onSuggest ?? (() => {})} />
+        ) : (
+          <div className="messages-inner">
+            {messages.map((m, i) => (
+              <MessageBubble
+                key={m.id}
+                message={m}
+                canRetry={canRetry && i === lastAssistant}
+                onRetry={onRetry}
+                query={query}
+                flash={Boolean(flashId) && flashId === m.id}
+                quoted={Boolean(quotedId) && quotedId === m.id}
+                starred={Boolean(m.turnId) && starredIds.includes(m.turnId as string)}
+                // 署名只在连续答复的第一条出现（理由见 MessageBubble）
+                showAuthor={startsReplyBlock(messages, i)}
+                onRate={onRate}
+                onStar={onStar}
+                onQuote={onQuote}
+              />
+            ))}
+            {waitingFirstToken && <TypingIndicator />}
+            <div ref={bottomRef} />
+          </div>
+        )}
       </div>
 
       {!atBottom && (

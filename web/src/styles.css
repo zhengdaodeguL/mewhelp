@@ -15,20 +15,31 @@
   /* 与 dark **反着来**：浅色主题里面板越白，深色文字越稳。所以内容面
      （页头、输入区、卡片、助手气泡）升到 0.86 / 0.80 让文字坐实，
      而让风景多透的那一档留给 --surface-sunken（0.58 → 0.50）。
-     浅色主题的风景只能透到这个程度：白玻璃上一亮就压不住深色正文。 */
-  --glass: rgba(255, 255, 255, 0.4);
-  --glass-strong: rgba(255, 255, 255, 0.92);
-  --surface: rgba(255, 255, 255, 0.86);
-  --surface-soft: rgba(255, 255, 255, 0.8);
-  --surface-sunken: rgba(248, 251, 252, 0.5);
+     浅色主题的风景只能透到这个程度：白玻璃上一亮就压不住深色正文。
+
+     **这一版把整条透明度整体往上抬了约 10 个点**（0.40 → 0.72 等）。
+     原因不是保守，是这版的语言换了：界面的主体从"照片上的玻璃"变成
+     "一张安静的白纸，边上透出一点风景"。照片退成氛围，文字面才是内容。
+     抬完之后对比度读数全部上升，最坏合成底上的次要文字从 4.5 的压线
+     回到 6 以上。 */
+  --glass: rgba(255, 255, 255, 0.72);
+  --glass-strong: rgba(255, 255, 255, 0.96);
+  --surface: rgba(255, 255, 255, 0.94);
+  --surface-soft: rgba(246, 249, 250, 0.92);
+  --surface-sunken: rgba(246, 248, 250, 0.84);
   /* 分段控件的滑块。浅色下必须是纯白，才能从灰白面板上"抬起来" */
   --surface-raised: #ffffff;
 
   /* 0.11 → 0.16：改之前那道 1px 分栏线在照片上基本看不见，
      "三栏"读起来是一堵墙而不是三块。 */
-  --border: rgba(26, 72, 92, 0.16);
-  --border-strong: rgba(26, 72, 92, 0.3);
-  --hairline: rgba(255, 255, 255, 0.6); /* 玻璃上沿那道高光 */
+  --border: rgba(22, 34, 40, 0.1);
+  --border-strong: rgba(22, 34, 40, 0.2);
+  --hairline: rgba(255, 255, 255, 0.7); /* 玻璃上沿那道高光 */
+
+  /* 骨架/等待占位的两档。方向是"比背景深" —— 浅色主题下深色才有"占位感"。
+     深色主题里必须反过来（见那边），所以不能直接复用 --surface-sunken。 */
+  --skeleton: rgba(22, 34, 40, 0.07);
+  --skeleton-hi: rgba(22, 34, 40, 0.13);
 
   --text: #12232b;
   /* 从 #5f7787 压深。**理由不是审美**：照片透上来之后浅色面板最暗处落到
@@ -50,12 +61,17 @@
      将来若让它随当前照片换色，改的就是这一个值。 */
   --scene-glow: rgba(217, 131, 36, 0.15);
 
-  /* 用户气泡专用，见 --accent-fill */
-  --bubble-user-a: var(--accent-fill);
-  --bubble-user-b: var(--accent-fill-strong);
+  /* 用户气泡：**柔灰 pill，不是强调色。**
+     上一版是蓝色渐变 + 白字，为了让"我说的话"在一屏里跳出来；代价是
+     整块界面里有两处高饱和色（气泡、发送键）在互相抢，而且白字压强调色
+     永远要在深色主题里另开一套填充色去救对比度。
+     这一版反过来：气泡用中性灰，**只有发送键和少量图标带色**。
+     一块屏里只有一个地方在喊，它才喊得动。 */
+  --bubble-user: #edf0f2;
+  --bubble-user-border: rgba(22, 34, 40, 0.06);
 
-  --avatar-a: #4b3aa8;
-  --avatar-b: #6a48c4;
+  --brand-a: #4b3aa8;
+  --brand-b: #6a48c4;
 
   --notice-bg: rgba(255, 255, 255, 0.72);
   --notice-text: #4a6270;
@@ -82,6 +98,12 @@
 
   --radius: 16px;
   --radius-sm: 11px;
+  /* 这一版的主形状是**胶囊**：输入区、气泡、建议 chips、发送键全用 999px
+     或接近它的圆角。上一版是 16px 的圆角矩形，读起来是"卡片拼成的界面"；
+     胶囊读起来是"一块一块的东西"，更轻、更像对话本身。
+     两档分工：--radius-pill 给所有可点的东西，--radius 给容器。 */
+  --radius-pill: 999px;
+  --radius-panel: 20px;
   /* 阴影带一点青，而不是纯黑：纯黑阴影压在彩色照片上会发脏 */
   --shadow-sm: 0 1px 2px rgba(16, 52, 66, 0.07);
   --shadow-md: 0 8px 28px rgba(16, 52, 66, 0.1);
@@ -102,18 +124,23 @@
 
      --glass 是最大块的外壳、也是最薄的一层；--surface 给页头、输入区、卡片、
      助手气泡，是"抬起来"的那一档，比它所在的面板亮约 1.3:1。 */
-  --glass: rgba(36, 66, 78, 0.42);
-  --glass-strong: rgba(38, 70, 83, 0.9);
-  --surface: rgba(52, 82, 94, 0.8);
-  --surface-soft: rgba(47, 77, 89, 0.74);
-  --surface-sunken: rgba(28, 54, 64, 0.56);
+  --glass: rgba(30, 38, 44, 0.82);
+  --glass-strong: rgba(32, 41, 48, 0.96);
+  --surface: rgba(38, 48, 55, 0.92);
+  --surface-soft: rgba(44, 55, 62, 0.9);
+  --surface-sunken: rgba(24, 32, 37, 0.86);
   /* 抬升块：分段控件的滑块。刻意**不透明** —— 半透明滑块与它所在的面板只差
      1.03:1 时控件会"消失"，这正是改之前右栏那三个标签看起来像裸文字的原因。 */
-  --surface-raised: #2f4b58;
+  --surface-raised: #2a353c;
 
-  --border: rgba(168, 220, 228, 0.22);
-  --border-strong: rgba(168, 220, 228, 0.4);
+  --border: rgba(214, 232, 238, 0.13);
+  --border-strong: rgba(214, 232, 238, 0.26);
   --hairline: rgba(220, 248, 252, 0.12);
+
+  /* 和浅色主题方向相反：深色底上"比背景更深"的骨架会读成两道黑杠。
+     这里用一层极淡的白，比所在面板亮一点点。 */
+  --skeleton: rgba(214, 232, 238, 0.07);
+  --skeleton-hi: rgba(214, 232, 238, 0.15);
 
   --text: #ecf5f7;
   /* 比改之前（#8fa8b2）**变亮**。原因不是审美：面板因为照片透上来而变亮，
@@ -139,15 +166,17 @@
   /* 环境光的色相，见 light 主题里的说明 */
   --scene-glow: rgba(242, 171, 104, 0.16);
 
-  /* 用户气泡专用，见上面 --accent-fill 的说明。 */
-  --bubble-user-a: var(--accent-fill);
-  --bubble-user-b: var(--accent-fill-strong);
+  /* 用户气泡：柔和的深灰 pill，浅色文字。深色主题里反过来 ——
+     浅色主题是"深色字压在浅灰 pill 上"，这里是"浅色字压在深灰 pill 上"，
+     两边都是中性色，强调色始终只留给发送键。 */
+  --bubble-user: #33424b;
+  --bubble-user-border: rgba(214, 232, 238, 0.08);
 
   /* 助手头像（品牌标记）。原来写死的是 #4d7cff / #7b5cff —— 那是**上一版**
      的强调蓝，改版之后它跟整套配色已经没关系了。换成一组够深的紫罗兰，
      白字压上去才读得清（实测 3.98:1 → 提深后 6:1 以上）。 */
-  --avatar-a: #5b45c0;
-  --avatar-b: #7a55d8;
+  --brand-a: #5b45c0;
+  --brand-b: #7a55d8;
 
   --notice-bg: rgba(36, 62, 73, 0.72);
   --notice-text: #b6cdd5;
@@ -245,17 +274,6 @@
   }
   to {
     background-position: -200% 0;
-  }
-}
-
-/** 状态：呼吸。用在"正在思考"的头像上。 */
-@keyframes breathe {
-  0%,
-  100% {
-    box-shadow: 0 3px 10px rgba(77, 124, 255, 0.32), 0 0 0 0 rgba(77, 124, 255, 0.42);
-  }
-  50% {
-    box-shadow: 0 3px 10px rgba(77, 124, 255, 0.32), 0 0 0 7px rgba(77, 124, 255, 0);
   }
 }
 
@@ -655,29 +673,19 @@ body.resizing {
   flex-shrink: 0;
 }
 
-.brand-mark,
-.avatar {
+.brand-mark {
   display: grid;
   place-items: center;
+  width: 38px;
+  height: 38px;
   border-radius: 50%;
-  background: linear-gradient(135deg, var(--avatar-a), var(--avatar-b));
+  background: linear-gradient(135deg, var(--brand-a), var(--brand-b));
   color: #fff;
+  font-size: 17px;
   font-weight: 700;
   flex-shrink: 0;
   user-select: none;
   box-shadow: 0 3px 10px rgba(77, 124, 255, 0.32);
-}
-
-.brand-mark {
-  width: 38px;
-  height: 38px;
-  font-size: 17px;
-}
-
-.avatar {
-  width: 30px;
-  height: 30px;
-  font-size: 13px;
 }
 
 .brand-text {
@@ -779,7 +787,24 @@ body.resizing {
   display: flex;
   flex-direction: column;
   gap: 16px;
-  padding: 20px 18px 10px;
+  padding: 26px 22px 14px;
+  /* 对话列有最大宽度。1440px 的屏上让正文横贯 1100px，眼睛回行会丢行 ——
+     这不是审美问题。列宽上限配合左右自动外边距，对话永远在视觉中线附近。 */
+  max-width: 780px;
+  margin: 0 auto;
+  width: 100%;
+}
+
+/* 首屏空态不是"对话内容"，它占据整个滚动区并居中 —— 所以 .messages
+   在空态时换一套对齐，而不是让 .messages-inner 的长列表规则去管它。
+
+   居中是靠子元素的 `margin: auto` 而不是容器的 `align-items: center`：
+   后者在内容比容器高时（矮窗口、放大了字号）会把顶端切掉，而且滚不上去。
+   flex 的 auto 外边距在"没有富余空间"时会自己退化成 0，于是内容比容器高时
+   它就老老实实贴顶、正常滚动 —— 这正是想要的退化。 */
+.messages--empty {
+  display: flex;
+  flex-direction: column;
 }
 
 .row {
@@ -791,25 +816,51 @@ body.resizing {
   animation: rise-in var(--dur-2) var(--ease-out) backwards;
 }
 
+/* 助手那一条是**整行**，不是靠右/靠左的一团 —— 它没有气泡，
+   正文直接坐在画布上，所以行本身要占满列宽，工具条才有地方落。 */
+.row--assistant {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 4px;
+}
+
 .row--user {
   justify-content: flex-end;
 }
 
-.row--assistant {
-  justify-content: flex-start;
+/* 连续两条助手答复之间收一点距离：它们是同一段话的两段，
+   而不同轮次之间（中间隔着一句用户发言）保持 .messages-inner 的 16px。 */
+.row--assistant + .row--assistant {
+  margin-top: -8px;
+}
+
+/* 署名：一组连续答复的开头出现一次。它替代了上一版的圆头像 ——
+   没有气泡之后，一个 30px 的彩色圆点在空白画布上会抢走全部注意力，
+   而这一行字只需要回答"这是谁在说"。 */
+.row-author {
+  font-size: 11.5px;
+  font-weight: 650;
+  letter-spacing: 0.2px;
+  color: var(--text-muted);
+  padding-left: 2px;
 }
 
 /* 气泡 + 悬停工具条 */
 .bubble-wrap {
   display: flex;
   flex-direction: column;
-  max-width: min(84%, 560px);
+  max-width: 100%;
   min-width: 0;
 }
 
-/* 带表格的答复放宽一点：四列表格挤在 560px 里每格都要折行 */
+.row--user .bubble-wrap {
+  max-width: min(80%, 560px);
+  align-items: flex-end;
+}
+
+/* 带表格的答复不受宽度限制：四列表格挤在 560px 里每格都要折行 */
 .bubble-wrap:has(.rt-table) {
-  max-width: min(96%, 720px);
+  max-width: 100%;
 }
 
 .bubble {
@@ -817,15 +868,29 @@ body.resizing {
   border-radius: var(--radius);
   white-space: pre-wrap;
   word-break: break-word;
-  box-shadow: var(--shadow-sm);
 }
 
-/* 正在逐字长出来的气泡：右侧一道缓慢流动的高光。
-   它表达的是"这里还在写"，和光标是同一件事的两种尺度 ——
-   光标告诉你在哪个字，高光告诉你在哪一块。 */
+/* 助手答复**没有气泡**：不加背景、不加描边、不加阴影。
+   它只是正文 —— 这是这一版最核心的一条规则。一块浅灰底把每一句答复
+   都框起来，等于把对话切成十几个孤立的方块；去掉之后，读起来是
+   "一个人在说话"，而回答里的人是谁由上面那行署名交代。
+   代价是失去"气泡边界"，所以行距和段距必须撑住（见下面的 .rt-p）。 */
+.bubble--assistant {
+  padding: 0;
+  background: transparent;
+  border: none;
+  /* 段落间距交给 .rt-p 管，这里不能再按原文换行排版，否则会多出一堆空行 */
+  white-space: normal;
+  font-size: 14.5px;
+  line-height: 1.75;
+  color: var(--text);
+}
+
+/* 正在逐字长出来的答复：末尾一道流动的高光跟在字后面。
+   上一版整块气泡在扫光；没有气泡之后，扫光只能落在**文字本身**上，
+   所以它是一条窄带，而不是整块覆盖。 */
 .bubble--streaming {
   position: relative;
-  overflow: hidden;
 }
 
 .bubble--streaming::after {
@@ -835,9 +900,9 @@ body.resizing {
   pointer-events: none;
   background: linear-gradient(
     100deg,
-    transparent 40%,
-    rgba(255, 255, 255, 0.5) 50%,
-    transparent 60%
+    transparent 46%,
+    rgba(47, 127, 224, 0.07) 50%,
+    transparent 54%
   );
   background-size: 220% 100%;
   animation: shimmer 2.4s linear infinite;
@@ -846,19 +911,11 @@ body.resizing {
 :root[data-theme='dark'] .bubble--streaming::after {
   background: linear-gradient(
     100deg,
-    transparent 40%,
-    rgba(122, 160, 255, 0.12) 50%,
-    transparent 60%
+    transparent 46%,
+    rgba(122, 160, 255, 0.08) 50%,
+    transparent 54%
   );
   background-size: 220% 100%;
-}
-
-.bubble--assistant {
-  background: var(--surface-soft);
-  border: 1px solid var(--border);
-  border-bottom-left-radius: 6px;
-  /* 段落间距交给 .rt-p 管，这里不能再按原文换行排版，否则会多出一堆空行 */
-  white-space: normal;
 }
 
 /* ---------------- 轻量 Markdown 排版（助手答复） ---------------- */
@@ -914,14 +971,21 @@ body.resizing {
 }
 
 .bubble--user {
-  /* **不能直接用 --accent。** 它在深色主题里是亮蓝（#63b3ff），白字压上去
-     只有 2.30:1 —— 连大字号要的 3:1 都不到，是本次审计翻出来的现存缺陷
-     （改之前 #5fb0ff 是 2.30:1，提亮之后只会更糟）。也不能把 --accent 调暗：
-     它同时是图标色、焦点环和"哪里能点"的信号，在深色底上必须保持亮。
-     所以另开一组更深的蓝，只给气泡用 —— 组件契约不变，只是换了 token。 */
-  background: linear-gradient(135deg, var(--bubble-user-a), var(--bubble-user-b));
-  color: #fff;
-  border-bottom-right-radius: 6px;
+  /* 柔灰 pill。上一版这里是蓝色渐变 + 白字 —— 它确实让"我说的话"跳出来了，
+     代价是整屏同时有两处高饱和色（气泡、发送键）在抢注意力。
+     这一版把强调色**只留给发送键**：一块屏里只有一个地方在喊，
+     它才喊得动。用户自己的话靠"右对齐 + 灰底 pill"就能认出来，
+     不需要颜色帮忙。
+     文字用 --text 而不是 --text-muted：pill 的底色是中性灰，
+     正文必须是正文的对比度，不能因为"这是我的消息"就降一档。 */
+  background: var(--bubble-user);
+  border: 1px solid var(--bubble-user-border);
+  color: var(--text);
+  border-radius: var(--radius-pill);
+  /* 右下角收一点，像从说话人那一侧"长出来"的 */
+  border-bottom-right-radius: 8px;
+  font-size: 14.5px;
+  line-height: 1.65;
 }
 
 /* 消息工具条：平时隐形，悬停/聚焦才出现，不抢对话本身 */
@@ -955,11 +1019,14 @@ body.resizing {
   }
 }
 
+/* 等待首字的占位。助手答复没有气泡之后，这里也不该有一块底 ——
+   它只需要和正文**同一个左边缘**（所以内边距归零），
+   形状由三点 + 两条微光条自己承担。 */
 .bubble--typing {
   display: flex;
   flex-direction: column;
   gap: 9px;
-  padding: 14px 16px;
+  padding: 2px 0;
   min-width: 190px;
 }
 
@@ -970,15 +1037,20 @@ body.resizing {
 }
 
 /* 首字之前不是"空气"，是"正在取内容" —— 两条微光条比三个点更能说明
-   接下来这里会长出正文，也让等待的几十毫秒有了形状 */
+   接下来这里会长出正文，也让等待的几十毫秒有了形状。
+
+   颜色方向按主题反过来：浅色主题下骨架比背景**深**（下沉灰），
+   深色主题下必须比背景**浅**。上一版两套主题共用 `--surface-sunken`，
+   深色下那是 #182025，比所在面板的 #26303705 还暗，于是两条骨架
+   看起来像两道黑杠 —— 实测像素 (25,33,39) vs 背景 (30,44,54)。 */
 .typing-line {
   height: 9px;
   border-radius: 5px;
   background: linear-gradient(
     90deg,
-    var(--surface-sunken) 25%,
-    var(--border) 37%,
-    var(--surface-sunken) 63%
+    var(--skeleton) 25%,
+    var(--skeleton-hi) 37%,
+    var(--skeleton) 63%
   );
   background-size: 400% 100%;
   animation: shimmer 1.5s linear infinite;
@@ -1002,12 +1074,6 @@ body.resizing {
 
 .dot:nth-child(3) {
   animation-delay: 0.32s;
-}
-
-/* 正在思考的头像：一圈向外扩散的光环。它和进度条说的是同一件事，
-   但作用在"对面那个人"身上，比页头一根线更有临场感 */
-.avatar--thinking {
-  animation: breathe 1.9s var(--ease-out) infinite;
 }
 
 @keyframes bounce {
@@ -1114,6 +1180,24 @@ body.resizing {
   display: none;
 }
 
+/* 这一层是横向滚动条本身。
+   没有它的时候这两条订单会各自占满一行、堆成两行 —— 因为 .order-picker
+   是 flex，而 `.order-chip { flex-shrink: 0 }` 只对 flex 子项生效，
+   它们并不是它的子项。窄屏下两行订单会把输入面板往上顶掉 60px。 */
+.order-picker-items {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex: 1;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+
+.order-picker-items::-webkit-scrollbar {
+  display: none;
+}
+
 .order-picker-label {
   display: inline-flex;
   align-items: center;
@@ -1174,94 +1258,174 @@ body.resizing {
   margin-left: 0;
 }
 
-.quick-replies {
+/* ---------------- 首屏空态 ----------------
+   一块**不属于对话流**的区域。它顶替掉的是一条开场白气泡，取消它的
+   理由记在 useChat.ts / EmptyState.tsx 里。这里只说排版：
+
+   整块垂直居中，宽度收到 460px —— 建议问题是"给你几个开口的方式"，
+   排成一行长条读起来像工具栏，收窄成两行才像几句商量的话。
+   同理不加卡片底：空态是整块空白页的第一句话，套个框就把它变成
+   一个"组件"了。 */
+
+.empty-state {
   display: flex;
+  flex-direction: column;
   align-items: center;
-  gap: 8px;
-  overflow-x: auto;
-  padding-bottom: 9px;
-  scrollbar-width: none;
+  text-align: center;
+  width: 100%;
+  max-width: 460px;
+  margin: auto;
+  /* 下内边距用 0：`margin: auto` 已经把整块居中，再压 40px 会让它
+     看起来整体偏上；而矮窗口里（内容比容器高）这 40px 又会让顶端
+     贴边、必须往下滚才看得到图标。居中交给 margin，内边距只留左右。 */
+  padding: 0 22px;
+  animation: empty-in 0.42s var(--ease-out) both;
 }
 
-.quick-replies::-webkit-scrollbar {
-  display: none;
+@keyframes empty-in {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
 }
 
-.quick-label {
-  display: inline-flex;
-  align-items: center;
-  gap: 4px;
-  flex-shrink: 0;
-  font-size: 11.5px;
+.empty-mark {
+  display: grid;
+  place-items: center;
+  width: 42px;
+  height: 42px;
+  border-radius: 13px;
+  background: linear-gradient(135deg, var(--brand-a), var(--brand-b));
+  color: #fff;
+  box-shadow: 0 4px 14px rgba(77, 124, 255, 0.28);
+}
+
+.empty-title {
+  margin: 16px 0 0;
+  font-size: 21px;
+  font-weight: 650;
+  letter-spacing: -0.2px;
+  color: var(--text);
+}
+
+.empty-sub {
+  margin: 7px 0 0;
+  font-size: 13.5px;
+  line-height: 1.6;
   color: var(--text-muted);
-  white-space: nowrap;
 }
 
-.chip {
+.empty-chips {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+  margin-top: 22px;
+}
+
+.empty-chip {
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  flex-shrink: 0;
   border: 1px solid var(--border);
-  background: var(--surface-soft);
+  background: var(--surface);
   color: var(--text);
-  border-radius: 999px;
-  padding: 5px 13px;
-  font-size: 12.5px;
+  border-radius: var(--radius-pill);
+  padding: 7px 14px;
+  font-size: 13px;
   font-family: inherit;
   cursor: pointer;
-  transition: background 0.15s, border-color 0.15s, transform 0.1s, color 0.15s;
+  /* 深色主题下按钮与背景的亮度只差 1.2:1（实测量像素：37,47,55 vs 30,42,52），
+     光靠描边不够"浮起来"。补一层外阴影 —— 浅色主题下不加，
+     那里的底色本身就够白，再加阴影会显脏。 */
+  box-shadow: var(--shadow-sm);
+  /* 依次浮现。--i 由组件按顺序写进 style，这里只负责把顺序翻译成延迟。
+     延迟用 calc 而不是写死五个 nth-child：增删一条建议不该再动 CSS。 */
+  animation: chip-in 0.36s var(--ease-out) both;
+  animation-delay: calc(var(--i, 0) * 55ms);
+  transition: background 0.15s, border-color 0.15s, color 0.15s, transform 0.1s;
 }
 
-.chip svg {
+:root[data-theme='light'] .empty-chip {
+  box-shadow: none;
+}
+
+@keyframes chip-in {
+  from {
+    opacity: 0;
+    transform: translateY(6px);
+  }
+}
+
+.empty-chip svg {
   color: var(--text-muted);
   transition: color 0.15s;
 }
 
-.chip:hover:not(:disabled) {
-  background: var(--accent-soft);
-  border-color: var(--accent);
-  color: var(--accent);
+.empty-chip:hover:not(:disabled) {
+  border-color: var(--border-strong);
+  background: var(--surface-soft);
+  transform: translateY(-1px);
 }
 
-.chip:hover:not(:disabled) svg {
-  color: var(--accent);
+.empty-chip:active:not(:disabled) {
+  transform: translateY(0) scale(0.98);
 }
 
-.chip:active:not(:disabled) {
-  transform: scale(0.97);
-}
-
-.chip:disabled {
-  opacity: 0.5;
+.empty-chip:disabled {
+  /* 和 .send:disabled 同一条纪律：禁用不是"消失"，用中性色而不是透明度 */
+  color: var(--text-muted);
   cursor: not-allowed;
 }
 
-.composer-box {
-  display: flex;
-  align-items: flex-end;
-  gap: 10px;
-  border: 1px solid var(--border);
-  border-radius: 14px;
-  background: var(--surface-soft);
-  padding: 7px 7px 7px 14px;
-  transition: border-color 0.15s, box-shadow 0.15s;
-}
-
-.composer-box:focus-within {
+/* 键盘焦点。全站只有拖拽条自定义过焦点样式，其余都吃浏览器默认的
+   `outline: auto` —— 在浅灰胶囊上那圈黑线又硬又难看。这里给首屏的
+   建议按钮换成和 .composer-box:focus-within 同一套"描边 + 柔光"。
+   :focus-visible 而不是 :focus：鼠标点完不该留一圈。 */
+.empty-chip:focus-visible {
+  outline: none;
   border-color: var(--accent);
   box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
+/* ---------------- 输入区 ----------------
+   一块大圆角面板，两行：上面写字，下面放操作。
+
+   和上一版的区别不只是圆角。上一版是"输入框 + 文字按钮"并排的一条窄带，
+   读起来像一个表单字段；这一版把面板撑高、把提示键位挪进面板内部，
+   输入区就从"附属件"变成了这张屏的主入口 —— 而这正是客服场景里
+   用户花掉 90% 时间的地方。 */
+
+.composer-box {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-panel);
+  background: var(--surface);
+  padding: 10px 10px 8px 16px;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.composer-box:focus-within {
+  border-color: var(--border-strong);
+  box-shadow: 0 1px 2px rgba(16, 28, 34, 0.04), 0 8px 28px rgba(16, 28, 34, 0.07);
+}
+
+:root[data-theme='dark'] .composer-box:focus-within {
+  box-shadow: 0 1px 2px rgba(0, 0, 0, 0.3), 0 8px 28px rgba(0, 0, 0, 0.28);
+}
+
 .composer-input {
-  flex: 1;
+  width: 100%;
   border: none;
   background: transparent;
   resize: none;
   outline: none;
   color: var(--text);
   font: inherit;
-  line-height: 1.5;
+  font-size: 14.5px;
+  line-height: 1.6;
   padding: 6px 0;
   max-height: 160px;
 }
@@ -1270,34 +1434,43 @@ body.resizing {
   color: var(--text-muted);
 }
 
-.send {
-  display: inline-flex;
+.composer-foot {
+  display: flex;
   align-items: center;
-  gap: 6px;
+  justify-content: space-between;
+  gap: 10px;
+  min-height: 32px;
+}
+
+.send {
+  display: grid;
+  place-items: center;
   flex-shrink: 0;
+  width: 32px;
+  height: 32px;
   border: none;
-  border-radius: 10px;
+  border-radius: 50%;
   /* 填充蓝，不是 --accent：白字压强调色只有 2.30:1。
      注意这个是**启用态**的底色，禁用态另有规则（见下）。 */
   background: var(--accent-fill);
   color: #fff;
-  font-size: 13.5px;
-  font-weight: 600;
-  font-family: inherit;
-  padding: 8px 15px;
   cursor: pointer;
-  transition: background 0.15s, opacity 0.15s;
+  transition: background 0.15s, transform 0.1s;
 }
 
 .send:hover:not(:disabled) {
   background: var(--accent-fill-strong);
 }
 
+.send:active:not(:disabled) {
+  transform: scale(0.94);
+}
+
 .send:disabled {
-  /* 不要把整颗按钮压到 45% 透明。"发送"两个字会掉到 2.1:1 ——
-     禁用是"现在不能用"，不是"这里没有东西"，用户仍然需要读得出
-     这颗按钮是干什么的。换成一套中性色，用颜色差而不是透明度说话。 */
-  background: var(--surface-soft);
+  /* 不要把整颗按钮压到 45% 透明。形状本身在说"这是送出去的键"，
+     压透明会让它读成一个不明灰色圆点。用一套中性色，让形状留下、
+     让颜色说"现在不能用"。 */
+  background: var(--surface-sunken);
   color: var(--text-muted);
   cursor: not-allowed;
 }
@@ -1308,16 +1481,20 @@ body.resizing {
   border: 1px solid var(--border);
 }
 
-.send--stop:hover {
-  background: var(--surface);
+.send--stop:hover:not(:disabled) {
+  background: var(--surface-soft);
   color: var(--text);
 }
 
 .composer-hint {
-  margin: 7px 0 0;
+  /* min-width:0 是让省略号真的生效的前提：flex 子项默认 min-width:auto，
+     内容不会缩到比自身短 —— 于是 nowrap 的那一行会顶出去，把发送键挤出面板。 */
+  min-width: 0;
   font-size: 11px;
   color: var(--text-muted);
-  text-align: right;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 .composer-hint kbd {
@@ -1347,23 +1524,11 @@ body.resizing {
   flex-shrink: 0;
 }
 
-.workspace-title {
-  margin: 0;
-  font-size: 13.5px;
-  font-weight: 650;
-  letter-spacing: 0.3px;
-  flex-shrink: 0;
-}
-
 .workspace-tallies {
   display: flex;
   gap: 6px;
   flex: 1;
   overflow: hidden;
-}
-
-.workspace-count {
-  flex: 1;
 }
 
 .tally {
@@ -2240,9 +2405,9 @@ body.resizing {
   border-radius: 7px;
   background: linear-gradient(
     90deg,
-    var(--surface-soft) 25%,
-    var(--border) 37%,
-    var(--surface-soft) 63%
+    var(--skeleton) 25%,
+    var(--skeleton-hi) 37%,
+    var(--skeleton) 63%
   );
   background-size: 400% 100%;
   animation: shimmer 1.5s linear infinite;
@@ -2330,13 +2495,23 @@ body.resizing {
   background: rgba(255, 208, 0, 0.32);
 }
 
+/* 用户气泡里的命中处。上一版这里是"白色 34% 提亮" —— 因为那时气泡是
+   蓝色渐变，黄色压在蓝底上发脏，提亮是对的。气泡改成中性灰胶囊之后，
+   提亮几乎看不见（白 34% 压在 rgb(237,240,242) 上，肉眼分不出来）。
+   现在它和助手答复用同一套黄，只是深色主题下再压一档透明度。 */
 .bubble--user .hit {
-  background: rgba(255, 255, 255, 0.34);
+  background: rgba(255, 208, 0, 0.42);
 }
 
-/* 查找定位到的那一条：闪一下边框，让眼睛知道"就是这条" */
-.row--flash .bubble {
+/* 查找定位到的那一条：闪一下，让眼睛知道"就是这条"。
+   用户气泡是一枚胶囊，套一圈环正好；助手答复没有气泡，环会变成
+   一个紧贴文字的方框 —— 所以它换成一圈淡底，像被荧光笔扫过。 */
+.row--flash .bubble--user {
   animation: flash-ring 1.4s ease-out;
+}
+
+.row--flash .bubble--assistant {
+  animation: flash-wash 1.4s ease-out;
 }
 
 @keyframes flash-ring {
@@ -2347,6 +2522,26 @@ body.resizing {
   100% {
     box-shadow: var(--shadow-sm);
   }
+}
+
+@keyframes flash-wash {
+  0%,
+  60% {
+    background: var(--accent-soft);
+  }
+  100% {
+    background: transparent;
+  }
+}
+
+/* 助手答复的"被引用 / 被查找"要有一圈呼吸空间，但它平时是零内边距
+   （正文直接坐在画布上）。这里用等量的负外边距抵消掉多出来的内边距：
+   视觉上多出一块底，文字位置一动不动。 */
+.row--quoted .bubble--assistant,
+.row--flash .bubble--assistant {
+  padding: 6px 10px;
+  margin: -6px -10px;
+  border-radius: 10px;
 }
 
 /* ---------------- 工作区标签页 ---------------- */
@@ -2656,9 +2851,22 @@ body.resizing {
   color: #d64545;
 }
 
+/* 带文字的小号发送键（记忆面板的「+ 记住」）。
+   .send 本身已经改成 32×32 的圆形图标键 —— 直接套上去，文字会被挤成
+   竖排三个字。这一档把它还原成"图标 + 文字"的胶囊。 */
 .send--small {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+  width: auto;
+  height: auto;
+  border-radius: var(--radius-pill);
   padding: 8px 12px;
   font-size: 12.5px;
+  font-weight: 600;
+  font-family: inherit;
+  white-space: nowrap;
 }
 
 .memory-list {
@@ -2868,16 +3076,21 @@ body.resizing {
 
 /* 引用条：把"我在回答哪一句"从输入框里搬到它上面。
    塞进输入框（"引用：xxx 我的问题是…"）会污染用户真正想说的那句话，
-   模型也会把引用当成问题的一部分。 */
+   模型也会把引用当成问题的一部分。
+
+   形状上它是一块**独立的小卡**，不是从面板左侧长出来的一条色带：
+   上一版贴着面板左边缘、方角，在大圆角面板里显得像一块没对齐的补丁。
+   现在四角都收圆、底色改用下沉灰，只有左侧那道 2px 的强调线还在说
+   "这句是重点" —— 强调色在输入区只留给发送键，引用条不该再抢一次。 */
 .quote-bar {
   display: flex;
   align-items: center;
   gap: 8px;
-  margin-bottom: 8px;
-  padding: 7px 10px;
-  border-left: 3px solid var(--accent);
-  background: var(--accent-soft);
-  border-radius: 0 10px 10px 0;
+  margin-bottom: 6px;
+  padding: 6px 8px 6px 10px;
+  border-left: 2px solid var(--accent);
+  background: var(--surface-sunken);
+  border-radius: 8px;
   animation: rise-in var(--dur-2) var(--ease-out);
 }
 
@@ -2905,9 +3118,15 @@ body.resizing {
   flex-shrink: 0;
 }
 
-/* 被引用的那条消息：左边亮一道，提示"它在上下文里" */
-.row--quoted .bubble {
+/* 被引用的那条消息：左边亮一道，提示"它在上下文里"。
+   用户气泡是胶囊，一道外环正好；助手答复没有气泡，所以换成淡底 ——
+   理由同上面的 flash-wash。 */
+.row--quoted .bubble--user {
   box-shadow: 0 0 0 2px var(--accent-soft), var(--shadow-sm);
+}
+
+.row--quoted .bubble--assistant {
+  background: var(--accent-soft);
 }
 
 /* ---------------- Toast ----------------
@@ -3219,6 +3438,12 @@ body.resizing {
 
   .composer-hint {
     display: none;
+  }
+
+  /* 提示键位藏掉之后只剩发送键一颗。space-between 会把唯一的孩子推到
+     行首 —— 一颗本该在右下角的圆钮跑到左下角去了。 */
+  .composer-foot {
+    justify-content: flex-end;
   }
 
   /* 窄屏下四个标签只留图标。
@@ -3865,5 +4090,12 @@ body.resizing {
   /* 图谱连线是静态元素，保留；只有片段展开的入场动画需要关掉 */
   .graph-leaf-text {
     animation: none !important;
+  }
+
+  /* 建议问题是"依次浮现"的：每枚的延迟是 55ms 的整数倍。通用规则只压了
+     时长，没压**延迟** —— 在 `both` 填充下，延迟期间元素停在 opacity:0，
+     于是最想少看动效的用户反而要多等两百多毫秒才看见全部内容。 */
+  .empty-chip {
+    animation-delay: 0ms !important;
   }
 }
