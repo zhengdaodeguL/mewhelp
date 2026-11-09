@@ -672,6 +672,22 @@ MEWHELP_RERANKER_MODE=bge             # BAAI/bge-reranker-v2-m3
 
 判定标准在 `config.Settings.is_fully_mocked`：只要 `llm_mode=mock`、`embedding_mode=mock`、`vector_store_mode=memory` 三者同时成立就是纯离线模式。
 
+### Instabox 本地小模型
+
+部署脚本支持在纯净版中使用同机 Ollama 的 OpenAI 兼容接口。当前云机使用
+`qwen2.5:1.5b`（Q4_K_M，约 1 GB），服务只监听 `127.0.0.1:11434`，不会直接暴露到公网；
+演示版仍使用确定性的 mock 模型。
+
+```bash
+docker run -d --name mewhelp-ollama --restart unless-stopped \
+  -v /data/home/mewhelp-runtime/ollama:/root/.ollama \
+  -p 127.0.0.1:11434:11434 ollama/ollama:latest
+docker exec mewhelp-ollama ollama pull qwen2.5:1.5b
+/data/home/mewhelp-runtime/switch-version.sh pure
+```
+
+切换脚本会先检查 Ollama 是否可用，再写入本地 OpenAI 兼容配置；如果模型服务不可用，切换会在重启前失败并保留当前版本。
+
 ---
 
 ## 目录结构

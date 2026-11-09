@@ -10,14 +10,31 @@ DEMO_DATABASE="${MEWHELP_DEMO_DATABASE:-/data/workspace/mewhelp-runtime/mewhelp.
 target="${1:-}"
 
 case "$target" in
-  pure) database="$DATA/pure.db" ;;
-  demo) database="$DEMO_DATABASE" ;;
+  pure)
+    database="$DATA/pure.db"
+    llm_mode="openai"
+    llm_model="${MEWHELP_LOCAL_LLM_MODEL:-qwen2.5:1.5b}"
+    llm_api_key="${MEWHELP_LOCAL_LLM_API_KEY:-ollama-local}"
+    llm_base_url="${MEWHELP_LOCAL_LLM_BASE_URL:-http://127.0.0.1:11434/v1}"
+    ;;
+  demo)
+    database="$DEMO_DATABASE"
+    llm_mode="mock"
+    llm_model="gpt-5-mini"
+    llm_api_key=""
+    llm_base_url=""
+    ;;
   *) echo "usage: $0 pure|demo" >&2; exit 2 ;;
 esac
 
 release="$RELEASES/$target"
 if [[ ! -f "$release/src/mewhelp/api/app.py" ]]; then
   echo "release not found: $release" >&2
+  exit 1
+fi
+
+if [[ "$target" == "pure" ]] && ! curl -fsS --max-time 3 http://127.0.0.1:11434/api/tags >/dev/null; then
+  echo "local Ollama is unavailable; start mewhelp-ollama before switching to pure" >&2
   exit 1
 fi
 
@@ -36,7 +53,10 @@ env_tmp="$ROOT/active.env.tmp.$$"
 cat > "$env_tmp" <<ENV
 PYTHONPATH=$release/src
 MEWHELP_DATABASE_URL=sqlite:///$database
-MEWHELP_LLM_MODE=mock
+MEWHELP_LLM_MODE=$llm_mode
+MEWHELP_LLM_MODEL=$llm_model
+MEWHELP_OPENAI_API_KEY=$llm_api_key
+MEWHELP_OPENAI_BASE_URL=$llm_base_url
 MEWHELP_EMBEDDING_MODE=mock
 MEWHELP_RERANKER_MODE=mock
 MEWHELP_VECTOR_STORE_MODE=memory
