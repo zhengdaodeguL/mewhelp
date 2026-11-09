@@ -169,6 +169,7 @@ def run_high_risk_flow(
     registry: Any,
     *,
     slots: SlotExtraction | None = None,
+    principal_id: str | None = None,
 ) -> FlowOutcome:
     """执行高风险子流程。
 
@@ -215,7 +216,11 @@ def run_high_risk_flow(
     calls: list[ToolCall] = []
     error: str | None = None
     for name, args in plan:
-        call = registry.call(name, args)
+        call = (
+            registry.call(name, args, principal_id=principal_id)
+            if principal_id is not None
+            else registry.call(name, args)
+        )
         calls.append(call)
         if not call.ok:
             # 业务拒绝是预期内的结果，不是故障 —— 记下来如实转达即可。
@@ -277,6 +282,7 @@ def _render_outcome(intent: Intent, calls: list[ToolCall], error: str | None) ->
 
 
 _REJECTION_TEXT: dict[str, str] = {
+    "ORDER_ACCOUNT_UNLINKED": "您的账号暂未关联订单信息，暂时无法查询或办理订单业务。",
     ToolError.ORDER_NOT_FOUND.value: "没有查到这个订单号，麻烦你核对一下再发我（形如 ORD-1007）。",
     ToolError.ORDER_NOT_CANCELLABLE.value: "这笔订单已经发货了，没法直接取消。你可以等收到后走退货流程，我可以帮你登记。",
     ToolError.ORDER_ADDRESS_LOCKED.value: "订单已经发出，收货地址改不了了。可以联系承运方改派，或者收到后走退货。",

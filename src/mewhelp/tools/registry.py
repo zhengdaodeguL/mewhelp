@@ -36,6 +36,9 @@ _KEY_OK = "ok"
 _KEY_ERROR = "error"
 _KEY_RESULT = "result"
 _KEY_DATA = "data"
+_ACCOUNT_ORDER_TOOLS = frozenset(
+    {"get_order", "track_logistics", "request_refund", "cancel_order", "change_address"}
+)
 
 
 class ToolRegistry:
@@ -148,13 +151,31 @@ class ToolRegistry:
     # ------------------------------------------------------------------
     # 调用
     # ------------------------------------------------------------------
-    def call(self, name: str, args: dict | None = None) -> ToolCall:
+    def call(
+        self, name: str, args: dict | None = None, *, principal_id: str | None = None
+    ) -> ToolCall:
         """执行工具。永远返回 ToolCall，永远不抛异常。"""
         # 模型偶尔会把 action_input 生造成数组或字符串（function-calling 的
         # 经典翻车点）。在这里收敛成空 dict，让它走"缺必填参数"的正常报错路径，
         # 而不是在 dict() 上抛 TypeError 把整条链路带下去。
         args = _coerce_args(args)
         t0 = time.perf_counter()
+
+        if principal_id is not None and name in _ACCOUNT_ORDER_TOOLS:
+            return self._record(
+                ToolCall(
+                    name=name,
+                    args=args,
+                    ok=False,
+                    error="ORDER_ACCOUNT_UNLINKED",
+                    result={
+                        "message": "您的账号暂未关联订单信息，暂时无法查询或办理订单业务。",
+                        "code": "ORDER_ACCOUNT_UNLINKED",
+                    },
+                    elapsed_ms=_ms(t0),
+                    attempts=0,
+                )
+            )
 
         fn = self._fns.get(name)
         if fn is None:

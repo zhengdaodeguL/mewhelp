@@ -65,7 +65,6 @@ function fromHistory(rows: Array<{ role: string; content: string; handoff: boole
 }
 
 interface Options {
-  userId: string
   sessionId: string
   /** 当前正在引用的那条消息的正文（引用提问） */
   quote?: string
@@ -75,7 +74,7 @@ interface Options {
   onMemory?: (items: MemoryItem[]) => void
 }
 
-export function useChat({ userId, sessionId, quote, onTurnEnd, onMemory }: Options) {
+export function useChat({ sessionId, quote, onTurnEnd, onMemory }: Options) {
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [cards, setCards] = useState<WorkspaceCard[]>([])
   const [isStreaming, setIsStreaming] = useState(false)
@@ -102,10 +101,10 @@ export function useChat({ userId, sessionId, quote, onTurnEnd, onMemory }: Optio
     setMessages([])
     sentRef.current = false
 
-    if (!sessionId || !userId) return
+    if (!sessionId) return
     const controller = new AbortController()
     let alive = true
-    void fetchSession(sessionId, userId, controller.signal).then((restored) => {
+    void fetchSession(sessionId, controller.signal).then((restored) => {
       // 期间又切走了、或者用户已经开口了，就当没发生过 ——
       // 前者会把旧会话的消息画到新会话里，后者会抹掉用户刚打的字
       if (!alive || controller.signal.aborted || sentRef.current) return
@@ -117,7 +116,7 @@ export function useChat({ userId, sessionId, quote, onTurnEnd, onMemory }: Optio
       alive = false
       controller.abort()
     }
-  }, [sessionId, userId])
+  }, [sessionId])
 
   useEffect(() => () => abortRef.current?.abort(), [])
 
@@ -154,7 +153,7 @@ export function useChat({ userId, sessionId, quote, onTurnEnd, onMemory }: Optio
 
       await streamChat(
         text,
-        { sessionId, userId, quote, signal: controller.signal },
+        { sessionId, quote, signal: controller.signal },
         {
           onToken: (piece) => {
             patchReply((m) => ({ ...m, content: m.content + piece }))
@@ -194,7 +193,7 @@ export function useChat({ userId, sessionId, quote, onTurnEnd, onMemory }: Optio
         },
       )
     },
-    [isStreaming, sessionId, userId, quote],
+    [isStreaming, sessionId, quote],
   )
 
   /**

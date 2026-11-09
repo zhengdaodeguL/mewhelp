@@ -45,6 +45,28 @@ class Base(DeclarativeBase):
     pass
 
 
+class UserAccountRow(Base):
+    """用户登录账号。邮箱按小写标准化后保持唯一。"""
+
+    __tablename__ = "account_user"
+
+    user_id: Mapped[str] = mapped_column(String(36), primary_key=True)
+    email: Mapped[str] = mapped_column(String(254), unique=True, index=True)
+    password_hash: Mapped[str] = mapped_column(String(256))
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
+
+
+class AuthSessionRow(Base):
+    """服务端登录会话，只保存随机令牌的 SHA-256 摘要。"""
+
+    __tablename__ = "auth_session"
+
+    token_hash: Mapped[str] = mapped_column(String(64), primary_key=True)
+    user_id: Mapped[str] = mapped_column(String(36), index=True)
+    expires_at: Mapped[datetime] = mapped_column(DateTime, index=True)
+    created_at: Mapped[datetime] = mapped_column(DateTime, default=_utcnow)
+
+
 class KbChunkRow(Base):
     """知识库片段（与 retrieval.KbChunk 一一对应）。"""
 
@@ -189,6 +211,7 @@ class FeedbackRow(Base):
     __tablename__ = "feedback"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    user_id: Mapped[str] = mapped_column(String(36), default="", server_default="", index=True)
     session_id: Mapped[str] = mapped_column(String(64), index=True)
     request_id: Mapped[str] = mapped_column(String(64), index=True)
     thumbs_down: Mapped[bool] = mapped_column(Boolean, default=False)

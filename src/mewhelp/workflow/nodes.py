@@ -341,7 +341,16 @@ def make_agent_node(deps) -> Any:
                 break
 
             executed = [
-                deps.tools.call(action, dict(action_input)) for action, action_input in actions
+                (
+                    deps.tools.call(
+                        action,
+                        dict(action_input),
+                        principal_id=state.get("user_id") or None,
+                    )
+                    if deps.enforce_order_ownership
+                    else deps.tools.call(action, dict(action_input))
+                )
+                for action, action_input in actions
             ]
             calls.extend(executed)
             # 把这一步的动作与结果写回对话，供下一轮继续推理。
@@ -513,6 +522,7 @@ def _should_escalate(calls: list[ToolCall]) -> bool:
 #: handoff=true 时才补那条"已为你转接人工客服"提示条）。真要转人工时，
 #: 由节点把 handoff 置真、再由 handoff 节点补那句提示，正文不抢这个话。
 _TOOL_ERROR_TEXT: dict[str, str] = {
+    "ORDER_ACCOUNT_UNLINKED": "您的账号暂未关联订单信息，暂时无法查询或办理订单业务。",
     "ORDER_NOT_FOUND": "没有查到这个订单号，麻烦核对一下再发我（形如 ORD-1007）。",
     "ORDER_NOT_CANCELLABLE": "这笔订单已经发货了，没法直接取消。",
     "ORDER_ADDRESS_LOCKED": "订单已发出，收货地址改不了了。",
@@ -542,7 +552,8 @@ def make_high_risk_node(deps) -> Any:
         intent = state.get("intent") or Intent.POLICY_FAQ
         question = state.get("question", "")
 
-        outcome = run_high_risk_flow(intent, question, deps.tools)
+        principal_id = (state.get("user_id") or None) if deps.enforce_order_ownership else None
+        outcome = run_high_risk_flow(intent, question, deps.tools, principal_id=principal_id)
 
         if outcome.interrupted and not deps.checkpointer:
             # 没挂 checkpointer 就没有"挂起"这回事（interrupt() 会直接抛异常，
@@ -571,7 +582,9 @@ def make_high_risk_node(deps) -> Any:
             # 而补充内容本身就是新的 question，所以直接重跑子流程即可。
             payload = interrupt({"prompt": outcome.interrupt_prompt, "missing": outcome.missing})
             resumed_question = payload if isinstance(payload, str) else question
-            outcome = run_high_risk_flow(intent, resumed_question, deps.tools)
+            outcome = run_high_risk_flow(
+                intent, resumed_question, deps.tools, principal_id=principal_id
+            )
 
         escalate = bool(outcome.error) and outcome.error in _ESCALATE
         return {

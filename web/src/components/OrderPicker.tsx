@@ -21,13 +21,11 @@ interface Props {
 
 export function OrderPicker({ disabled, onPick }: Props) {
   const [orders, setOrders] = useState<OrderBrief[]>([])
-  const [demo, setDemo] = useState(false)
 
   useEffect(() => {
     const controller = new AbortController()
     void fetchOrders(controller.signal).then((r) => {
       setOrders(r.orders)
-      setDemo(r.demo)
     })
     return () => controller.abort()
   }, [])
@@ -39,7 +37,7 @@ export function OrderPicker({ disabled, onPick }: Props) {
     <div className="order-picker">
       <span className="order-picker-label">
         <IconBox width={13} height={13} />
-        {demo ? '演示订单' : '我的订单'}
+        我的订单
       </span>
       <div className="order-picker-items">
         {orders.map((o) => (

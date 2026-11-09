@@ -11,14 +11,13 @@
 
 import { useCallback, useEffect, useState } from 'react'
 
-const STORAGE_KEY = 'mewhelp.stars'
 
 /** 上限。没有上限的本地列表会一直涨，而旧到看不见的收藏本来也没什么用。 */
 const MAX_STARS = 200
 
-function read(): string[] {
+function read(storageKey: string): string[] {
   try {
-    const raw = window.localStorage.getItem(STORAGE_KEY)
+    const raw = window.localStorage.getItem(storageKey)
     const parsed = raw ? JSON.parse(raw) : []
     return Array.isArray(parsed) ? parsed.filter((v) => typeof v === 'string') : []
   } catch {
@@ -26,16 +25,17 @@ function read(): string[] {
   }
 }
 
-export function useStars() {
-  const [ids, setIds] = useState<string[]>(read)
+export function useStars(accountId: string) {
+  const storageKey = `mewhelp.stars.${accountId}`
+  const [ids, setIds] = useState<string[]>(() => read(storageKey))
 
   useEffect(() => {
     try {
-      window.localStorage.setItem(STORAGE_KEY, JSON.stringify(ids))
+      window.localStorage.setItem(storageKey, JSON.stringify(ids))
     } catch {
       /* 存不下就只在本次会话生效 */
     }
-  }, [ids])
+  }, [ids, storageKey])
 
   const has = useCallback((turnId?: string) => Boolean(turnId && ids.includes(turnId)), [ids])
 

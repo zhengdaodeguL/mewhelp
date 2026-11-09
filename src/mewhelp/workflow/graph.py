@@ -71,6 +71,8 @@ class GraphDeps:
     flywheel: Any
     settings: Settings = field(default_factory=get_settings)
     max_agent_steps: int = 6
+    #: HTTP account sessions have no connection to the bundled sample order file.
+    enforce_order_ownership: bool = False
     #: 有没有挂 checkpointer。高风险节点靠它决定"缺槽位时"是挂起还是收尾 ——
     #: 显式传进来，比在节点里回想"我当时编译时挂了没"可靠得多。
     checkpointer: Any | None = None

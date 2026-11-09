@@ -13,8 +13,6 @@
 
 import { useCallback, useState } from 'react'
 
-const USER_KEY = 'mewhelp.user_id'
-const SESSION_KEY = 'mewhelp.session_id'
 
 function randomId(prefix: string): string {
   const rand =
@@ -45,24 +43,24 @@ function write(key: string, value: string): void {
   }
 }
 
-export function useIdentity() {
-  const [userId] = useState(() => readOrCreate(USER_KEY, 'user'))
-  const [sessionId, setSessionIdState] = useState(() => readOrCreate(SESSION_KEY, 'sess'))
+export function useIdentity(accountId: string) {
+  const sessionKey = `mewhelp.session_id.${accountId}`
+  const [sessionId, setSessionIdState] = useState(() => readOrCreate(sessionKey, 'sess'))
 
   /** 切到另一个会话（点历史里的某一条）。 */
   const setSessionId = useCallback((id: string) => {
     if (!id) return
-    write(SESSION_KEY, id)
+    write(sessionKey, id)
     setSessionIdState(id)
-  }, [])
+  }, [sessionKey])
 
   /** 开一次全新的会话。id 现生成，历史里会在第一条消息落地后才出现。 */
   const startNewSession = useCallback(() => {
     const id = randomId('sess')
-    write(SESSION_KEY, id)
+    write(sessionKey, id)
     setSessionIdState(id)
     return id
-  }, [])
+  }, [sessionKey])
 
-  return { userId, sessionId, setSessionId, startNewSession }
+  return { sessionId, setSessionId, startNewSession }
 }

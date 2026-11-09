@@ -19,16 +19,16 @@
 from __future__ import annotations
 
 import logging
+import secrets
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, Query
-from fastapi.middleware.cors import CORSMiddleware
+from fastapi import Depends, FastAPI, HTTPException, Query, Request, Response
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sse_starlette.sse import EventSourceResponse
 from starlette.concurrency import run_in_threadpool
 
@@ -41,11 +41,13 @@ from ..schemas import FlywheelRecord
 from ..storage import FeedbackRow, ensure_utc, init_db, session_scope
 from ..tools.business import list_orders
 from ..workflow.graph import GraphDeps, build_deps, build_graph
+from .auth import Account, AccountError, AccountStore, SESSION_COOKIE, SESSION_TTL
 from .service import (
     EVENT_ERROR,
     ChatService,
     CachedRun,
     ResultCache,
+    SessionOwnershipError,
     SessionStore,
     memory_to_public,
     sse_event,
@@ -72,8 +74,9 @@ class ChatRequest(BaseModel):
     演示页、curl、CLI 都受益于这个宽松度，而真正的输入校验在 service 层。
     """
 
-    user_id: str = "u-anonymous"
-    session_id: str = "s-default"
+    session_id: str = Field(
+        default_factory=lambda: f"s_{secrets.token_hex(12)}", max_length=64
+    )
     message: str = ""
     #: 引用提问：用户在界面上明确指向的那一句原话。
     #: 它进的是**当轮上下文**，不落库 —— 引用的消息本身已经在会话历史里了，
@@ -99,19 +102,22 @@ class ReviewRequest(BaseModel):
 class MemoryRequest(BaseModel):
     """用户在记忆面板里自己写一条备忘。"""
 
-    user_id: str = "u-anonymous"
     text: str = ""
     #: 默认 manual —— 从面板写进来的都是"我自己的备忘"，和系统自动抽的分开记
     kind: str = KIND_MANUAL
 
 
 class MemoryPatchRequest(BaseModel):
-    user_id: str = "u-anonymous"
     pinned: bool = True
 
 
 class SessionPatchRequest(BaseModel):
     title: str = ""
+
+
+class AuthRequest(BaseModel):
+    email: str = Field(max_length=254)
+    password: str = Field(min_length=1, max_length=128)
 
 
 #: 时间序列化。真正的时区归一化发生在存储层（`storage.ensure_utc`）——
@@ -123,14 +129,8 @@ def _iso_utc(value: datetime | None) -> str:
     return stamped.isoformat() if stamped else ""
 
 
-def _demo_user(user_id: str | None) -> str:
-    """演示环境没有登录态时的用户回落。
-
-    真实系统里 user_id 必须来自登录态 —— 这里接受查询参数只是为了能演示
-    "换个用户就是另一个人"的效果。集中成一个函数，是为了让"哪些接口在
-    信任外部传入的 user_id"这件事有迹可循，而不是散在每条路由里。
-    """
-    return user_id or "u-anonymous"
+def _public_account(account: Account) -> dict[str, str]:
+    return {"id": account.user_id, "email": account.email}
 
 
 def _graph_leaf_label(chunk: Any) -> str:
@@ -320,12 +320,13 @@ def _record_thumbs_down(
 
 
 def _save_feedback(
-    deps: GraphDeps, cache: ResultCache, payload: FeedbackRequest
+    deps: GraphDeps, cache: ResultCache, payload: FeedbackRequest, user_id: str
 ) -> dict[str, Any]:
     feedback_id: int | None = None
     try:
         with session_scope(settings=deps.settings) as s:
             row = FeedbackRow(
+                user_id=user_id,
                 session_id=payload.session_id or "",
                 request_id=payload.request_id or "",
                 thumbs_down=bool(payload.thumbs_down),
@@ -339,7 +340,9 @@ def _save_feedback(
 
     flywheel_id = None
     if payload.thumbs_down:
-        flywheel_id = _record_thumbs_down(deps, cache.get(payload.request_id), payload)
+        run = cache.get(payload.request_id)
+        if run and run.result.user_id == user_id and run.result.session_id == payload.session_id:
+            flywheel_id = _record_thumbs_down(deps, run, payload)
     return {
         "ok": True,
         "feedback_id": feedback_id,
@@ -359,6 +362,7 @@ def create_app(deps: GraphDeps | None = None) -> FastAPI:
     换掉 settings 就能把数据写到临时库、不污染仓库里的 mewhelp.db。
     """
     deps = deps or build_deps()
+    deps.enforce_order_ownership = True
     graph = build_graph(deps)
     tracer = build_tracer(deps.settings)
     cache = ResultCache()
@@ -406,27 +410,113 @@ def create_app(deps: GraphDeps | None = None) -> FastAPI:
         redoc_url=None,
         openapi_url=None,
     )
-    # 演示页可能被从 file:// 或另一个端口打开，放开跨域省掉一类"打不开"的求助。
-    # 离线演示用不上鉴权，这里没有额外风险面。
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=["*"],
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
+    account_store = AccountStore(deps.settings)
+
+    def require_account(request: Request) -> Account:
+        if not request.app.state.db_ready:
+            raise HTTPException(status_code=503, detail="服务暂时不可用")
+        try:
+            account = account_store.from_token(request.cookies.get(SESSION_COOKIE))
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("[api] 登录状态读取失败")
+            raise HTTPException(status_code=503, detail="服务暂时不可用") from exc
+        if account is None:
+            raise HTTPException(status_code=401, detail="请先登录")
+        return account
+
     app.state.deps = deps
     app.state.tracer = tracer
     app.state.service = service
     app.state.cache = cache
     app.state.memory = memory_store
+    app.state.accounts = account_store
     app.state.db_ready = False
     app.state.kb_chunks = 0
+
+    def set_session_cookie(response: Response, token: str, request: Request) -> None:
+        response.set_cookie(
+            SESSION_COOKIE,
+            token,
+            max_age=int(SESSION_TTL.total_seconds()),
+            httponly=True,
+            secure=request.url.scheme == "https" or request.headers.get("x-forwarded-proto") == "https",
+            samesite="lax",
+            path="/",
+        )
+
+    def account_error(exc: AccountError) -> HTTPException:
+        if exc.code == "EMAIL_EXISTS":
+            return HTTPException(status_code=409, detail="该邮箱已注册")
+        if exc.code == "INVALID_CREDENTIALS":
+            return HTTPException(status_code=401, detail="邮箱或密码不正确")
+        if exc.code == "INVALID_EMAIL":
+            return HTTPException(status_code=422, detail="请输入有效邮箱地址")
+        if exc.code == "PASSWORD_TOO_SHORT":
+            return HTTPException(status_code=422, detail="密码至少需要 10 个字符")
+        if exc.code == "PASSWORD_TOO_LONG":
+            return HTTPException(status_code=422, detail="密码不能超过 128 个字符")
+        return HTTPException(status_code=400, detail="无法完成此操作")
+
+    @app.get("/api/auth/me")
+    async def current_account(request: Request) -> dict[str, Any]:
+        if not request.app.state.db_ready:
+            raise HTTPException(status_code=503, detail="服务暂时不可用")
+        try:
+            account = await run_in_threadpool(
+                account_store.from_token, request.cookies.get(SESSION_COOKIE)
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("[api] 登录状态读取失败")
+            raise HTTPException(status_code=503, detail="服务暂时不可用") from exc
+        return {"authenticated": account is not None, "user": _public_account(account) if account else None}
+
+    @app.post("/api/auth/register")
+    async def register(payload: AuthRequest, request: Request, response: Response) -> dict[str, Any]:
+        if not app.state.db_ready:
+            raise HTTPException(status_code=503, detail="服务暂时不可用")
+        try:
+            account, token = await run_in_threadpool(
+                account_store.register, payload.email, payload.password
+            )
+        except AccountError as exc:
+            raise account_error(exc) from exc
+        set_session_cookie(response, token, request)
+        return {"user": _public_account(account)}
+
+    @app.post("/api/auth/login")
+    async def login(payload: AuthRequest, request: Request, response: Response) -> dict[str, Any]:
+        if not app.state.db_ready:
+            raise HTTPException(status_code=503, detail="服务暂时不可用")
+        try:
+            account, token = await run_in_threadpool(
+                account_store.login, payload.email, payload.password
+            )
+        except AccountError as exc:
+            raise account_error(exc) from exc
+        set_session_cookie(response, token, request)
+        return {"user": _public_account(account)}
+
+    @app.post("/api/auth/logout")
+    async def logout(request: Request, response: Response) -> dict[str, bool]:
+        if not app.state.db_ready:
+            raise HTTPException(status_code=503, detail="服务暂时不可用")
+        try:
+            await run_in_threadpool(
+                account_store.logout, request.cookies.get(SESSION_COOKIE)
+            )
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("[api] 退出登录失败")
+            raise HTTPException(status_code=503, detail="暂时无法退出，请稍后重试") from exc
+        response.delete_cookie(SESSION_COOKIE, path="/", samesite="lax")
+        return {"ok": True}
 
     # ------------------------------------------------------------
     # 对话
     # ------------------------------------------------------------
     @app.post("/api/chat")
-    async def chat(payload: ChatRequest) -> EventSourceResponse:
+    async def chat(
+        payload: ChatRequest, account: Account = Depends(require_account)
+    ) -> EventSourceResponse:
         """SSE 流式问答：meta → evidence → tool* → token* → done。"""
 
         async def gen():
@@ -435,66 +525,49 @@ def create_app(deps: GraphDeps | None = None) -> FastAPI:
             try:
                 result = await run_in_threadpool(
                     service.ask,
-                    user_id=payload.user_id,
+                    user_id=account.user_id,
                     session_id=payload.session_id,
                     message=payload.message,
                     quote=payload.quote,
                 )
+            except SessionOwnershipError:
+                yield sse_event(EVENT_ERROR, {"message": "这次对话不可用，请新建对话后重试。"})
+                return
             except Exception as exc:  # noqa: BLE001 — 第一道兜底
                 logger.exception("[api] /api/chat 执行失败")
-                yield sse_event(EVENT_ERROR, {"message": f"{type(exc).__name__}: {exc}"})
+                yield sse_event(EVENT_ERROR, {"message": "服务暂时不可用，请稍后再试。"})
                 return
             try:
                 async for event in stream_events(result):
                     yield event
             except Exception as exc:  # noqa: BLE001 — 推流中途出错也不能裸崩
                 logger.exception("[api] SSE 推送中断")
-                yield sse_event(EVENT_ERROR, {"message": f"{type(exc).__name__}: {exc}"})
+                yield sse_event(EVENT_ERROR, {"message": "服务暂时不可用，请稍后再试。"})
 
         return EventSourceResponse(gen())
-
-    @app.post("/api/chat/sync")
-    async def chat_sync(payload: ChatRequest) -> JSONResponse:
-        """同一套逻辑的非流式版本，给脚本/评估/调试用。"""
-        try:
-            result = await run_in_threadpool(
-                service.ask,
-                user_id=payload.user_id,
-                session_id=payload.session_id,
-                message=payload.message,
-                quote=payload.quote,
-            )
-        except Exception as exc:  # noqa: BLE001
-            logger.exception("[api] /api/chat/sync 执行失败")
-            return JSONResponse(
-                status_code=200,
-                content={
-                    "error": f"{type(exc).__name__}: {exc}",
-                    "answer": "抱歉，服务暂时不可用，帮你转人工确认。",
-                    "handoff": True,
-                    "path": [],
-                },
-            )
-        return JSONResponse(content=result.model_dump(mode="json"))
 
     # ------------------------------------------------------------
     # 反馈
     # ------------------------------------------------------------
     @app.post("/api/feedback")
-    async def feedback(payload: FeedbackRequest) -> dict[str, Any]:
+    async def feedback(
+        payload: FeedbackRequest, account: Account = Depends(require_account)
+    ) -> dict[str, Any]:
         """用户点赞/点踩。
 
         只回「收没收到」。点踩之后内部发生了什么（落问题池、带检索快照、
         分诊）是**运营侧**的事 —— 那些字段原本就站在这里往外发，
         等于把一个审核台接口开给了普通用户。审核台走 `python -m mewhelp.cli flywheel`。
         """
-        saved = await run_in_threadpool(_save_feedback, deps, cache, payload)
+        if service.sessions.get_session(payload.session_id, user_id=account.user_id) is None:
+            return {"ok": False}
+        saved = await run_in_threadpool(_save_feedback, deps, cache, payload, account.user_id)
         # 收敛成用户视角的应答：详情、flywheel id、快照一律不对外
         return {"ok": saved.get("ok", False)}
     # ------------------------------------------------------------
     @app.get("/api/sessions")
     async def sessions(
-        user_id: str | None = Query(default=None),
+        account: Account = Depends(require_account),
         limit: int = Query(default=50, ge=1, le=200),
     ) -> dict[str, Any]:
         """历史会话列表，最近更新的在前。
@@ -502,7 +575,7 @@ def create_app(deps: GraphDeps | None = None) -> FastAPI:
         列表里刻意没有摘要和路径 —— 这一栏的作用是"让用户认出是哪次对话"，
         多给的信息只会挤掉真正有用的那行标题。
         """
-        rows = service.sessions.list_sessions(_demo_user(user_id), limit=limit)
+        rows = service.sessions.list_sessions(account.user_id, limit=limit)
         return {
             "count": len(rows),
             "sessions": [
@@ -519,7 +592,7 @@ def create_app(deps: GraphDeps | None = None) -> FastAPI:
 
     @app.get("/api/sessions/{session_id}")
     async def session_detail(
-        session_id: str, user_id: str | None = Query(default=None)
+        session_id: str, account: Account = Depends(require_account)
     ) -> dict[str, Any]:
         """恢复一次历史对话。
 
@@ -527,7 +600,7 @@ def create_app(deps: GraphDeps | None = None) -> FastAPI:
         意图、节点路径、出口这些存在库里但不该回到界面上。过滤写在服务层
         而不是这里，是为了让 CLI 复用同一份口径。
         """
-        detail = service.sessions.get_session(session_id, user_id=_demo_user(user_id))
+        detail = service.sessions.get_session(session_id, user_id=account.user_id)
         if detail is None:
             return {"ok": False, "error": "NOT_FOUND", "session_id": session_id}
         return {
@@ -550,37 +623,39 @@ def create_app(deps: GraphDeps | None = None) -> FastAPI:
     async def session_rename(
         session_id: str,
         payload: SessionPatchRequest,
-        user_id: str | None = Query(default=None),
+        account: Account = Depends(require_account),
     ) -> dict[str, Any]:
         """改名。传空标题表示"恢复成自动生成的标题"（下一次追加时会重算）。"""
         ok = service.sessions.rename(
-            session_id, payload.title, user_id=_demo_user(user_id)
+            session_id, payload.title, user_id=account.user_id
         )
         return {"ok": ok, "session_id": session_id, "title": payload.title}
 
     @app.delete("/api/sessions/{session_id}")
     async def session_delete(
-        session_id: str, user_id: str | None = Query(default=None)
+        session_id: str, account: Account = Depends(require_account)
     ) -> dict[str, Any]:
         """删掉一次会话。
 
         注意它**不动长期记忆**：用户清掉的是聊天记录，不是"你认识我"。
         这两件事被混在一起的那天，用户会发现自己写下的备忘也跟着没了。
         """
-        ok = service.sessions.delete(session_id, user_id=_demo_user(user_id))
+        ok = service.sessions.delete(session_id, user_id=account.user_id)
         return {"ok": ok, "session_id": session_id}
 
     # ------------------------------------------------------------
     # 长期记忆
     # ------------------------------------------------------------
     @app.get("/api/memories")
-    async def memories(user_id: str | None = Query(default=None)) -> dict[str, Any]:
+    async def memories(account: Account = Depends(require_account)) -> dict[str, Any]:
         """这个用户的全部记忆（钉住的排前面）。"""
-        items = memory_store.list(_demo_user(user_id))
+        items = memory_store.list(account.user_id)
         return {"count": len(items), "items": [memory_to_public(i) for i in items]}
 
     @app.post("/api/memories")
-    async def add_memory(payload: MemoryRequest) -> dict[str, Any]:
+    async def add_memory(
+        payload: MemoryRequest, account: Account = Depends(require_account)
+    ) -> dict[str, Any]:
         """用户自己写一条备忘。
 
         面板里写的默认**钉住**：用户亲手敲进去的东西，不该被"记忆条数上限"
@@ -590,7 +665,7 @@ def create_app(deps: GraphDeps | None = None) -> FastAPI:
         if not text:
             return {"ok": False, "error": "EMPTY", "item": None}
         item = memory_store.remember(
-            _demo_user(payload.user_id),
+            account.user_id,
             MemoryCandidate(kind=payload.kind or KIND_MANUAL, key="", text=text),
             source="manual",
             pinned=True,
@@ -598,37 +673,40 @@ def create_app(deps: GraphDeps | None = None) -> FastAPI:
         return {"ok": item is not None, "item": memory_to_public(item) if item else None}
 
     @app.patch("/api/memories/{memory_id}")
-    async def patch_memory(memory_id: int, payload: MemoryPatchRequest) -> dict[str, Any]:
-        ok = memory_store.set_pinned(_demo_user(payload.user_id), memory_id, payload.pinned)
+    async def patch_memory(
+        memory_id: int,
+        payload: MemoryPatchRequest,
+        account: Account = Depends(require_account),
+    ) -> dict[str, Any]:
+        ok = memory_store.set_pinned(account.user_id, memory_id, payload.pinned)
         return {"ok": ok, "id": memory_id, "pinned": payload.pinned}
 
     @app.delete("/api/memories/{memory_id}")
     async def delete_memory(
-        memory_id: int, user_id: str | None = Query(default=None)
+        memory_id: int, account: Account = Depends(require_account)
     ) -> dict[str, Any]:
-        ok = memory_store.delete(_demo_user(user_id), memory_id)
+        ok = memory_store.delete(account.user_id, memory_id)
         return {"ok": ok, "id": memory_id}
 
     # ------------------------------------------------------------
     # 订单快捷选择
     # ------------------------------------------------------------
     @app.get("/api/orders")
-    async def orders(user_id: str | None = Query(default=None)) -> dict[str, Any]:
+    async def orders(account: Account = Depends(require_account)) -> dict[str, Any]:
         """当前用户的订单摘要 —— 给界面的"订单快捷选择"用。
 
         订单号是用户最不可能记住的东西，让他手打 ORD-1007 是把系统的记忆
         成本转嫁给用户。这里让他点一下就行。
 
-        注意：真实系统里 user_id 必须来自登录态，而不是查询参数 ——
-        否则谁都能读别人的单。演示环境没有登录，所以没传时回落到夹具用户，
-        并在返回里用 `demo: true` 说明这批数据不是"他的"。
+        用户身份来自登录态。没有接入真实订单来源时，返回空列表，避免把共享
+        样例数据误当成当前用户的订单。
         """
         try:
-            rows = list_orders(user_id)
+            rows = list_orders(account.user_id)
         except Exception as exc:  # noqa: BLE001 — 夹具坏了不该让界面打不开
             logger.warning("[api] /api/orders 查询失败: %s", exc)
-            return {"count": 0, "orders": [], "demo": True, "error": f"{type(exc).__name__}"}
-        return {"count": len(rows), "orders": rows, "demo": user_id is None}
+            return {"count": 0, "orders": []}
+        return {"count": len(rows), "orders": rows}
 
     # ------------------------------------------------------------
     # 运维 / 可观测
@@ -647,7 +725,7 @@ def create_app(deps: GraphDeps | None = None) -> FastAPI:
     # 知识图谱
     # ------------------------------------------------------------
     @app.get("/api/knowledge/graph")
-    async def knowledge_graph() -> dict[str, Any]:
+    async def knowledge_graph(account: Account = Depends(require_account)) -> dict[str, Any]:
         """知识库的知识节点图谱。
 
         检索层的 `_chunks` 里有每一个片段的**面包屑**（按标题层级切分时

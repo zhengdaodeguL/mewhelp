@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
-import { checkHealth } from './api/client'
+import { checkHealth, currentUser, logout, type AuthUser } from './api/client'
+import { AuthGate } from './components/AuthGate'
 import { CommandPalette, type PaletteAction } from './components/CommandPalette'
 import { Composer } from './components/Composer'
 import { FindBar } from './components/FindBar'
@@ -31,13 +32,82 @@ const NARROW = '(max-width: 1024px)'
 const FLASH_MS = 1400
 
 export default function App() {
+  const [user, setUser] = useState<AuthUser | null>(null)
+  const [authLoading, setAuthLoading] = useState(true)
+  const [authError, setAuthError] = useState('')
+
+  useEffect(() => {
+    const controller = new AbortController()
+    void currentUser(controller.signal).then(({ user: account, error }) => {
+      if (controller.signal.aborted) return
+      setUser(account)
+      setAuthError(error ?? '')
+      setAuthLoading(false)
+    })
+    return () => controller.abort()
+  }, [])
+
+  const signOut = useCallback(async () => {
+    const signedOut = await logout()
+    if (!signedOut) {
+      toast('暂时无法退出登录，请检查网络后重试。', 'error')
+      return
+    }
+    setUser(null)
+  }, [])
+
+  if (authLoading) {
+    return <main className="auth-screen"><div className="auth-loading" aria-label="正在加载" /></main>
+  }
+  if (authError) {
+    return (
+      <main className="auth-screen">
+        <section className="auth-panel" aria-labelledby="auth-error-title">
+          <div className="auth-brand">
+            <span className="auth-brand-mark" aria-hidden="true">M</span>
+            <span>MewHelp</span>
+          </div>
+          <div className="auth-heading">
+            <h1 id="auth-error-title">暂时无法连接</h1>
+            <p className="auth-subtitle" role="alert">{authError}</p>
+          </div>
+          <button
+            className="auth-submit auth-retry"
+            type="button"
+            onClick={() => {
+              setAuthLoading(true)
+              setAuthError('')
+              void currentUser().then(({ user: account, error }) => {
+                setUser(account)
+                setAuthError(error ?? '')
+                setAuthLoading(false)
+              })
+            }}
+          >
+            重新连接
+          </button>
+        </section>
+      </main>
+    )
+  }
+  if (!user) return <AuthGate onAuthenticated={setUser} />
+  return <ChatApp key={user.id} accountId={user.id} email={user.email} onLogout={() => void signOut()} />
+}
+
+interface ChatAppProps {
+  accountId: string
+  email: string
+  onLogout: () => void
+}
+
+function ChatApp({ accountId, email, onLogout }: ChatAppProps) {
   const isNarrow = useMediaQuery(NARROW)
-  const { userId, sessionId, setSessionId, startNewSession } = useIdentity()
+  const { sessionId, setSessionId, startNewSession } = useIdentity(accountId)
   const { choice: themeChoice, cycle: cycleTheme, setChoice: setThemeChoice } = useTheme()
   const { ratio, setRatio, nudge, reset: resetRatio } = useSplit()
-  const history = useHistory(userId)
-  const memory = useMemory(userId)
-  const stars = useStars()
+  const history = useHistory()
+  const memory = useMemory()
+  const stars = useStars(accountId)
 
   const [online, setOnline] = useState(false)
   const [railOpen, setRailOpen] = useState(true)
@@ -68,7 +138,6 @@ export default function App() {
   const scrim = useDelayedUnmount(isNarrow && drawer !== null, 220)
 
   const chat = useChat({
-    userId,
     sessionId,
     quote: quote?.content ?? '',
     onTurnEnd: () => void history.refresh(),
@@ -483,6 +552,8 @@ export default function App() {
       >
         <div className="pane-chat">
           <Header
+            email={email}
+            onLogout={onLogout}
             online={online}
             railOpen={isNarrow ? drawer === 'rail' : railOpen}
             onToggleRail={() =>

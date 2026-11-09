@@ -160,6 +160,15 @@ export function IconClose(props: IconProps) {
   )
 }
 
+export function IconLogOut(props: IconProps) {
+  return (
+    <Base {...props}>
+      <path d="M10 4H5a2 2 0 0 0-2 2v12a2 2 0 0 0 2 2h5" />
+      <path d="M14 16l4-4-4-4M18 12H9" />
+    </Base>
+  )
+}
+
 export function IconStop(props: IconProps) {
   return (
     <Base {...props}>

@@ -227,8 +227,8 @@ export function cardsFromTools(tools: unknown): WorkspaceCard[] {
   for (const raw of list) {
     if (!isRecord(raw)) continue
     if (raw.ok !== true) continue // 失败的不进工作区：卡片上没法体面地表达错误
-    const name = str(raw.name) ?? ''
-    const card = cardFromToolResult(name, raw.result)
+    const kind = str(raw.kind) ?? ''
+    const card = cardFromToolResult(kind, raw.result)
     if (card) cards.push(card)
   }
   return cards

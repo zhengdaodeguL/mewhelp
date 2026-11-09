@@ -243,6 +243,10 @@ def to_session_messages(turns: Sequence[Turn]) -> list[SessionMessage]:
     return out
 
 
+class SessionOwnershipError(Exception):
+    """Raised when a session identifier belongs to another account."""
+
+
 class SessionStore:
     """会话历史的读写。
 
@@ -258,7 +262,7 @@ class SessionStore:
         #: 会表现为"多轮突然失忆"，而没有任何线索）。
         self.last_error: str | None = None
 
-    def load(self, session_id: str) -> list[Turn]:
+    def load(self, session_id: str, user_id: str | None = None) -> list[Turn]:
         if not session_id:
             return []
         try:
@@ -266,7 +270,11 @@ class SessionStore:
                 row = s.get(SessionRow, session_id)
                 if row is None:
                     return []
+                if user_id is not None and row.user_id != user_id:
+                    raise SessionOwnershipError
                 return decode_turns(row.turns_json)
+        except SessionOwnershipError:
+            raise
         except Exception as exc:  # noqa: BLE001 — 读不到历史 = 没有历史
             self.last_error = f"load failed: {exc!r}"
             logger.warning("[api] 会话历史读取失败（按无历史继续）：%s", exc)
@@ -298,6 +306,8 @@ class SessionStore:
                         token_estimate=0,
                     )
                     s.add(row)
+                elif row.user_id != user_id:
+                    raise SessionOwnershipError
                 history = decode_turns(row.turns_json)
                 history.extend(turns)
                 if len(history) > self.max_turns:
@@ -305,9 +315,9 @@ class SessionStore:
                 row.turns_json = encode_turns(history)
                 if not (row.title or "").strip():
                     row.title = _title_from(history)
-                if user_id:
-                    row.user_id = user_id
             return history
+        except SessionOwnershipError:
+            raise
         except Exception as exc:  # noqa: BLE001 — 写不进去不影响这次答复
             self.last_error = f"append failed: {exc!r}"
             logger.warning("[api] 会话历史写入失败（本次答复照常返回）：%s", exc)
@@ -319,8 +329,7 @@ class SessionStore:
     def list_sessions(self, user_id: str, *, limit: int = 50) -> list[SessionSummary]:
         """一个用户的历史会话，最近更新的排前面。
 
-        按 `user_id` 过滤不是可选项：演示环境没有登录态，这个参数是眼下
-        **唯一**的所有权边界 —— 少了它，谁都能列出别人的会话标题。
+        按服务端解析的 `user_id` 过滤，避免不同账号之间互相看到历史标题。
         """
         if not user_id:
             return []
@@ -359,9 +368,7 @@ class SessionStore:
     def get_session(self, session_id: str, *, user_id: str = "") -> SessionDetail | None:
         """取一次会话的完整对话（已按用户视角过滤）。
 
-        `user_id` 传了就顺带校验归属；不传表示"按 id 取"（内部调用和
-        测试用）。这两条路径合并成一个方法，是为了避免出现两份实现 ——
-        过滤逻辑一旦分叉，早晚有一边会漏掉内部字段。
+        HTTP 路径总是传入登录账号；归属不符时与不存在使用同一种结果。
         """
         if not session_id:
             return None
@@ -610,7 +617,7 @@ class ChatService:
         quote: str = "",
     ) -> ConversationResult:
         text = (message or "").strip()
-        history = self.sessions.load(session_id)
+        history = self.sessions.load(session_id, user_id=user_id)
 
         # 引用提问：用户在界面上明确指向的那一句，要**显式**带进这一轮的上下文。
         #
@@ -851,29 +858,20 @@ def _user_snippet(chunk: KbChunk, limit: int = 140) -> str:
 
 
 def meta_payload(result: ConversationResult) -> dict[str, Any]:
-    return {
-        "request_id": result.request_id,
-        "intent": _value(result.intent),
-        "exit": _value(result.exit),
-        "path": list(result.path),
-        "resolved_question": result.resolved_question,
-    }
+    return {"request_id": result.request_id}
 
 
 def evidence_payload(result: ConversationResult) -> dict[str, Any]:
     """检索依据。
 
     `snippet` 是给**用户看**的原文摘录，右侧工作区据此渲染「依据」卡片。
-    `score` / `chunk_id` 是我们自己的口径，界面不展示（但保留在事件里，
-    开发者排查"答错了"时要用）。
+    只返回界面需要呈现的标题和摘录。
     """
     chunks: list[dict[str, Any]] = []
     for e in result.evidences:
         chunks.append(
             {
-                "chunk_id": e.chunk_id,
                 "title": e.chunk.title,
-                "score": round(float(e.score), 4),
                 "snippet": _user_snippet(e.chunk),
             }
         )
@@ -881,19 +879,13 @@ def evidence_payload(result: ConversationResult) -> dict[str, Any]:
 
 
 def tool_payload(result: ConversationResult) -> list[dict[str, Any]]:
-    """工具调用及其结果。
-
-    `result` 一并推给前端 —— 右侧工作区要拿它渲染订单卡、物流轨迹。
-    旧版刻意不发这份数据（那时界面只有一串对话），工作区需要它才发出来。
-
-    `name` 依然只是**前端内部**的分派依据，不展示给用户。
-    """
+    """把可展示的业务结果投影成工作区卡片数据。"""
     payload: list[dict[str, Any]] = []
     for tc in result.tool_calls:
-        item: dict[str, Any] = {"name": tc.name, "ok": bool(tc.ok), "error": tc.error}
-        if tc.ok and isinstance(tc.result, (dict, list)):
-            item["result"] = tc.result
-        payload.append(item)
+        if not tc.ok or not isinstance(tc.result, (dict, list)):
+            continue
+        kind = "logistics" if tc.name == "track_logistics" else "order"
+        payload.append({"kind": kind, "ok": True, "result": tc.result})
     return payload
 
 
@@ -938,10 +930,7 @@ def memory_to_public(item: Any) -> dict[str, Any]:
 def done_payload(result: ConversationResult) -> dict[str, Any]:
     return {
         "answer": result.answer,
-        "usage": result.usage.model_dump(mode="json"),
-        "latency_ms": result.latency_ms,
         "handoff": result.handoff,
-        "refusal_reason": _value(result.refusal_reason),
     }
 
 

@@ -15,7 +15,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { addMemory, deleteMemory, fetchMemories, setMemoryPinned } from '../api/client'
 import type { MemoryItem } from '../types'
 
-export function useMemory(userId: string) {
+export function useMemory() {
   const [items, setItems] = useState<MemoryItem[]>([])
   const [busy, setBusy] = useState(false)
   //: 还没拿到过第一批数据。用来决定显示骨架屏还是"还没有记住任何事" ——
@@ -25,12 +25,11 @@ export function useMemory(userId: string) {
   const inflight = useRef<AbortController | null>(null)
 
   const refresh = useCallback(async () => {
-    if (!userId) return
     inflight.current?.abort()
     const controller = new AbortController()
     inflight.current = controller
     try {
-      const rows = await fetchMemories(userId, controller.signal)
+      const rows = await fetchMemories(controller.signal)
       if (!controller.signal.aborted) {
         setItems(rows)
         setLoading(false)
@@ -38,7 +37,7 @@ export function useMemory(userId: string) {
     } finally {
       /* 取消时不动状态：新的一次请求会填上 */
     }
-  }, [userId])
+  }, [])
 
   useEffect(() => {
     void refresh()
@@ -57,7 +56,7 @@ export function useMemory(userId: string) {
       if (!trimmed) return false
       setBusy(true)
       setError('')
-      const created = await addMemory(userId, trimmed)
+      const created = await addMemory(trimmed)
       setBusy(false)
       if (!created) {
         setError('没能保存，稍后再试')
@@ -71,14 +70,14 @@ export function useMemory(userId: string) {
       })
       return true
     },
-    [userId],
+    [],
   )
 
   const togglePin = useCallback(
     async (item: MemoryItem) => {
       const next = !item.pinned
       setItems((prev) => prev.map((i) => (i.id === item.id ? { ...i, pinned: next } : i)))
-      const ok = await setMemoryPinned(userId, item.id, next)
+      const ok = await setMemoryPinned(item.id, next)
       if (!ok) {
         // 服务端没成功就翻回去 —— 留着一个假的"已钉住"，用户下次打开会发现
         // 它自己掉了，那比当场回弹更让人困惑。
@@ -86,20 +85,20 @@ export function useMemory(userId: string) {
         setError('操作没成功，稍后再试')
       }
     },
-    [userId],
+    [],
   )
 
   const remove = useCallback(
     async (item: MemoryItem) => {
       setItems((prev) => prev.filter((i) => i.id !== item.id))
-      const ok = await deleteMemory(userId, item.id)
+      const ok = await deleteMemory(item.id)
       if (!ok) {
         void refresh() // 删失败就把真实状态拉回来
         setError('删除没成功，稍后再试')
       }
       return ok
     },
-    [userId, refresh],
+    [refresh],
   )
 
   return { items, loading, busy, error, refresh, replace, add, togglePin, remove }

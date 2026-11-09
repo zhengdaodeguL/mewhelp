@@ -20,6 +20,58 @@ import { drainEvents, normalizeSse } from './sse'
 
 const API_BASE = ''
 
+export interface AuthUser {
+  id: string
+  email: string
+}
+
+export async function currentUser(
+  signal?: AbortSignal,
+): Promise<{ user: AuthUser | null; error: string | null }> {
+  try {
+    const res = await fetch(`${API_BASE}/api/auth/me`, { signal, credentials: 'same-origin' })
+    if (res.status === 401) return { user: null, error: null }
+    if (!res.ok) return { user: null, error: '暂时无法连接服务，请检查网络后重试。' }
+    const body = (await res.json()) as { authenticated?: boolean; user?: AuthUser | null }
+    return { user: body.authenticated && body.user ? body.user : null, error: null }
+  } catch {
+    return { user: null, error: '暂时无法连接服务，请检查网络后重试。' }
+  }
+}
+
+export async function authenticate(
+  mode: 'login' | 'register',
+  email: string,
+  password: string,
+): Promise<{ user: AuthUser | null; error: string }> {
+  try {
+    const res = await fetch(`${API_BASE}/api/auth/${mode}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify({ email, password }),
+    })
+    const body = (await res.json()) as { user?: AuthUser; detail?: string }
+    return res.ok && body.user
+      ? { user: body.user, error: '' }
+      : { user: null, error: body.detail || '暂时无法登录，请稍后再试。' }
+  } catch {
+    return { user: null, error: '网络连接不太顺畅，请稍后再试。' }
+  }
+}
+
+export async function logout(): Promise<boolean> {
+  try {
+    const res = await fetch(`${API_BASE}/api/auth/logout`, {
+      method: 'POST',
+      credentials: 'same-origin',
+    })
+    return res.ok
+  } catch {
+    return false
+  }
+}
+
 export interface StreamCallbacks {
   /** 收到一段正文（逐字） */
   onToken: (text: string) => void
@@ -37,7 +89,6 @@ export interface StreamCallbacks {
 
 export interface ChatOptions {
   sessionId: string
-  userId: string
   /**
    * 引用提问：用户明确指向的那一句。
    *
@@ -62,9 +113,9 @@ export async function streamChat(
       body: JSON.stringify({
         message,
         session_id: options.sessionId,
-        user_id: options.userId,
         quote: options.quote ?? '',
       }),
+      credentials: 'same-origin',
       signal: options.signal,
     })
   } catch {
@@ -111,7 +162,8 @@ export async function streamChat(
           callbacks.onDone({ handoff: Boolean((data as { handoff?: boolean })?.handoff) })
         } else if (event === 'error') {
           finished = true
-          callbacks.onError('服务出了点小问题，已为你转接人工，请稍候。')
+          const message = (data as { message?: string })?.message
+          callbacks.onError(message || '服务暂时不可用，请稍后再试。')
         } else if (event === 'meta') {
           // meta 里绝大部分是意图/节点路径这类纯内部信息，前端刻意不消费；
           // 只有 request_id 是界面需要的 —— 反馈和收藏都要靠它当键。
@@ -162,8 +214,6 @@ export interface OrderBrief {
 
 export interface OrderList {
   orders: OrderBrief[]
-  /** 这批单是不是"演示数据"（没有登录态时后端会标记） */
-  demo: boolean
 }
 
 /**
@@ -174,14 +224,11 @@ export interface OrderList {
 export async function fetchOrders(signal?: AbortSignal): Promise<OrderList> {
   try {
     const res = await fetch(`${API_BASE}/api/orders`, { signal })
-    if (!res.ok) return { orders: [], demo: true }
+    if (!res.ok) return { orders: [] }
     const body = (await res.json()) as Partial<OrderList>
-    return {
-      orders: Array.isArray(body.orders) ? body.orders : [],
-      demo: body.demo !== false,
-    }
+    return { orders: Array.isArray(body.orders) ? body.orders : [] }
   } catch {
-    return { orders: [], demo: true }
+    return { orders: [] }
   }
 }
 
@@ -225,14 +272,11 @@ function sessionBriefs(raw: unknown): SessionBrief[] {
     .filter((s) => s.sessionId)
 }
 
-export async function fetchSessions(
-  userId: string,
-  signal?: AbortSignal,
-): Promise<SessionBrief[]> {
+export async function fetchSessions(signal?: AbortSignal): Promise<SessionBrief[]> {
   try {
     const res = await fetch(
-      `${API_BASE}/api/sessions?user_id=${encodeURIComponent(userId)}`,
-      { signal },
+      `${API_BASE}/api/sessions`,
+      { signal, credentials: 'same-origin' },
     )
     if (!res.ok) return []
     return sessionBriefs(((await res.json()) as { sessions?: unknown }).sessions)
@@ -250,14 +294,13 @@ export interface RestoredSession {
 /** 恢复一次历史对话。拿不到就返回空 —— 界面退化成"新会话"即可。 */
 export async function fetchSession(
   sessionId: string,
-  userId: string,
   signal?: AbortSignal,
 ): Promise<RestoredSession> {
   const empty: RestoredSession = { ok: false, title: '', messages: [] }
   try {
     const res = await fetch(
-      `${API_BASE}/api/sessions/${encodeURIComponent(sessionId)}?user_id=${encodeURIComponent(userId)}`,
-      { signal },
+      `${API_BASE}/api/sessions/${encodeURIComponent(sessionId)}`,
+      { signal, credentials: 'same-origin' },
     )
     if (!res.ok) return empty
     const body = (await res.json()) as Record<string, unknown>
@@ -281,14 +324,14 @@ export async function fetchSession(
 export async function renameSession(
   sessionId: string,
   title: string,
-  userId: string,
 ): Promise<boolean> {
   try {
     const res = await fetch(
-      `${API_BASE}/api/sessions/${encodeURIComponent(sessionId)}?user_id=${encodeURIComponent(userId)}`,
+      `${API_BASE}/api/sessions/${encodeURIComponent(sessionId)}`,
       {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
         body: JSON.stringify({ title }),
       },
     )
@@ -298,11 +341,11 @@ export async function renameSession(
   }
 }
 
-export async function deleteSession(sessionId: string, userId: string): Promise<boolean> {
+export async function deleteSession(sessionId: string): Promise<boolean> {
   try {
     const res = await fetch(
-      `${API_BASE}/api/sessions/${encodeURIComponent(sessionId)}?user_id=${encodeURIComponent(userId)}`,
-      { method: 'DELETE' },
+      `${API_BASE}/api/sessions/${encodeURIComponent(sessionId)}`,
+      { method: 'DELETE', credentials: 'same-origin' },
     )
     return res.ok && ((await res.json()) as { ok?: boolean }).ok === true
   } catch {
@@ -314,14 +357,11 @@ export async function deleteSession(sessionId: string, userId: string): Promise<
 // 长期记忆
 // ---------------------------------------------------------------
 
-export async function fetchMemories(
-  userId: string,
-  signal?: AbortSignal,
-): Promise<MemoryItem[]> {
+export async function fetchMemories(signal?: AbortSignal): Promise<MemoryItem[]> {
   try {
     const res = await fetch(
-      `${API_BASE}/api/memories?user_id=${encodeURIComponent(userId)}`,
-      { signal },
+      `${API_BASE}/api/memories`,
+      { signal, credentials: 'same-origin' },
     )
     if (!res.ok) return []
     return memoryItems(((await res.json()) as { items?: unknown }).items)
@@ -331,12 +371,13 @@ export async function fetchMemories(
 }
 
 /** 用户自己在面板里写一条备忘。写成功返回这条记忆。 */
-export async function addMemory(userId: string, text: string): Promise<MemoryItem | null> {
+export async function addMemory(text: string): Promise<MemoryItem | null> {
   try {
     const res = await fetch(`${API_BASE}/api/memories`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ user_id: userId, text }),
+      credentials: 'same-origin',
+      body: JSON.stringify({ text }),
     })
     if (!res.ok) return null
     return memoryItems([((await res.json()) as { item?: unknown }).item])[0] ?? null
@@ -346,7 +387,6 @@ export async function addMemory(userId: string, text: string): Promise<MemoryIte
 }
 
 export async function setMemoryPinned(
-  userId: string,
   id: number,
   pinned: boolean,
 ): Promise<boolean> {
@@ -354,7 +394,8 @@ export async function setMemoryPinned(
     const res = await fetch(`${API_BASE}/api/memories/${id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ user_id: userId, pinned }),
+      credentials: 'same-origin',
+      body: JSON.stringify({ pinned }),
     })
     return res.ok
   } catch {
@@ -362,11 +403,11 @@ export async function setMemoryPinned(
   }
 }
 
-export async function deleteMemory(userId: string, id: number): Promise<boolean> {
+export async function deleteMemory(id: number): Promise<boolean> {
   try {
     const res = await fetch(
-      `${API_BASE}/api/memories/${id}?user_id=${encodeURIComponent(userId)}`,
-      { method: 'DELETE' },
+      `${API_BASE}/api/memories/${id}`,
+      { method: 'DELETE', credentials: 'same-origin' },
     )
     return res.ok
   } catch {

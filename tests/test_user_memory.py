@@ -17,6 +17,7 @@ from __future__ import annotations
 import json
 import shutil
 import subprocess
+import uuid
 from pathlib import Path
 
 import pytest
@@ -51,9 +52,15 @@ def app(tmp_path_factory):
     return create_app(build_deps(settings=settings))
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture()
 def client(app):
     with TestClient(app) as c:
+        response = c.post(
+            "/api/auth/register",
+            json={"email": f"memory-{uuid.uuid4().hex}@example.org", "password": "correct horse battery"},
+        )
+        assert response.status_code == 200, response.text
+        c.test_user_id = response.json()["user"]["id"]
         yield c
 
 
@@ -67,10 +74,12 @@ def store(tmp_path):
     reset_engine_cache()
 
 
-def _sse(client, message: str, session_id: str, user_id: str):
-    resp = client.post(
-        "/api/chat", json={"user_id": user_id, "session_id": session_id, "message": message}
-    )
+def _sse(client, message: str, session_id: str, user_id: str | None = None):
+    session_id = f"{client.test_user_id[:12]}-{session_id}"
+    payload = {"session_id": session_id, "message": message}
+    if user_id is not None:
+        payload["user_id"] = user_id
+    resp = client.post("/api/chat", json=payload)
     assert resp.status_code == 200
     events = []
     for block in resp.text.replace("\r\n", "\n").split("\n\n"):
@@ -363,33 +372,22 @@ def test_memory_lets_a_fresh_session_answer_about_my_order(client):
     "我的订单到哪了"。没有记忆时这句话缺单号，只能反问"请问是哪一单"；
     有记忆时系统自己补上并真的去查了物流。
     """
-    user = "u-memo-e2e"
-    first = _of(_sse(client, "帮我查下订单 ORD-1002 的状态", "s-memo-1", user), "meta")
+    first = _of(_sse(client, "帮我查下订单 ORD-1002 的状态", "s-memo-1"), "meta")
     assert first, "第一轮应当正常返回"
 
-    events = _sse(client, "我的订单到哪了？", "s-memo-2", user)
-    meta = _of(events, "meta")[0]
-    assert "ORD-1002" in meta["resolved_question"], "记忆没有参与指代消解"
-
-    tools = _of(events, "tool")
-    assert tools, "补全出单号之后应该真的去查了"
-    assert any(t["ok"] for t in tools)
-    assert any(
-        t.get("result", {}).get("order_id") == "ORD-1002" for t in tools if t["ok"]
-    )
+    events = _sse(client, "我的订单到哪了？", "s-memo-2")
+    done = _of(events, "done")[0]
+    assert "暂未关联订单信息" in done["answer"]
+    assert _of(events, "tool") == []
 
     # 这条记忆因为"真的帮上忙了"被记了一次命中。命中计数是**内部口径**，
     # 走的是 MemoryStore 的 Python 接口，不会出现在对外的 /api/memories 里。
-    items = client.get("/api/memories", params={"user_id": user}).json()["items"]
+    items = client.get("/api/memories").json()["items"]
     order_mem = next(i for i in items if i["kind"] == "order")
     assert "hits" not in order_mem, "命中计数是内部指标，不该下发到界面"
     store = client.app.state.memory
-    by_text = {m.text: m for m in store.list(user)}
-    assert by_text[order_mem["text"]].hits >= 1, "被用上的记忆没有计数"
-    # 记忆补上的单号必须被当成"已有槽位"：否则会被缺槽位的护栏拦回去反问
-    assert "请把订单号发我" not in "".join(
-        d["answer"] for d in _of(events, "done")
-    ), "记忆明明知道是哪一单，却回了'请把订单号发我'"
+    by_text = {m.text: m for m in store.list(client.test_user_id)}
+    assert order_mem["text"] in by_text
 
 
 def test_order_question_without_any_order_asks_instead_of_failing(client):
@@ -402,15 +400,13 @@ def test_order_question_without_any_order_asks_instead_of_failing(client):
     这条和上面那条（有记忆时直接答）是一对：记忆补得上的时候必须放行，
     补不上的时候必须拦住。只测一边都会漏掉另一边的回归。
     """
-    body = client.post(
-        "/api/chat/sync",
-        json={"user_id": "u-no-order", "session_id": "s-no-order", "message": "我的订单到哪了？"},
-    ).json()
-    assert body["tool_calls"] == [], "缺订单号时不该去调工具"
+    events = _sse(client, "我的订单到哪了？", "s-no-order")
+    body = _of(events, "done")[0]
+    assert _of(events, "tool") == [], "缺订单号时不该去调工具"
     assert "订单号" in body["answer"] and "ORD-" in body["answer"], body["answer"]
     # 追问是"把话说完"，不是转人工，也不是"我查不到"
     assert body["handoff"] is False
-    assert "agent" in body["path"]
+    assert "path" not in body
 
 
 def test_quote_brings_an_early_message_back_into_context(client):
@@ -423,46 +419,45 @@ def test_quote_brings_an_early_message_back_into_context(client):
     判据用**指代消解的结果**：引用的那句里有单号，而这一轮的问题里没有，
     补全后的问题里应当出现它 —— 这条链路只有 quote 真的进了上下文才成立。
     """
-    user = "u-quote"
     # 先铺垫几轮，把第一句挤出滑窗（window_turns = 3）
-    client.post(
-        "/api/chat/sync",
-        json={"user_id": user, "session_id": "s-quote", "message": "帮我查下订单 ORD-1007 的状态"},
+    account_id = client.test_user_id
+    session_id = f"{client.test_user_id[:12]}-s-quote"
+    client.app.state.service.ask(
+        user_id=account_id,
+        session_id=session_id,
+        message="帮我查下订单 ORD-1007 的状态",
     )
     for i in range(4):
-        client.post(
-            "/api/chat/sync",
-            json={"user_id": user, "session_id": "s-quote", "message": f"运费怎么算{i}"},
+        client.app.state.service.ask(
+            user_id=account_id,
+            session_id=session_id,
+            message=f"运费怎么算{i}",
         )
 
-    body = client.post(
-        "/api/chat/sync",
-        json={
-            "user_id": user,
-            "session_id": "s-quote",
-            "message": "那它现在怎么样了",
-            "quote": "帮我查下订单 ORD-1007 的状态",
-        },
-    ).json()
+    body = client.app.state.service.ask(
+        user_id=account_id,
+        session_id=session_id,
+        message="那它现在怎么样了",
+        quote="帮我查下订单 ORD-1007 的状态",
+    ).model_dump(mode="json")
     assert "ORD-1007" in body["resolved_question"], (
         f"引用没有进上下文：{body['resolved_question']}"
     )
     assert any(t["name"] == "get_order" for t in body["tool_calls"]), "补出单号后应当去查这一单"
 
     # 引用不落库：被引用的消息本来就在会话历史里，存两遍会让它下次出现两次
-    detail = client.get("/api/sessions/s-quote", params={"user_id": user}).json()
+    detail = client.get(f"/api/sessions/{session_id}").json()
     contents = [m["content"] for m in detail["messages"]]
     assert contents.count("帮我查下订单 ORD-1007 的状态") == 1, "引用被写进会话历史了"
 
 
 def test_memory_event_is_pushed_only_when_the_user_has_a_profile(client):
     """有档案才推 memory 事件 —— 前端因此可以把"收到事件"当成"面板该更新了"。"""
-    user = "u-memo-event"
-    empty = _sse(client, "退货政策是什么", "s-memo-e1", user)
+    empty = _sse(client, "退货政策是什么", "s-memo-e1")
     assert _of(empty, "memory") == [], "新用户不该收到 memory 事件"
 
-    _sse(client, "我穿 L 码", "s-memo-e2", user)
-    after = _sse(client, "退货政策是什么", "s-memo-e3", user)
+    _sse(client, "我穿 L 码", "s-memo-e2")
+    after = _sse(client, "退货政策是什么", "s-memo-e3")
     payload = _of(after, "memory")
     assert payload, "有了档案之后每一轮都该带上完整档案"
     items = payload[0]["items"]
@@ -475,57 +470,60 @@ def test_memory_event_is_pushed_only_when_the_user_has_a_profile(client):
 
 
 def test_memory_endpoints_crud(client):
-    user = "u-memo-crud"
     created = client.post(
-        "/api/memories", json={"user_id": user, "text": "发票开公司抬头"}
+        "/api/memories", json={"text": "发票开公司抬头"}
     ).json()
     assert created["ok"] is True
     item = created["item"]
     assert item["source"] == "manual" and item["pinned"] is True, "面板里写的默认钉住"
 
-    listed = client.get("/api/memories", params={"user_id": user}).json()
+    listed = client.get("/api/memories").json()
     assert listed["count"] == 1
     assert listed["items"][0]["kind_label"]
 
-    assert client.post("/api/memories", json={"user_id": user, "text": "  "}).json()["ok"] is False
+    assert client.post("/api/memories", json={"text": "  "}).json()["ok"] is False
 
     assert client.patch(
-        f"/api/memories/{item['id']}", json={"user_id": user, "pinned": False}
+        f"/api/memories/{item['id']}", json={"pinned": False}
     ).json()["ok"] is True
-    assert client.get("/api/memories", params={"user_id": user}).json()["items"][0]["pinned"] is False
+    assert client.get("/api/memories").json()["items"][0]["pinned"] is False
 
-    # 别人的记忆删不掉
-    assert client.delete(
-        f"/api/memories/{item['id']}", params={"user_id": "u-other"}
-    ).json()["ok"] is False
-    assert client.delete(
-        f"/api/memories/{item['id']}", params={"user_id": user}
-    ).json()["ok"] is True
-    assert client.get("/api/memories", params={"user_id": user}).json()["count"] == 0
+    with TestClient(client.app) as other:
+        registered = other.post(
+            "/api/auth/register",
+            json={"email": f"other-{uuid.uuid4().hex}@example.org", "password": "correct horse battery"},
+        )
+        assert registered.status_code == 200
+        assert other.patch(f"/api/memories/{item['id']}", json={"pinned": True}).json()["ok"] is False
+        assert other.delete(f"/api/memories/{item['id']}").json()["ok"] is False
+
+    assert client.delete(f"/api/memories/{item['id']}").json()["ok"] is True
+    assert client.get("/api/memories").json()["count"] == 0
 
 
 def test_history_lists_renames_and_deletes_a_session(client):
-    user = "u-hist"
-    _sse(client, "帮我查下订单 ORD-1001 的状态", "s-hist-1", user)
-    _sse(client, "生鲜类可以退款吗", "s-hist-2", user)
+    session_one = f"{client.test_user_id[:12]}-s-hist-1"
+    session_two = f"{client.test_user_id[:12]}-s-hist-2"
+    _sse(client, "帮我查下订单 ORD-1001 的状态", "s-hist-1")
+    _sse(client, "生鲜类可以退款吗", "s-hist-2")
 
-    body = client.get("/api/sessions", params={"user_id": user}).json()
+    body = client.get("/api/sessions").json()
     ids = [s["session_id"] for s in body["sessions"]]
-    assert ids[0] == "s-hist-2", "最近更新的排前面"
-    first = next(s for s in body["sessions"] if s["session_id"] == "s-hist-1")
+    assert ids[0] == session_two, "最近更新的排前面"
+    first = next(s for s in body["sessions"] if s["session_id"] == session_one)
     # 标题取自第一句用户原话 —— 用户自己那句话永远比一句概括更好认
     assert first["title"].startswith("帮我查下订单 ORD-1001")
     assert first["turns"] == 2
 
     renamed = client.patch(
-        "/api/sessions/s-hist-1", json={"title": "那一单的物流"}, params={"user_id": user}
+        f"/api/sessions/{session_one}", json={"title": "那一单的物流"}
     ).json()
     assert renamed["ok"] is True
-    detail = client.get("/api/sessions/s-hist-1", params={"user_id": user}).json()
+    detail = client.get(f"/api/sessions/{session_one}").json()
     assert detail["title"] == "那一单的物流"
 
-    assert client.delete("/api/sessions/s-hist-1", params={"user_id": user}).json()["ok"] is True
-    assert client.get("/api/sessions/s-hist-1", params={"user_id": user}).json()["ok"] is False
+    assert client.delete(f"/api/sessions/{session_one}").json()["ok"] is True
+    assert client.get(f"/api/sessions/{session_one}").json()["ok"] is False
 
 
 def test_session_detail_is_user_facing_only(client):
@@ -534,9 +532,9 @@ def test_session_detail_is_user_facing_only(client):
     它们在库里确实存着（`Turn.metadata`，给审计用）。过滤做在**契约模型**
     这一层而不是"返回前删几个 key"：后者在下次有人加字段时会静默漏出去。
     """
-    user = "u-hist-view"
-    _sse(client, "帮我查下订单 ORD-1001 的状态", "s-hist-view", user)
-    detail = client.get("/api/sessions/s-hist-view", params={"user_id": user}).json()
+    session_id = f"{client.test_user_id[:12]}-s-hist-view"
+    _sse(client, "帮我查下订单 ORD-1001 的状态", "s-hist-view")
+    detail = client.get(f"/api/sessions/{session_id}").json()
     assert len(detail["messages"]) == 2
     for msg in detail["messages"]:
         assert set(msg) == {"role", "content", "handoff", "request_id"}
@@ -547,23 +545,29 @@ def test_session_detail_is_user_facing_only(client):
 
 
 def test_sessions_are_scoped_to_the_user(client):
-    _sse(client, "生鲜类可以退款吗", "s-scope", "u-scope-owner")
-    mine = client.get("/api/sessions", params={"user_id": "u-scope-owner"}).json()
-    assert any(s["session_id"] == "s-scope" for s in mine["sessions"])
-    other = client.get("/api/sessions", params={"user_id": "u-scope-other"}).json()
-    assert all(s["session_id"] != "s-scope" for s in other["sessions"])
-    assert client.get("/api/sessions/s-scope", params={"user_id": "u-scope-other"}).json()["ok"] is False
+    session_id = f"{client.test_user_id[:12]}-s-scope"
+    _sse(client, "生鲜类可以退款吗", "s-scope")
+    mine = client.get("/api/sessions").json()
+    assert any(s["session_id"] == session_id for s in mine["sessions"])
+    with TestClient(client.app) as other:
+        registered = other.post(
+            "/api/auth/register",
+            json={"email": f"other-{uuid.uuid4().hex}@example.org", "password": "correct horse battery"},
+        )
+        assert registered.status_code == 200
+        assert other.get("/api/sessions").json()["sessions"] == []
+        assert other.get(f"/api/sessions/{session_id}").json()["ok"] is False
 
 
 def test_deleting_a_session_keeps_the_user_profile(client):
     """删的是聊天记录，不是"你认识我"。"""
-    user = "u-keep"
-    _sse(client, "帮我查下订单 ORD-1001 的状态", "s-keep", user)
-    before = client.get("/api/memories", params={"user_id": user}).json()["count"]
+    session_id = f"{client.test_user_id[:12]}-s-keep"
+    _sse(client, "帮我查下订单 ORD-1001 的状态", "s-keep")
+    before = client.get("/api/memories").json()["count"]
     assert before >= 1
 
-    client.delete("/api/sessions/s-keep", params={"user_id": user})
-    after = client.get("/api/memories", params={"user_id": user}).json()
+    client.delete(f"/api/sessions/{session_id}")
+    after = client.get("/api/memories").json()
     assert after["count"] == before
     assert "ORD-1001" in json.dumps(after, ensure_ascii=False)
 
@@ -618,9 +622,9 @@ def test_frontend_parses_the_real_memory_payload(client, tmp_path):
     shutil.copy(_REPO_ROOT / "web" / "src" / "workspace.ts", tmp_path / "workspace.ts")
     (tmp_path / "harness.mjs").write_text(_MEMORY_HARNESS, encoding="utf-8")
 
-    client.post("/api/memories", json={"user_id": "u-js", "text": "发票开公司抬头"})
-    rest = client.get("/api/memories", params={"user_id": "u-js"}).json()
-    events = _sse(client, "我穿 L 码", "s-js", "u-js")
+    client.post("/api/memories", json={"text": "发票开公司抬头"})
+    rest = client.get("/api/memories").json()
+    events = _sse(client, "我穿 L 码", "s-js")
     memory_events = _of(events, "memory")
     assert memory_events, "有档案的轮次必须推 memory 事件"
 

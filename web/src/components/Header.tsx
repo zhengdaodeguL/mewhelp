@@ -4,6 +4,7 @@ import {
   IconCommand,
   IconDownload,
   IconHistory,
+  IconLogOut,
   IconMonitor,
   IconMoon,
   IconPanel,
@@ -25,6 +26,8 @@ const THEME_ICON: Record<ThemeChoice, typeof IconSun> = {
 }
 
 interface Props {
+  email: string
+  onLogout: () => void
   online: boolean
   /** 历史栏开关（窄屏下它就是抽屉开关） */
   railOpen: boolean
@@ -47,6 +50,8 @@ interface Props {
 }
 
 export function Header({
+  email,
+  onLogout,
   online,
   railOpen,
   onToggleRail,
@@ -94,12 +99,22 @@ export function Header({
           <h1 className="brand-title">MewHelp</h1>
           <p className="brand-status">
             <span className={`status-dot ${online ? 'status-dot--online' : 'status-dot--offline'}`} />
-            {online ? '客服工作台 · 在线' : '正在连接服务…'}
+            {online ? '在线客服' : '正在连接…'}
           </p>
         </div>
       </div>
 
       <div className="header-actions">
+        <span className="header-account" title={email}>{email}</span>
+        <button
+          type="button"
+          className="icon-btn"
+          title="退出登录"
+          aria-label="退出登录"
+          onClick={onLogout}
+        >
+          <IconLogOut />
+        </button>
         <button
           type="button"
           className="icon-btn"

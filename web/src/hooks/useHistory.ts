@@ -13,13 +13,12 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { deleteSession, fetchSessions, renameSession } from '../api/client'
 import type { SessionBrief } from '../types'
 
-export function useHistory(userId: string) {
+export function useHistory() {
   const [sessions, setSessions] = useState<SessionBrief[]>([])
   const [loading, setLoading] = useState(false)
   const inflight = useRef<AbortController | null>(null)
 
   const refresh = useCallback(async () => {
-    if (!userId) return
     // 上一次还没回来就再来一次（连续两轮对话）时，取消旧的 ——
     // 不取消的话两次响应回来的顺序不确定，列表可能被旧数据覆盖回去。
     inflight.current?.abort()
@@ -27,12 +26,12 @@ export function useHistory(userId: string) {
     inflight.current = controller
     setLoading(true)
     try {
-      const rows = await fetchSessions(userId, controller.signal)
+      const rows = await fetchSessions(controller.signal)
       if (!controller.signal.aborted) setSessions(rows)
     } finally {
       if (!controller.signal.aborted) setLoading(false)
     }
-  }, [userId])
+  }, [])
 
   useEffect(() => {
     void refresh()
@@ -41,24 +40,24 @@ export function useHistory(userId: string) {
 
   const rename = useCallback(
     async (sessionId: string, title: string) => {
-      const ok = await renameSession(sessionId, title, userId)
+      const ok = await renameSession(sessionId, title)
       if (!ok) return false
       setSessions((prev) =>
         prev.map((s) => (s.sessionId === sessionId ? { ...s, title: title || s.title } : s)),
       )
       return true
     },
-    [userId],
+    [],
   )
 
   const remove = useCallback(
     async (sessionId: string) => {
-      const ok = await deleteSession(sessionId, userId)
+      const ok = await deleteSession(sessionId)
       if (!ok) return false
       setSessions((prev) => prev.filter((s) => s.sessionId !== sessionId))
       return true
     },
-    [userId],
+    [],
   )
 
   return { sessions, loading, refresh, rename, remove }

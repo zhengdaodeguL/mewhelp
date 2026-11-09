@@ -117,10 +117,10 @@ PYTHONPATH=src python -m mewhelp.cli serve --port 8123
 # 用户界面：GET /      存活探针：GET /api/health（只回 {"status":"ok"}）
 ```
 
-> **请求体字段是 `message`，不是 `question`**；接口都在 `/api` 前缀下
-> （`/api/chat` 流式、`/api/chat/sync` 非流式、`/api/orders` 订单快捷选择、
-> `/api/sessions` 会话历史、`/api/memories` 长期记忆）。
-> 这两点是实际踩过的坑。
+> **请求体字段是 `message`，不是 `question`**；接口都在 `/api` 前缀下。
+> 用户先通过 `/api/auth/register` 或 `/api/auth/login` 登录，浏览器会保存
+> HttpOnly 会话 Cookie；随后使用 `/api/chat` 流式问答、`/api/orders` 订单快捷选择、
+> `/api/sessions` 会话历史和 `/api/memories` 长期记忆。
 
 > **开发者/调试者入口不开在 HTTP 上**：`/docs`、`/redoc`、`/openapi.json`、
 > `/api/trace/{id}` 都关闭了，`/api/health` 只回存活状态、不暴露组件模式，
@@ -128,10 +128,9 @@ PYTHONPATH=src python -m mewhelp.cli serve --port 8123
 > `python -m mewhelp.cli flywheel`（问题池统计）与 Python 侧的 `FlywheelStore`
 > 接口。这些信息面向的是部署与排查，不该敞给任何能访问这个域名的前端。
 
-> 会话与记忆接口一律带 `user_id`（`GET /api/sessions`、`GET /api/memories`、
-> `DELETE /api/memories/{id}` …）。演示环境没有登录态，这个查询参数是眼下
-> **唯一**的所有权边界 —— 少了它，谁都能列出、删掉别人的会话与档案。
-> 真实系统里它必须来自登录态。
+> 会话、记忆、反馈和订单接口都从服务端登录态取得用户身份，不接受请求体或查询
+> 参数里的 `user_id`。账号之间的会话和长期记忆彼此隔离；退出登录后，Cookie
+> 会被撤销，所有需要账号的接口都会返回 401。
 
 ### 前端（React）
 
@@ -181,8 +180,8 @@ npm run build        # 产物输出到 src/mewhelp/api/static/
 （用户上一通对话查过 ORD-1002，这次新开一个会话）
 用户：我的订单到哪了？
   → 指代消解读用户档案，把"我的订单"补成"订单 ORD-1002"（第 0 层，纯规则）
-  → 走业务工具，真的去查了这一单
-  → 工作区里出现订单卡与物流轨迹
+  → 如果账号已接入真实订单来源，再去查这一单
+  → 有真实结果时，工作区出现订单卡与物流轨迹；未接入时明确提示用户
 ```
 
 没有记忆时这句话缺订单号，只能反问"请问是哪一单"—— 而系统其实知道。
@@ -451,16 +450,16 @@ Toast 也高了 20px。实测探针 `both → top:20`、`backwards → top:0`。
 GET /api/health → 200
 {"status":"ok"}
 
-POST /api/chat/sync {"user_id":"u1","session_id":"s1","message":"运费怎么算"} → 200
-  intent policy_faq | exit knowledge | path ['resolve','classify','retrieve','gate','generate']
-  answer 根据平台规则：\n\n运费与损失承担：无理由退货的往返运费由用户承担…
-  （**空行分块**：段落之间空一行，表格逐行保留 —— 前端据此渲染成段落与表格）
-  usage  {'input_tokens': 524, 'output_tokens': 363, 'total_tokens': 887, 'cost_usd': 0.0}
+POST /api/auth/login {"email":"you@example.com","password":"**********"} → 200
+  Set-Cookie: mewhelp_session=…; HttpOnly; SameSite=Lax
+
+POST /api/chat {"session_id":"s1","message":"运费怎么算"} → 200（SSE）
+  event: done
+  data: {"answer":"根据平台规则：…","handoff":false}
 
 GET /api/orders → 200
-  {"count":2,"demo":true,"orders":[{"order_id":"ORD-1001","status_label":"待付款/待处理",
-   "title":"MewSound Air 无线蓝牙耳机","total_amount":728.0,"item_count":2}, …]}
-  （界面上的订单快捷选择用它 —— 没传 user_id 时 demo 为 true，标明是演示数据）
+  {"count":0,"orders":[]}
+  （未接入真实订单来源时不展示共享样例数据）
 ```
 
 SSE 事件流在 `POST /api/chat`，事件名按契约冻结：`meta` / `token` / `tool` / `evidence` / `done` / `error`。
@@ -950,10 +949,8 @@ ORD-1007 那一单"这类事实，本来就不该随时间衰减 —— 它们�
 
 诚实写在这里，避免读者用错误的预期去验证：
 
-- **会话历史与长期记忆接口没有鉴权，所有权只靠 `user_id` 查询参数。** 演示环境
-  没有登录态，这是眼下唯一的所有权边界：服务层每条读写都带 `user_id` 过滤
-  （`test_sessions_are_scoped_to_the_user` / 删别人的记忆会返回 `ok:false`），
-  但它防不住"自己伪造一个 user_id"。真实系统里它必须来自登录态。
+- **注册与登录目前没有内置请求限速。** 生产部署应在反向代理或网关按 IP 和账号
+  做限频；密码校验使用 PBKDF2 并在线程池执行，避免阻塞事件循环。
 - **`audit_log` 表建了、但运行时没有写入路径。** 节点级审计目前走内存里的
   `Tracer`（CLI / 评估脚本可用 `trace()`），落库这条链还没接上 —— 所以重启之后
   历史请求的调用树就查不到了。表结构本身是完整的（`tests/test_storage.py` 覆盖）。
