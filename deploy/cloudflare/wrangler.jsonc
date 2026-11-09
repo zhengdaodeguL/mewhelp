@@ -1,0 +1,7 @@
+{
+  "name": "mewhelp-domain",
+  "main": "worker.js",
+  "compatibility_date": "2026-11-09",
+  "account_id": "3ad140c52d098e41ee3957fb6ec68ffc",
+  "workers_dev": true
+}

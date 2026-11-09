@@ -21,6 +21,7 @@ finetune/artifacts/
 
 # 环境
 .env
+.wrangler/
 
 # 验证用的截图（临时产物，看一眼就删）
 shots/
