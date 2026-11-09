@@ -132,6 +132,21 @@ PYTHONPATH=src python -m mewhelp.cli serve --port 8123
 > 参数里的 `user_id`。账号之间的会话和长期记忆彼此隔离；退出登录后，Cookie
 > 会被撤销，所有需要账号的接口都会返回 401。
 
+### Instabox 公网部署
+
+公网入口固定转发到机器的 `8000` 端口。机器保留两个独立版本目录和数据库：
+`pure` 使用 `main` 对应的用户版，`demo` 使用演示分支；切换不会共用账号、会话
+或演示数据。
+
+```bash
+instabox exec <机器名> -- /data/home/mewhelp-runtime/switch-version.sh pure
+instabox exec <机器名> -- /data/home/mewhelp-runtime/switch-version.sh demo
+```
+
+切换会重启应用进程，浏览器请求会短暂重连；域名和公网地址保持不变。脚本检查
+本机健康探针，启动失败时恢复切换前的版本。当前运行模式沿用 mock 配置；真实模型
+或订单来源需要分别配置后才会生效。
+
 ### 前端（React）
 
 界面是 React 19 + TypeScript + Vite 写的，源码在 `web/`。**产物已提交**，
