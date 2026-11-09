@@ -5,7 +5,6 @@ import { Composer } from './components/Composer'
 import { FindBar } from './components/FindBar'
 import { Header } from './components/Header'
 import { HistoryRail } from './components/HistoryRail'
-import { Landscape } from './components/Landscape'
 import { MessageList } from './components/MessageList'
 import { SplitHandle } from './components/SplitHandle'
 import { Toaster } from './components/Toaster'
@@ -21,7 +20,7 @@ import { useStars } from './hooks/useStars'
 import { useTheme } from './hooks/useTheme'
 import { downloadText, exportFileName, sessionToMarkdown } from './session-export'
 import { toast } from './toast'
-import { prefersReducedMotion, trackPointer, useCrossfade, useDelayedUnmount, withThemeWipe } from './transition'
+import { trackPointer, useCrossfade, useDelayedUnmount, withThemeWipe } from './transition'
 import type { ChatMessage, MemoryItem, Rating } from './types'
 import { cardToText } from './workspace'
 
@@ -57,7 +56,6 @@ export default function App() {
   const [resizing, setResizing] = useState(false)
   const inputRef = useRef<HTMLTextAreaElement>(null)
   const flashTimer = useRef<number | undefined>(undefined)
-  const appRef = useRef<HTMLDivElement>(null)
 
   //: 换会话时整段对话交叉淡出淡入 —— 切会话是"换了一件事在聊"，
   //: 消息原地替换会让人以为界面卡了一下。
@@ -121,39 +119,6 @@ export default function App() {
   //: 最近一次指针位置。主题切换的圆形揭示要拿它当圆心 ——
   //: 从用户刚刚点的地方扩散开来，而不是从屏幕中间。
   useEffect(() => trackPointer(), [])
-
-  //: 跟着指针走的环境光。它压在面板**下面**，会被面板的 backdrop-filter
-  //: 一并模糊掉，于是看起来是"玻璃背后的光"而不是贴在屏幕上的光斑。
-  useEffect(() => {
-    const el = appRef.current
-    if (!el || prefersReducedMotion()) return
-    let frame = 0
-    let x = 0
-    let y = 0
-    // .app 在宽屏是居中的一块（外边距 20px），指针坐标得减掉它的原点；
-    // 它在页面里不会移动（body 不滚动），所以量一次、窗口变化时再量
-    let box = el.getBoundingClientRect()
-    const measure = () => {
-      box = el.getBoundingClientRect()
-    }
-    const apply = () => {
-      frame = 0
-      el.style.setProperty('--mx', `${x - box.left}px`)
-      el.style.setProperty('--my', `${y - box.top}px`)
-    }
-    const onMove = (e: PointerEvent) => {
-      x = e.clientX
-      y = e.clientY
-      if (!frame) frame = window.requestAnimationFrame(apply)
-    }
-    window.addEventListener('pointermove', onMove, { passive: true })
-    window.addEventListener('resize', measure)
-    return () => {
-      window.removeEventListener('pointermove', onMove)
-      window.removeEventListener('resize', measure)
-      if (frame) window.cancelAnimationFrame(frame)
-    }
-  }, [])
 
   // 抽屉只在窄屏存在；转回宽屏时复位，免得下次变窄又莫名其妙弹开
   useEffect(() => {
@@ -498,12 +463,7 @@ export default function App() {
 
   return (
     <>
-      <Landscape />
-
-      <div className="app" ref={appRef}>
-        {/* 环境光：跟着指针的一团柔光，压在所有面板下面 */}
-        <div className="ambient" aria-hidden="true" />
-
+      <div className="app">
         <div className={`rail-slot${railClass}`}>
         <HistoryRail
           sessions={history.sessions}

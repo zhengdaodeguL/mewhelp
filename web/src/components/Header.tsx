@@ -91,10 +91,10 @@ export function Header({
           M
         </div>
         <div className="brand-text">
-          <h1 className="brand-title">MewHelp 客服</h1>
+          <h1 className="brand-title">MewHelp</h1>
           <p className="brand-status">
             <span className={`status-dot ${online ? 'status-dot--online' : 'status-dot--offline'}`} />
-            {online ? '在线' : '连接中…'}
+            {online ? '客服工作台 · 在线' : '正在连接服务…'}
           </p>
         </div>
       </div>

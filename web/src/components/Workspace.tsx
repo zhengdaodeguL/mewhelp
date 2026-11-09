@@ -278,13 +278,10 @@ function CardsView({ cards }: { cards: WorkspaceCard[] }) {
   if (cards.length === 0) {
     return (
       <div className="workspace-empty">
-        <div className="grid-canvas" aria-hidden="true" />
-        <div className="grid-scan" aria-hidden="true" />
-        <p className="workspace-empty-text">
-          对话里查到的订单、物流轨迹和政策依据
-          <br />
-          会陈列在这里
-        </p>
+        <div className="workspace-empty-copy">
+          <p className="workspace-empty-title">本次对话暂无资料</p>
+          <p className="workspace-empty-text">订单、物流与政策依据会显示在这里。</p>
+        </div>
       </div>
     )
   }

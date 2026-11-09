@@ -33,8 +33,9 @@ export function EmptyState({ disabled, onPick }: Props) {
       <div className="empty-mark" aria-hidden="true">
         <IconSpark width={20} height={20} />
       </div>
-      <h2 className="empty-title">有什么可以帮你？</h2>
-      <p className="empty-sub">查订单、看物流、问退换货，或者直接说一句也行。</p>
+      <p className="empty-kicker">客服工作台 / 新会话</p>
+      <h2 className="empty-title">从一件事开始</h2>
+      <p className="empty-sub">查订单、看物流、问退换货，或直接描述你要处理的问题。</p>
       <div className="empty-chips">
         {SUGGESTIONS.map(({ text, Icon }, i) => (
           <button
