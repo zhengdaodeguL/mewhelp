@@ -6,7 +6,7 @@ RELEASES="$ROOT/releases"
 DATA="$ROOT/data"
 SERVICE="${MEWHELP_SERVICE_NAME:-mewhelp-demo.service}"
 PORT="${MEWHELP_PORT:-8000}"
-DEMO_DATABASE="${MEWHELP_DEMO_DATABASE:-/data/workspace/mewhelp-runtime/mewhelp.db}"
+DEMO_DATABASE="${MEWHELP_DEMO_DATABASE:-$DATA/demo.db}"
 target="${1:-}"
 
 case "$target" in
