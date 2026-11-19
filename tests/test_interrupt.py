@@ -9,12 +9,188 @@
 from __future__ import annotations
 
 from pathlib import Path
+import asyncio
+import json
 
 import pytest
 
 from mewhelp.domain import Intent
+from mewhelp.api.service import ChatService, SessionStore
+from mewhelp.config import Settings
+from mewhelp.generation import current_generation
+from mewhelp.llm import LLMError, LLMResponse, MockLLMClient
+from mewhelp.storage import init_db
 from mewhelp.workflow.graph import build_deps, build_graph, make_sqlite_checkpointer
 from mewhelp.workflow.state import new_state
+
+
+@pytest.fixture
+def streaming_service(tmp_path):
+    """真正跑图，以可控的模型分片复现生成中的停顿。"""
+    settings = Settings(_env_file=None, database_url=f"sqlite:///{tmp_path / 'stream.db'}")
+    init_db(settings=settings)
+
+    class StreamingLLM(MockLLMClient):
+        def __init__(self):
+            super().__init__(settings)
+            self.next_piece = asyncio.Event()
+            self.request_closed = asyncio.Event()
+            self.fail = False
+            self.handoff = False
+            self.evaluated = False
+            self.stream_calls = []
+
+        def chat_stream(self, messages, *, on_token, **kwargs):
+            self.stream_calls.append(kwargs["task"])
+
+            async def generate():
+                try:
+                    on_token("第一片")
+                    await self.next_piece.wait()
+                    if self.fail:
+                        raise LLMError("模拟流在正文中途失败")
+                    on_token("第二片")
+                    return LLMResponse(text="第一片第二片")
+                finally:
+                    self.request_closed.set()
+
+            return current_generation.get().run(generate())
+
+        def chat(self, messages, **kwargs):
+            if kwargs.get("task") == "self_eval":
+                self.evaluated = True
+                if self.handoff:
+                    return LLMResponse(text='{"grounded":false,"coverage":0}')
+            assert kwargs.get("task") != "generate", "最终生成必须使用流式接口"
+            return super().chat(messages, **kwargs)
+
+    llm = StreamingLLM()
+    deps = build_deps(settings=settings, llm=llm)
+    deps.retriever.load_from_dir(Path("data/knowledge"))
+    service = ChatService(
+        graph=build_graph(deps), settings=settings, sessions=SessionStore(settings),
+    )
+    return service, llm
+
+
+async def _first_token(events):
+    opening = []
+    async for event in events:
+        opening.append(event)
+        if event["event"] == "token":
+            return opening
+    raise AssertionError("未收到模型 token")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("handoff", [False, True])
+async def test_stream_tokens_arrive_before_generation_finishes(streaming_service, monkeypatch, handoff):
+    service, llm = streaming_service
+    llm.handoff = handoff
+
+    async def no_sleep(*args, **kwargs):
+        raise AssertionError("SSE 不应添加人为延迟")
+
+    monkeypatch.setattr(asyncio, "sleep", no_sleep)
+    events = service.stream(user_id="u", session_id="s", message="尺码怎么选")
+    opening = await asyncio.wait_for(_first_token(events), 3)
+    assert [e["event"] for e in opening] == ["meta", "evidence", "token"]
+    assert json.loads(opening[-1]["data"])["text"] == "第一片"
+    assert not llm.request_closed.is_set()
+    assert not llm.evaluated
+    assert service.sessions.load("s", user_id="u") == []
+    llm.next_piece.set()
+    remaining = [event async for event in events]
+    assert remaining[0]["event"] == "token"
+    assert json.loads(remaining[0]["data"])["text"] == "第二片"
+    assert remaining[-1]["event"] == "done"
+    answer = "".join(json.loads(e["data"])["text"] for e in opening + remaining if e["event"] == "token")
+    assert json.loads(remaining[-1]["data"])["answer"] == answer
+    assert json.loads(remaining[-1]["data"])["handoff"] is handoff
+    assert service.sessions.load("s", user_id="u")[-1].content == answer
+    assert llm.stream_calls == ["generate"]
+    assert llm.evaluated
+
+
+@pytest.mark.asyncio
+async def test_stop_closes_request_without_saving_and_retry_saves_once(streaming_service):
+    service, llm = streaming_service
+    events = service.stream(user_id="u", session_id="s", message="尺码怎么选")
+    await asyncio.wait_for(_first_token(events), 3)
+    await events.aclose()
+    await events.aclose()
+    await asyncio.wait_for(llm.request_closed.wait(), 3)
+    assert not llm.evaluated
+    assert service.sessions.load("s", user_id="u") == []
+    assert service.sessions.list_sessions("u") == []
+    assert len(service.cache) == 0
+    llm.next_piece.set()
+    retry = [e async for e in service.stream(user_id="u", session_id="s", message="尺码怎么选")]
+    assert retry[-1]["event"] == "done"
+    assert len(service.sessions.list_sessions("u")) == 1
+    assert [t.role for t in service.sessions.load("s", user_id="u")] == ["user", "assistant"]
+    assert len(service.cache) == 1
+
+
+@pytest.mark.asyncio
+async def test_broken_stream_does_not_save_partial_answer(streaming_service):
+    service, llm = streaming_service
+    events = service.stream(user_id="u", session_id="s", message="尺码怎么选")
+    await asyncio.wait_for(_first_token(events), 3)
+    llm.fail = True
+    llm.next_piece.set()
+    with pytest.raises(LLMError, match="中途失败"):
+        await anext(events)
+    assert not llm.evaluated
+    assert service.sessions.load("s", user_id="u") == []
+    assert len(service.cache) == 0
+
+
+@pytest.mark.asyncio
+async def test_stop_after_final_token_still_skips_persistence(streaming_service):
+    service, llm = streaming_service
+    events = service.stream(user_id="u", session_id="s", message="尺码怎么选")
+    await asyncio.wait_for(_first_token(events), 3)
+    llm.next_piece.set()
+    assert json.loads((await anext(events))["data"])["text"] == "第二片"
+    await events.aclose()
+    await events.aclose()
+    assert service.sessions.load("s", user_id="u") == []
+    assert len(service.cache) == 0
+
+
+@pytest.mark.asyncio
+async def test_stop_cancels_background_memory_request(streaming_service):
+    from mewhelp.memory.store import MemoryStore
+
+    service, llm = streaming_service
+    service.memory = MemoryStore(service.settings)
+    service.llm = llm
+    entered, closed = asyncio.Event(), asyncio.Event()
+    original_chat = llm.chat
+
+    def chat(messages, **kwargs):
+        if kwargs.get("task") == "memory":
+            async def extract():
+                entered.set()
+                try:
+                    await asyncio.Event().wait()
+                finally:
+                    closed.set()
+            return current_generation.get().run(extract())
+        return original_chat(messages, **kwargs)
+
+    llm.chat = chat
+    events = service.stream(user_id="u", session_id="s", message="尺码怎么选")
+    consumer = asyncio.create_task(anext(events))
+    await asyncio.wait_for(entered.wait(), 3)
+    consumer.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        await consumer
+    await asyncio.wait_for(closed.wait(), 3)
+    assert llm.stream_calls == []
+    assert service.sessions.load("s", user_id="u") == []
+    assert service.memory.list("u") == []
 
 
 @pytest.fixture(scope="module")

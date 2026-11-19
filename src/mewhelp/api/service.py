@@ -25,12 +25,14 @@ import time
 from collections import OrderedDict
 from collections.abc import AsyncIterator, Iterator, Sequence
 from concurrent.futures import Future
+from contextvars import copy_context
 from dataclasses import dataclass
 from typing import Any
 
 from sqlalchemy import select
 
 from ..config import Settings, get_settings
+from ..generation import GenerationContext, current_generation, check_cancelled
 from ..memory.extract import extract_candidates, prompt_lines, used_memory_ids
 from ..memory.store import MemoryStore
 from ..schemas import (
@@ -55,10 +57,6 @@ logger = logging.getLogger("mewhelp.api")
 #: 单条消息的字符上限。超长输入几乎从来不是"用户想问得更细"，而是误粘贴
 #: （聊天记录、日志、整篇文档）。直接丢给模型既慢又挤爆上下文，所以显式挡掉。
 MAX_MESSAGE_CHARS = 2000
-
-#: 逐字推送的节奏。mock 下 answer 是瞬间生成的，靠这个间隔造出"模型在打字"
-#: 的观感；将来接了真实流式输出，把常量调成 0 即可，调用方一行不用改。
-STREAM_CHUNK_SLEEP = 0.01
 
 #: 每次推送的字数，循环取值 —— 2~4 字一块接近人眼的阅读节奏，
 #: 定长切块在中文里会出现"恰好切在词中间"的机械感。
@@ -292,6 +290,7 @@ class SessionStore:
         """
         if not session_id or not turns:
             return []
+        check_cancelled()
         try:
             with session_scope(settings=self.settings) as s:
                 row = s.get(SessionRow, session_id)
@@ -315,6 +314,7 @@ class SessionStore:
                 row.turns_json = encode_turns(history)
                 if not (row.title or "").strip():
                     row.title = _title_from(history)
+                check_cancelled()
             return history
         except SessionOwnershipError:
             raise
@@ -537,7 +537,8 @@ def _extract_in_background(llm: Any, question: str) -> Any:
         except BaseException as exc:  # noqa: BLE001 —— 抽取失败不能杀死线程
             future.set_exception(exc)
 
-    threading.Thread(target=run, daemon=True, name="mewhelp-memory").start()
+    context = copy_context()
+    threading.Thread(target=context.run, args=(run,), daemon=True, name="mewhelp-memory").start()
     return future
 
 
@@ -616,6 +617,7 @@ class ChatService:
         message: str,
         quote: str = "",
     ) -> ConversationResult:
+        check_cancelled()
         text = (message or "").strip()
         history = self.sessions.load(session_id, user_id=user_id)
 
@@ -680,6 +682,9 @@ class ChatService:
         # 并发跑不产生任何顺序问题：真正决定先后的是 `_memorize` 里那三步
         # （先记命中、再落库、最后回读），这里的线程只负责"问模型要候选"。
         learner = _extract_in_background(self.llm, text) if (self.memory and self.llm) else None
+        generation = current_generation.get()
+        if generation is not None:
+            generation.learner = learner
 
         try:
             state = self.graph.invoke(
@@ -693,6 +698,9 @@ class ChatService:
                 )
             )
         except Exception as exc:  # noqa: BLE001
+            check_cancelled()
+            if generation is not None and generation.text:
+                raise
             # 图自己已经层层兜底了，走到这里说明是编排层的意外（比如状态结构
             # 不兼容）。仍然要给用户一句话，而不是一个 500。
             logger.exception("[api] 图执行异常")
@@ -729,6 +737,8 @@ class ChatService:
         learner: Any = None,
     ) -> ConversationResult:
         """收尾：缓存现场、登记 trace、把这一轮写回会话。"""
+        check_cancelled()
+        generation = current_generation.get()
         retrieval = state.get("retrieval") if state else None
         if error and result.trace == []:
             # 崩在编排层时留一条自己的痕迹，否则 /api/trace 会空得让人以为
@@ -738,6 +748,10 @@ class ChatService:
             result.trace = [
                 TraceStep(node="api", error=error, details={"request_id": result.request_id})
             ]
+        if generation is not None:
+            # SSE 消费完所有正文后才提交，不能在排队发送前就保存整轮。
+            generation.finish = state
+            return result
         self.cache.put(CachedRun(result=result, retrieval=retrieval))
         self._record_trace(result)
         self._persist(result)
@@ -765,6 +779,7 @@ class ChatService:
         if self.memory is None or not result.user_id:
             return
         try:
+            check_cancelled()
             injected = self.memory.for_prompt(result.user_id)
             self.memory.mark_used(
                 result.user_id,
@@ -776,6 +791,7 @@ class ChatService:
                 candidates = learner.result() if learner is not None else extract_candidates(
                     self.llm, result.question
                 )
+                check_cancelled()
                 self.memory.remember_many(result.user_id, candidates)
             result.memories = self.memory.list(result.user_id)
         except Exception as exc:  # noqa: BLE001 —— 记忆失败不影响答复
@@ -798,6 +814,7 @@ class ChatService:
                 logger.warning("[api] trace 登记失败：%s", exc)
 
     def _persist(self, result: ConversationResult) -> None:
+        check_cancelled()
         turns = [
             Turn(
                 role="user",
@@ -818,6 +835,91 @@ class ChatService:
             ),
         ]
         self.sessions.append(result.session_id, result.user_id, turns)
+
+    async def stream(self, **kwargs: Any) -> AsyncIterator[dict[str, str]]:
+        """保留同步图，通过请求上下文即时转发最终生成的分片。"""
+        generation = GenerationContext()
+        queue: asyncio.Queue = asyncio.Queue()
+        prepared: ConversationResult | None = None
+
+        def emit(event):
+            generation.check()
+            generation.loop.call_soon_threadsafe(queue.put_nowait, event)
+
+        def prepare(state):
+            nonlocal prepared
+            generation.check()
+            prepared = result_from_state(state, latency_ms=0)
+            # memory 必须先于 token；沿用原有抽取结果，不增加模型调用。
+            self._memorize(prepared, learner=generation.learner)
+            for event in _opening_events(prepared):
+                emit(event)
+
+        def token(piece):
+            generation.check()
+            generation.text += piece
+            emit(sse_event(EVENT_TOKEN, {"text": piece}))
+
+        generation.prepare = prepare
+        generation.token = token
+
+        async def produce():
+            context_token = current_generation.set(generation)
+            try:
+                result = await asyncio.to_thread(self.ask, **kwargs)
+                queue.put_nowait(result)
+            except Exception as exc:
+                queue.put_nowait(exc)
+            finally:
+                current_generation.reset(context_token)
+
+        producer = asyncio.create_task(produce())
+        try:
+            while True:
+                item = await queue.get()
+                if isinstance(item, Exception):
+                    raise item
+                if isinstance(item, ConversationResult):
+                    result = item
+                    break
+                yield item
+            generation.check()
+            if prepared is None:
+                # 追问、工具答复与兜底没有模型流，一次发送全文，不造打字延迟。
+                context_token = current_generation.set(generation)
+                try:
+                    await asyncio.to_thread(self._memorize, result, learner=generation.learner)
+                finally:
+                    current_generation.reset(context_token)
+                for event in _opening_events(result):
+                    yield event
+            else:
+                result.memories = prepared.memories
+            if not result.answer.startswith(generation.text):
+                raise RuntimeError("流式正文与最终答复不一致")
+            suffix = result.answer[len(generation.text):]
+            if suffix:
+                yield sse_event(EVENT_TOKEN, {"text": suffix})
+            generation.check()
+            # 恢复上下文后提交，让存储边界仍能观察断连；_finish 只登记一次。
+            context_token = current_generation.set(generation)
+            try:
+                await asyncio.to_thread(self._commit_stream, generation, result)
+            finally:
+                current_generation.reset(context_token)
+            yield sse_event(EVENT_DONE, done_payload(result))
+        finally:
+            generation.cancel()
+            producer.cancel()
+
+    def _commit_stream(self, generation, result):
+        generation.check()
+        state = generation.finish
+        retrieval = state.get("retrieval") if state else None
+        self._persist(result)
+        generation.check()
+        self.cache.put(CachedRun(result=result, retrieval=retrieval))
+        self._record_trace(result)
 
 
 # ============================================================
@@ -934,9 +1036,16 @@ def done_payload(result: ConversationResult) -> dict[str, Any]:
     }
 
 
-async def stream_events(
-    result: ConversationResult, *, sleep: float = STREAM_CHUNK_SLEEP
-) -> AsyncIterator[dict[str, str]]:
+def _opening_events(result: ConversationResult) -> Iterator[dict[str, str]]:
+    yield sse_event(EVENT_META, meta_payload(result))
+    yield sse_event(EVENT_EVIDENCE, evidence_payload(result))
+    if result.memories:
+        yield sse_event(EVENT_MEMORY, memory_payload(result))
+    for payload in tool_payload(result):
+        yield sse_event(EVENT_TOOL, payload)
+
+
+async def stream_events(result: ConversationResult) -> AsyncIterator[dict[str, str]]:
     """按 meta → evidence → memory? → tool* → token* → done 的顺序推事件。
 
     顺序是硬约束，不只是为了好看：前端靠"先拿到路径和证据、再逐字收答复"
@@ -947,26 +1056,16 @@ async def stream_events(
     不必自己判断"这次是不是空列表"。也正因如此，`test_stream_events_on_short_answer`
     里那个没有任何记忆的结果，事件序列仍然是老的四件套。
 
-    逐字推送是**事后切块**的：图本身是同步跑完的（mock 下几十毫秒），
-    想让它看起来像流式，只能在这里人为放慢节奏。真接了流式模型之后，
-    这个函数改成边收边推即可，事件名和顺序都不用动。
+    已完成结果直接发送全文；在线生成使用 ChatService.stream 即时转发模型分片。
     """
-    yield sse_event(EVENT_META, meta_payload(result))
-    yield sse_event(EVENT_EVIDENCE, evidence_payload(result))
-    if result.memories:
-        yield sse_event(EVENT_MEMORY, memory_payload(result))
-    for payload in tool_payload(result):
-        yield sse_event(EVENT_TOOL, payload)
-    for piece in chunk_text(result.answer):
-        yield sse_event(EVENT_TOKEN, {"text": piece})
-        if sleep:
-            await asyncio.sleep(sleep)
+    for event in _opening_events(result):
+        yield event
+    yield sse_event(EVENT_TOKEN, {"text": result.answer})
     yield sse_event(EVENT_DONE, done_payload(result))
 
 
 __all__ = [
     "MAX_MESSAGE_CHARS",
-    "STREAM_CHUNK_SLEEP",
     "CHUNK_SIZES",
     "EVENT_META",
     "EVENT_EVIDENCE",

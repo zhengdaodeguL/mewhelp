@@ -22,6 +22,7 @@ from collections.abc import Sequence
 from typing import Any
 
 from ..domain import Exit, Intent, NodeName, RefusalReason, ToolError
+from ..generation import current_generation
 from ..llm import LLMResponse, extract_json
 from ..schemas import (
     Evidence,
@@ -705,8 +706,16 @@ def make_generate_node(deps) -> Any:
                 f"- {m}" for m in memories
             ) + "\n\n"
 
+        generation = current_generation.get()
+        if generation is not None:
+            generation.prepare(state)
+        generate = deps.llm.chat
+        if generation is not None:
+            generate = lambda messages, **kw: deps.llm.chat_stream(
+                messages, on_token=generation.token, **kw
+            )
         try:
-            resp = deps.llm.chat(
+            resp = generate(
                 [
                     {
                         "role": "system",
@@ -731,6 +740,9 @@ def make_generate_node(deps) -> Any:
             answer = resp.text
             usage = usage.add(_usage_from(resp))
         except Exception as exc:  # noqa: BLE001 — 生成失败走兜底话术，不是 500
+            if generation is not None and generation.text:
+                # 已发出的正文无法撤回，流失败只能报 error，不能把半句存成完整回答。
+                raise
             return {
                 "answer": "抱歉，我这边暂时没能组织出可靠的答复，帮你转人工确认。",
                 "handoff": True,
@@ -739,8 +751,7 @@ def make_generate_node(deps) -> Any:
                 "errors": [f"generate: {exc}"],
             }
 
-        # 生成前自评：不是等用户看出幻觉，而是发出去之前自己先校验一遍。
-        # 注意它拦不住已经发生的幻觉，但能拦住"即将发出去"的那一次。
+        # 自评仍在生成完成后执行，决定 done 的转接标志；流式正文已逐片发出。
         selfeval = SelfEvalResult(grounded=True, coverage=1.0)
         trace_err: str | None = None
         try:
