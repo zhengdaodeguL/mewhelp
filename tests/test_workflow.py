@@ -650,3 +650,87 @@ def test_missing_slots_only_reads_current_turn():
 
 def test_knowledge_intent_needs_no_slots():
     assert missing_slots(Intent.PRODUCT_FAQ, "尺码怎么选") == []
+
+
+@pytest.mark.parametrize(
+    "question",
+    [
+        "红心柚从哪里发货？",
+        "牛排10片坏了2片，是不是退20%？",
+        "生鲜收到货24小时内有品质问题退多少？",
+        "七天无理由退货从哪天开始算？",
+        "退货需要把商品寄回吗？",
+    ],
+)
+def test_通用咨询进入检索且不追问订单号(graph_and_deps, question):
+    graph, _ = graph_and_deps
+    out = run(graph, question)
+    assert out["exit"] is Exit.KNOWLEDGE
+    assert "retrieve" in out["path"]
+    assert "agent" not in out["path"]
+    assert "high_risk_flow" not in out["path"]
+    assert not out["interrupt_prompt"]
+    assert not out["missing_slots"]
+    assert out["tool_calls"] == []
+    assert "订单号" not in out["answer"]
+
+
+class 依据回显模型(MockLLMClient):
+    """回显实际传入的首条检索证据，验证生成前的路由与上下文传递。"""
+
+    def chat(self, messages, **kwargs):
+        if kwargs.get("task") == "generate":
+            content = messages[-1]["content"]
+            context = content.split("知识库证据：\n", 1)[1].split("\n\n用户问题：", 1)[0]
+            return LLMResponse(text=context.split("\n\n[2]", 1)[0])
+        return super().chat(messages, **kwargs)
+
+
+@pytest.fixture()
+def 商品知识图():
+    from mewhelp.retrieval import chunk_document
+
+    deps = build_deps(llm=依据回显模型())
+    for name, text in (
+        ("羊角蜜重量", "羊角蜜的带箱1斤/3斤/5斤含包装，不能说是果肉净重。"),
+        ("苹果规格与店铺", "苹果3斤是红运道旗舰店，5斤是果园旗舰店。"),
+        ("红心柚发货地", "红心柚从广西南宁发货。"),
+    ):
+        deps.retriever.index(chunk_document(name, name, text))
+    return build_graph(deps)
+
+
+@pytest.mark.parametrize("question", ["羊角蜜带箱5斤，就是5斤净重吗？", "羊角蜜5斤带箱子，果肉有5斤吗？"])
+def test_检索到带箱重量依据后正常回答(商品知识图, question):
+    out = run(商品知识图, question)
+    assert out["gate"].passed is True
+    assert out["refusal_reason"] is None
+    assert out["handoff"] is False
+    assert "generate" in out["path"]
+    assert "含包装" in out["answer"]
+    assert "不能说是果肉净重" in out["answer"]
+
+
+def test_发货地咨询使用商品依据回答(商品知识图):
+    out = run(商品知识图, "红心柚从哪里发货？")
+    assert out["exit"] is Exit.KNOWLEDGE
+    assert out["gate"].passed is True
+    assert "广西南宁" in out["answer"]
+    assert "订单号" not in out["answer"]
+
+
+@pytest.mark.parametrize("question", ["那3斤的是哪个店的？", "那个是哪个店的？"])
+def test_苹果多轮追问在分类和检索前补全(商品知识图, question):
+    first_question = "苹果有哪些规格，分别是哪个店的？"
+    first = run(商品知识图, first_question)
+    assert "3斤是红运道旗舰店" in first["answer"]
+    out = run(商品知识图, question, history=[
+        Turn(role="user", content=first_question),
+        Turn(role="assistant", content=first["answer"]),
+    ])
+    assert "苹果" in out["resolved_question"]
+    assert out["retrieval"].query == out["resolved_question"]
+    assert out["exit"] is Exit.KNOWLEDGE
+    assert out["gate"].passed is True
+    assert out["handoff"] is False
+    assert "3斤是红运道旗舰店" in out["answer"]

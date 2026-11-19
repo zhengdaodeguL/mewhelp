@@ -215,6 +215,20 @@ class IntentClassifier:
 
     def _score(self, text: str) -> list[tuple[Intent, float, list[str], float]]:
         """返回 [(意图, 置信度, 命中词, 有效得分)]，按置信度降序。"""
+        # 通用问法只在没有具体订单、操作申请或转人工诉求时优先。
+        if not (
+            E.find_order_id(text)
+            or _OWN_ORDER_RE.search(text)
+            or _IMPERATIVE_RE.search(text)
+            or "申请" in text
+            or any(kw in text for kw in INTENT_KEYWORDS[Intent.HUMAN_HANDOFF])
+        ):
+            for pattern, intent in (
+                (_ORIGIN_QUESTION_RE, Intent.PRODUCT_FAQ),
+                (_AFTERSALES_RULE_RE, Intent.POLICY_FAQ),
+            ):
+                if match := pattern.search(text):
+                    return [(intent, 0.90, [match.group(0)], 1.0)]
         # 先算出每个意图的命中证据，再统一判断"谁带动作词" —— 两档权重必须
         # 基于同一份证据，否则"动作候选"的判定会和打分口径脱节。
         hits: list[tuple[Intent, list[str], bool, bool]] = []
@@ -512,6 +526,13 @@ _IMPERATIVE_RE = re.compile(r"帮我|给我|麻烦|替我|请帮|我要|我想|�
 #: 「订单能撤吗」「这单能退吗」问的是自己那笔单子能不能操作，
 #: 和「生鲜类可以退款吗」这种问品类规则的句子不是一回事。
 _OWN_ORDER_RE = re.compile(r"我的|我这|这单|那一单|那单|这订单|订单能|订单可以")
+
+#: 只识别通用属性/规则问法，具体订单和明确操作请求仍由原有分类路径处理。
+_ORIGIN_QUESTION_RE = re.compile(r"发货地|从(?:哪[里儿]|哪个(?:地方|城市)|什么地方)发货")
+_AFTERSALES_RULE_RE = re.compile(
+    r"(?:退货|退款|无理由|品质问题|质量问题).*"
+    r"(?:从哪天|哪天开始|开始算|退多少|需要.*(?:寄回|退回)|是否.*寄回)"
+)
 
 
 #: 咨询类意图的归属：问"能不能退"落到规则政策出口，由知识库回答。

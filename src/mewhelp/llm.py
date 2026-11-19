@@ -432,7 +432,7 @@ def _mock_generate(client: MockLLMClient, messages, tools) -> str:
     blocks = re.findall(r"\[(\d+)\]\s*\[([^\]]+)\]\n(.+?)(?=\n\n\[\d+\]|\Z)", blob, re.S)
     if blocks:
         parts = [_render_evidence_block(title, body) for _, title, body in blocks[:3]]
-        return "根据平台规则：\n\n" + "\n\n".join(parts) + "\n\n如需进一步处理，可以告诉我订单号。"
+        return "根据平台规则：\n\n" + "\n\n".join(parts)
     return "抱歉，我暂时没有找到可以回答这个问题的依据。"
 
 

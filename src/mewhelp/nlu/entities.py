@@ -189,11 +189,11 @@ def _cut_candidate(raw: str) -> str:
     return raw
 
 
-def _trim_name(raw: str, back: int = 5) -> str:
+def _trim_name(raw: str) -> str:
     """从右往左收集连续词字作为商品名，遇停用字/标点即止。"""
     chars: list[str] = []
     i = len(raw) - 1
-    while i >= 0 and len(chars) < back:
+    while i >= 0:
         ch = raw[i]
         if ch in _NAME_STOP or ch in _PUNCT:
             break
@@ -275,7 +275,8 @@ def find_product(text: str) -> str | None:
         # 往前收集；否则会切出"衣"和"裙"两个半截词
         if i + 1 < len(text) and text[i + 1] in _PRODUCT_SUFFIXES:
             continue
-        name = _trim_name(text[max(0, i - 5) : i]) + ch
+        # 按虚词和标点确定边界，固定回看长度会截掉“羊角蜜5斤带箱”的首字。
+        name = _trim_name(text[:i]) + ch
         if _plausible(name) and i > best_pos:
             best, best_pos = name, i
     return best

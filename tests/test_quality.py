@@ -588,3 +588,55 @@ class TestSelfEvaluatorDegradation:
         evaluator = SelfEvaluator(llm)
         runs = [evaluator.evaluate(GROUNDED_ANSWER, CONTEXT).model_dump() for _ in range(5)]
         assert all(r == runs[0] for r in runs)
+
+
+@pytest.mark.parametrize("product", ["羊角蜜带箱", "羊角蜜5斤带箱", "羊角蜜带箱5斤"])
+def test_包装描述不同但主题有依据时不拒答(product):
+    from mewhelp.schemas import SlotExtraction
+
+    decision = ConfidenceGate().check(
+        "羊角蜜带箱5斤，就是5斤净重吗？",
+        retrieval(evidence("羊角蜜", "重量说明", "羊角蜜的带箱1斤/3斤/5斤含包装，不能说是果肉净重。", 0.9)),
+        Intent.PRODUCT_FAQ,
+        SlotExtraction(product=product),
+    )
+    assert decision.passed is True
+    assert decision.reason is None
+    assert decision.checks["entity_coverage"] == 1.0
+
+
+def test_包装词相同但商品不同仍拒答():
+    from mewhelp.schemas import SlotExtraction
+
+    decision = ConfidenceGate().check(
+        "羊角蜜带箱5斤，就是5斤净重吗？",
+        retrieval(evidence("苹果", "重量说明", "苹果的带箱5斤含包装，不能说是果肉净重。", 0.9)),
+        Intent.PRODUCT_FAQ,
+        SlotExtraction(product="羊角蜜带箱"),
+    )
+    assert decision.reason is RefusalReason.LOW_COVERAGE
+    assert "羊角蜜" in decision.message
+
+
+@pytest.mark.parametrize("score,reason", [(0.1, RefusalReason.WEAK_EVIDENCE), (None, RefusalReason.NO_EVIDENCE)])
+def test_商品主题归一不绕过证据门槛(score, reason):
+    from mewhelp.schemas import SlotExtraction
+
+    items = [] if score is None else [evidence("羊角蜜", "重量说明", "羊角蜜的带箱5斤含包装。", score)]
+    decision = ConfidenceGate().check(
+        "羊角蜜带箱5斤，就是5斤净重吗？", retrieval(*items),
+        Intent.PRODUCT_FAQ, SlotExtraction(product="羊角蜜带箱"),
+    )
+    assert decision.reason is reason
+
+
+def test_拒答主题保留商品首字():
+    from mewhelp.llm import MockLLMClient
+    from mewhelp.nlu import IntentClassifier
+
+    question = "羊角蜜5斤带箱子，果肉有5斤吗？"
+    slots = IntentClassifier(MockLLMClient()).extract_slots(question, [])
+    decision = ConfidenceGate().check(question, retrieval(IRRELEVANT), Intent.PRODUCT_FAQ, slots)
+    assert decision.reason is RefusalReason.LOW_COVERAGE
+    assert "没有覆盖到：羊角蜜" in decision.message
+    assert "没有覆盖到：角蜜" not in decision.message
