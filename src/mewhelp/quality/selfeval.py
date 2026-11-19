@@ -13,7 +13,8 @@
 `llm.chat(task="self_eval")` 给的是语义判断（"这句话是不是被证据支撑"），
 但**模型自评本身也是模型**，它可能被自己的上下文说服、可能返回格式垃圾、
 可能直接调用失败。所以本地永远再跑一遍**确定性规则校验**（数字类声明能不能
-在证据里逐字找到），最后取两者中**更保守**的那一份：
+在证据里逐字找到）。整段回答按完整句子引用证据时以原文核对为准，
+其余情况取两者中**更保守**的那一份：
 
     unsupported = 模型说没支撑的 ∪ 规则说找不到的
     grounded    = 模型说过了 且 规则也过了
@@ -97,6 +98,14 @@ class SelfEvaluator:
         if judged is None:
             return local.model_copy(
                 update={"note": _join_note(local.note, "自评模型返回不可解析，已降级为规则校验")}
+            )
+
+        # 生成答案整体能在同一份证据中找到（忽略空格及等价单位写法）时，
+        # 这是比模型“逐字核对”的否定更直接的支撑。保留非原文答案的保守合并，
+        # 例如数字相同但证据不支持的结论仍会触发转人工。
+        if local.grounded and _answer_is_in_context(answer, context):
+            return local.model_copy(
+                update={"note": _join_note(local.note, "回答原文可在证据中核对")}
             )
 
         return _merge(local, judged)
@@ -198,6 +207,23 @@ def _claims(answer: str) -> list[str]:
     for pattern in _CLAIM_PATTERNS:
         found.extend(m.group(0) for m in pattern.finditer(answer))
     return list(dict.fromkeys(found))
+
+
+def _answer_is_in_context(answer: str, context: str) -> bool:
+    """核对完整句子序列，不能把“不支持退款”中的“支持退款”当作依据。"""
+    def sentences(text: str) -> list[str]:
+        return [
+            _squash(part) for part in re.split(r"(?<=[。！？!?；;])|\n+", text or "")
+            if part.strip()
+        ]
+
+    answer_parts = sentences(answer)
+    context_parts = sentences(context)
+    count = len(answer_parts)
+    return bool(count) and any(
+        answer_parts == context_parts[i : i + count]
+        for i in range(len(context_parts) - count + 1)
+    )
 
 
 def _squash(text: str) -> str:

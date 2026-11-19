@@ -14,7 +14,7 @@ import pytest
 
 from mewhelp.domain import Exit, Intent, RefusalReason
 from mewhelp.llm import LLMResponse, MockLLMClient
-from mewhelp.schemas import Turn
+from mewhelp.schemas import Evidence, KbChunk, RetrievalResult, Turn
 from mewhelp.workflow.graph import build_deps, build_graph
 from mewhelp.workflow.state import new_state
 from mewhelp.workflow.high_risk import extract_order_id, missing_slots
@@ -99,6 +99,86 @@ def test_knowledge_question_gets_grounded_answer(graph_and_deps):
     assert out["answer"]
     assert out["handoff"] is False
     assert len(out["retrieval"].evidences) > 0
+
+
+def _fixed_knowledge_deps(text, answer=None, *, strict_self_eval=False):
+    """只替换证据与生成结果，保留真实 NLU、闸门、自评和图路由。"""
+    class Retriever:
+        def retrieve(self, query):
+            return RetrievalResult(query=query, evidences=[Evidence(
+                chunk=KbChunk(chunk_id="issue-1", doc_id="doc", title="商品资料", text=text),
+                score=0.9,
+            )])
+
+    class LLM(MockLLMClient):
+        def chat(self, messages, **kw):
+            if kw.get("task") == "generate":
+                return LLMResponse(text=answer or text)
+            if kw.get("task") == "self_eval" and strict_self_eval:
+                return LLMResponse(text='{"grounded": false, "coverage": 0}')
+            return super().chat(messages, **kw)
+
+    return build_deps(llm=LLM(), retriever=Retriever())
+
+
+@pytest.mark.parametrize(
+    "question,evidence,answer",
+    [
+        ("苹果有哪些规格？", "苹果有1斤、3斤、5斤装。", "苹果有1斤、3斤、5斤装。"),
+        ("水饺多少钱？", "水饺每袋28块钱。", "水饺每袋28元。"),
+        ("蜂蜜多少钱？", "蜂蜜每瓶39元。", "蜂蜜每瓶39元。"),
+        ("红薯有哪些规格？", "红薯有9斤、5斤、3斤、1斤装。", "红薯有9斤、5斤、3斤、1斤装。"),
+    ],
+    ids=["apple", "dumplings", "honey", "sweet_potato"],
+)
+def test_supported_simple_query_has_no_handoff(question, evidence, answer):
+    from mewhelp.api.service import done_payload, result_from_state
+
+    deps = _fixed_knowledge_deps(evidence, answer, strict_self_eval=True)
+    out = run(build_graph(deps), question)
+    assert out["gate"].passed is True
+    assert out["gate"].checks["evidence_count"] == 1
+    assert out["answer"] == answer
+    assert out["handoff"] is False
+    assert out["refusal_reason"] is None
+    assert out["path"] == ["resolve", "classify", "retrieve", "gate", "generate"]
+    result = result_from_state(out, latency_ms=0)
+    # 前端仅根据 done.handoff 补转接提示条。
+    assert done_payload(result) == {"answer": answer, "handoff": False}
+
+
+@pytest.mark.parametrize(
+    "question,evidence",
+    [
+        ("大蒜有哪些规格？", "大蒜有1斤、3斤、5斤，大果、特大果、中果。"),
+        ("换成红薯呢，它有哪些规格？", "红薯有9斤、5斤、3斤、1斤，大果、中果、小果。"),
+        ("羊角蜜有哪些规格？", "羊角蜜有3斤、5斤装。"),
+    ],
+    ids=["garlic", "sweet_potato_pronoun", "melon"],
+)
+def test_new_question_after_handoff_uses_current_evidence(question, evidence):
+    deps = _fixed_knowledge_deps(evidence)
+    history = [
+        Turn(role="user", content="苹果有哪些规格？"),
+        Turn(role="assistant", content="苹果有1斤、3斤、5斤装。\n\n已经帮你转接人工客服进一步处理。",
+             metadata={"handoff": True}),
+    ]
+    out = run(build_graph(deps), question, history=history)
+    assert "人工" not in out["resolved_question"]
+    assert "人工" not in (out["slots"].product or "")
+    assert out["gate"].passed is True
+    assert out["answer"] == evidence
+    assert out["handoff"] is False
+    assert "handoff" not in out["path"]
+
+
+def test_unsupported_generated_answer_still_hands_off():
+    deps = _fixed_knowledge_deps("水饺每袋28元。", "水饺每袋280元。")
+    out = run(build_graph(deps), "水饺多少钱？")
+    assert out["gate"].passed is True
+    assert out["handoff"] is True
+    assert out["refusal_reason"] is RefusalReason.SELF_EVAL_FAILED
+    assert out["path"][-3:] == ["generate", "handoff", "flywheel"]
 
 
 def test_policy_question_does_not_enter_high_risk_flow(graph_and_deps):

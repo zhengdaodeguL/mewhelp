@@ -315,6 +315,11 @@ def find_reason(text: str) -> str | None:
 # ============================================================
 
 
+#: assistant 的转接确认是服务状态，不是商品实体。若直接读取持久化原话，
+#: 商品后缀“服”会把“转接人工客服”整段抽进 product，污染消解和覆盖率检查。
+_HANDOFF_TEXT_RE = re.compile(r"转(?:接)?人工")
+
+
 def iter_turns(history: list[Turn] | None) -> Iterator[tuple[int, str, str]]:
     """把 history 规整成 (第几轮, 角色, 文本)，轮次从 1 开始。
 
@@ -329,6 +334,15 @@ def iter_turns(history: list[Turn] | None) -> Iterator[tuple[int, str, str]]:
             role = str(getattr(turn, "role", ""))
             content = getattr(turn, "content", "")
         if isinstance(content, str) and content.strip():
+            if role == "assistant":
+                # 规则抽实体和模型 prompt 共用这个入口。只剔除转接句，保留
+                # 其它句子里的业务事实及原轮次编号，不修改调用方的历史对象。
+                parts = re.split(r"(?<=[。！？!?；;\n])", content)
+                content = "".join(
+                    part for part in parts if not _HANDOFF_TEXT_RE.search(part)
+                ).strip()
+            if not content:
+                continue
             yield i, role, content
 
 

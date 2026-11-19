@@ -142,6 +142,41 @@ def test_resolve_no_pronoun_keeps_original(resolver, llm):
     assert llm.calls == []
 
 
+@pytest.mark.parametrize("as_dict", [False, True], ids=["turn", "dict"])
+@pytest.mark.parametrize(
+    "notice",
+    [
+        "转接人工客服。",
+        "已经帮你转接人工客服进一步处理。",
+        "已为你转接人工客服，稍后会有同事继续跟进。",
+        "这个问题我帮你转人工处理，稍后会有客服同事联系你。",
+    ],
+    ids=["short", "appended", "notice", "fallback"],
+)
+def test_handoff_history_is_not_an_entity(resolver, classifier, llm, notice, as_dict):
+    """NLU 读取历史时去掉转接句，保留业务事实和引用轮次，不修改原记录。"""
+    history = [turn("user", "请问尺码"), turn("assistant", f"连衣裙有S、M、L。\n\n{notice}")]
+    if as_dict:
+        history = [t.model_dump() for t in history]
+    before = repr(history)
+    result = resolver.resolve("这个尺码怎么选", history)
+    slots = classifier.extract_slots("这个尺码怎么选", history)
+    assert result.substitutions == {"这个": "连衣裙 这个"}
+    assert result.referenced_turns == [2]
+    assert slots.product == "连衣裙"
+    assert repr(history) == before
+    assert all(notice not in str(c["messages"]) for c in llm.calls)
+
+
+def test_resolve_model_does_not_receive_handoff_history(resolver, llm):
+    """规则找不到指代对象而调用模型时，转接句同样不能进入 prompt。"""
+    history = [turn("assistant", "已经帮你转接人工客服进一步处理。")]
+    result = resolver.resolve("换成红薯呢，它有哪些规格？", history)
+    assert result.resolved == "换成红薯呢，它有哪些规格？"
+    assert _tasks(llm) == ["resolve"]
+    assert all("转接人工客服" not in str(c["messages"]) for c in llm.calls)
+
+
 def test_resolve_size_question_prefers_product_over_order(resolver, llm):
     """"这个尺码"要补商品名，不能补订单号。
 
