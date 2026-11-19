@@ -371,6 +371,9 @@ class SessionMessage(BaseModel):
     handoff: bool = False
     #: 不透明句柄：反馈与收藏的键，界面不展示
     request_id: str = ""
+    #: 与该轮正文一同保存的用户资料，沿用 SSE 的展示契约。
+    evidence: list[dict[str, str]] = Field(default_factory=list)
+    tools: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class SessionDetail(BaseModel):

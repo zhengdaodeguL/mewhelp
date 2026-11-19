@@ -282,6 +282,7 @@ class RetrievalPipeline:
             )
 
         # ---- 精排 ----
+        evidences = self._relevant_candidates(q, evidences, lexical=False)
         if strategy == "hybrid_rerank" and self.reranker is not None and evidences:
             try:
                 evidences = self.reranker.rerank(q, evidences, top_k=int(self.settings.rerank_top_k))
@@ -292,6 +293,12 @@ class RetrievalPipeline:
         else:
             evidences = evidences[: int(self.settings.rerank_top_k)]
 
+        from .rerankers import MockReranker
+
+        if isinstance(self.reranker, MockReranker) or not any(ev.rerank_score is not None for ev in evidences):
+            evidences = self._relevant_candidates(q, evidences, lexical=True)
+        # 闸门只统计过阈值的证据；生成上下文和依据卡片也必须使用同一批。
+        evidences = [ev for ev in evidences if ev.score >= self.settings.confidence_threshold]
         result.evidences = evidences
         result.reranked_hits = len(evidences)
         # retrieved_ids 取"当前排序的前 fusion_top_k 个"：评估集算 Recall@k
@@ -301,6 +308,40 @@ class RetrievalPipeline:
         return result
 
     # ------------------------------------------------------------------
+    def _relevant_candidates(self, query: str, evidences: list[Evidence], *, lexical: bool) -> list[Evidence]:
+        """先按查询主题筛候选，避免共同的规格/保存词把其他商品带进来。"""
+        if not evidences:
+            return []
+        tokens = set(tokenize(query)) - {"多久", "几天", "几步", "哪些", "怎么样", "怎么办", "是否", "能否"}
+        if not tokens:
+            return []
+
+        # 文档名与根标题保留商品归属。不能用"规格/保存方法"等小节标题
+        # 识别主题，否则库外商品也会因同一个属性词混进来。
+        topic_docs = {
+            token: {
+                chunk.doc_id for chunk in self._chunks.values()
+                if token in f"{chunk.doc_id} {chunk.breadcrumb[0] if chunk.breadcrumb else chunk.title}".lower()
+            }
+            for token in tokens
+        }
+        doc_count = len({chunk.doc_id for chunk in self._chunks.values()})
+        specific = [docs for docs in topic_docs.values() if 0 < len(docs) < doc_count]
+        if specific:
+            narrowest = min(len(docs) for docs in specific)
+            relevant_docs = set.union(*(docs for docs in specific if len(docs) == narrowest))
+            return [ev for ev in evidences if ev.chunk.doc_id in relevant_docs]
+
+        # 真实精排由绝对分判相关性；Mock/无精排/精排故障不能用 RRF 的相对
+        # 最高分 1.0 当作相关性。此时要求命中最有区分度的查询词（库外词也算）。
+        if not lexical:
+            return evidences
+        texts = {cid: " ".join(self._bm25_doc(chunk)) for cid, chunk in self._chunks.items()}
+        counts = {token: sum(token in text for text in texts.values()) for token in tokens}
+        rarest = min(counts.values())
+        anchors = {token for token, count in counts.items() if count == rarest}
+        return [ev for ev in evidences if any(token in texts[ev.chunk_id] for token in anchors)]
+
     def _dense_search(self, query: str) -> list[tuple[str, float]]:
         try:
             vec = self.embedder.encode([query])[0]

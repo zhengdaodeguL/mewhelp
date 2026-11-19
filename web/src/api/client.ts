@@ -15,7 +15,7 @@
  */
 
 import type { HistoryMessage, MemoryItem, SessionBrief, TurnOutcome } from '../types'
-import { cardsFromEvidence, cardsFromTools, type WorkspaceCard } from '../workspace'
+import { cardsFromEvidence, cardsFromHistory, cardsFromTools, type WorkspaceCard } from '../workspace'
 import { drainEvents, normalizeSse } from './sse'
 
 const API_BASE = ''
@@ -289,6 +289,7 @@ export interface RestoredSession {
   ok: boolean
   title: string
   messages: HistoryMessage[]
+  cards: WorkspaceCard[]
 }
 
 /** 恢复一次历史对话。拿不到就返回空 —— 界面退化成"新会话"即可。 */
@@ -296,7 +297,7 @@ export async function fetchSession(
   sessionId: string,
   signal?: AbortSignal,
 ): Promise<RestoredSession> {
-  const empty: RestoredSession = { ok: false, title: '', messages: [] }
+  const empty: RestoredSession = { ok: false, title: '', messages: [], cards: [] }
   try {
     const res = await fetch(
       `${API_BASE}/api/sessions/${encodeURIComponent(sessionId)}`,
@@ -309,6 +310,7 @@ export async function fetchSession(
     return {
       ok: true,
       title: str(body.title),
+      cards: cardsFromHistory(rows),
       messages: rows.map((r) => ({
         role: r.role === 'user' ? 'user' : 'assistant',
         content: str(r.content),

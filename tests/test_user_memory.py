@@ -537,7 +537,9 @@ def test_session_detail_is_user_facing_only(client):
     detail = client.get(f"/api/sessions/{session_id}").json()
     assert len(detail["messages"]) == 2
     for msg in detail["messages"]:
-        assert set(msg) == {"role", "content", "handoff", "request_id"}
+        assert set(msg) == {"role", "content", "handoff", "request_id", "evidence", "tools"}
+        assert isinstance(msg["evidence"], list)
+        assert isinstance(msg["tools"], list)
     assert detail["messages"][0]["role"] == "user"
     assert detail["messages"][1]["role"] == "assistant"
     # 句柄要回填，否则历史里的消息没法再被点赞/点踩（前端的收藏键也靠它）

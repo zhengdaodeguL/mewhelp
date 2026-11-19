@@ -24,11 +24,11 @@ from fastapi.testclient import TestClient
 
 from mewhelp.api import create_app
 from mewhelp.api.app import INDEX_HTML
-from mewhelp.api.auth import Account
 from mewhelp.api.service import MAX_MESSAGE_CHARS, chunk_text, stream_events
 from mewhelp.config import Settings
 from mewhelp.schemas import ConversationResult
 from mewhelp.workflow.graph import build_deps
+from mewhelp.api.auth import Account
 
 
 @pytest.fixture(scope="module")
@@ -454,12 +454,19 @@ def test_有订单的账号不能借请求参数越权查单(client, monkeypatch
 
 
 @pytest.mark.parametrize("principal_id", ["U1001", "无订单账号"])
-@pytest.mark.parametrize("question", ["查询订单 ORD-9999 的状态", "帮我取消订单 ORD-9999"])
-def test_查单与高风险操作均区分订单不存在(client, monkeypatch, principal_id, question):
+@pytest.mark.parametrize(
+    "question,expected_answer",
+    [
+        ("查询订单 ORD-9999 的状态", "没有查到这个订单号，麻烦核对一下再发我（形如 ORD-1007）。"),
+        ("帮我取消订单 ORD-9999", "订单 ORD-9999：没有找到订单 ORD-9999，无法取消。"),
+    ],
+)
+def test_查单与高风险操作均区分订单不存在(client, monkeypatch, principal_id, question, expected_answer):
     monkeypatch.setattr(client.app.state.accounts, "from_token", lambda _: Account(principal_id, "fixture@example.org"))
     events = _sse(client, question)
     answer = events_of(events, "done")[0]["answer"]
-    assert "没有查到这个订单号" in answer
+    # 高风险操作使用 #4 的订单前缀和工具提示，两种出口均须明确订单不存在。
+    assert answer == expected_answer
     assert "未关联" not in answer
     assert events_of(events, "tool") == []
 
