@@ -66,20 +66,17 @@ export function Composer({ isStreaming, onSend, onStop, inputRef, quote, onClear
 
   const canSend = text.trim().length > 0 && !isStreaming
 
-  const submit = () => {
-    if (!canSend) return
-    onSend(text)
+  const submit = (message = text) => {
+    if (!message.trim() || isStreaming) return
+    onSend(message)
     setText('')
     // 引用条不在这里清 —— 清不清由上层决定（它还要决定这条引用要不要
     // 跟着请求一起发出去）。这里只管把输入框腾空。
   }
 
-  /**
-   * 选中订单：只把话**填**进输入框，不直接发出去。
-   * 用户点了单之后往往还想补一句（"这单能退吗"），替他发掉等于替他做决定。
-   */
+  /** 选中订单后复用输入框的发送路径，直接查询状态。 */
   const pickOrder = (order: OrderBrief) => {
-    setText(`帮我查下订单 ${order.order_id} 的状态`)
+    submit(`帮我查下订单 ${order.order_id} 的状态`)
     innerRef.current?.focus()
   }
 
@@ -149,7 +146,7 @@ export function Composer({ isStreaming, onSend, onStop, inputRef, quote, onClear
               type="button"
               className="send"
               disabled={!canSend}
-              onClick={submit}
+              onClick={() => submit()}
               title="发送（Enter）"
               aria-label="发送"
             >

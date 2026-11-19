@@ -266,10 +266,13 @@ def _render_outcome(intent: Intent, calls: list[ToolCall], error: str | None) ->
         return "没有可以执行的操作。"
 
     last = calls[-1]
+    data = last.result if isinstance(last.result, dict) else {}
     if error:
+        # 与查单出口保持一致，使用注册表核对归属后的账号提示。
+        if error == "ORDER_ACCOUNT_UNLINKED" and data.get("message"):
+            return data["message"]
         return _REJECTION_TEXT.get(error, f"这笔操作没有完成（{error}）。")
 
-    data = last.result if isinstance(last.result, dict) else {}
     if intent is Intent.CANCEL_ORDER:
         return f"已为你取消订单 {data.get('order_id', '')}。退款将按原支付方式退回，1 到 3 个工作日到账。"
     if intent is Intent.CHANGE_ADDRESS:
@@ -282,7 +285,7 @@ def _render_outcome(intent: Intent, calls: list[ToolCall], error: str | None) ->
 
 
 _REJECTION_TEXT: dict[str, str] = {
-    "ORDER_ACCOUNT_UNLINKED": "您的账号暂未关联订单信息，暂时无法查询或办理订单业务。",
+    "ORDER_ACCOUNT_UNLINKED": "当前账号未关联这笔订单，暂时无法查询或办理该订单业务。",
     ToolError.ORDER_NOT_FOUND.value: "没有查到这个订单号，麻烦你核对一下再发我（形如 ORD-1007）。",
     ToolError.ORDER_NOT_CANCELLABLE.value: "这笔订单已经发货了，没法直接取消。你可以等收到后走退货流程，我可以帮你登记。",
     ToolError.ORDER_ADDRESS_LOCKED.value: "订单已经发出，收货地址改不了了。可以联系承运方改派，或者收到后走退货。",

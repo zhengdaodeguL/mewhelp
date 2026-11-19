@@ -161,22 +161,6 @@ class ToolRegistry:
         args = _coerce_args(args)
         t0 = time.perf_counter()
 
-        if principal_id is not None and name in _ACCOUNT_ORDER_TOOLS:
-            return self._record(
-                ToolCall(
-                    name=name,
-                    args=args,
-                    ok=False,
-                    error="ORDER_ACCOUNT_UNLINKED",
-                    result={
-                        "message": "您的账号暂未关联订单信息，暂时无法查询或办理订单业务。",
-                        "code": "ORDER_ACCOUNT_UNLINKED",
-                    },
-                    elapsed_ms=_ms(t0),
-                    attempts=0,
-                )
-            )
-
         fn = self._fns.get(name)
         if fn is None:
             # 未知工具名是最常见的模型幻觉形态，必须返回可解释的错误码，
@@ -215,6 +199,28 @@ class ToolRegistry:
                     attempts=1,
                 )
             )
+
+        if principal_id is not None and name in _ACCOUNT_ORDER_TOOLS:
+            # 复用业务层的订单号归一化；不存在的订单交给工具返回 ORDER_NOT_FOUND。
+            from .business import _find_order, list_orders
+
+            order = _find_order(args.get("order_id"))
+            if order is not None and order.get("user_id") != principal_id:
+                message = "当前账号未关联这笔订单，暂时无法查询或办理该订单业务。"
+                if not list_orders(principal_id):
+                    message = "您的账号暂未关联订单信息，暂时无法查询或办理订单业务。"
+                return self._record(
+                    ToolCall(
+                        name=name,
+                        args=args,
+                        ok=False,
+                        error="ORDER_ACCOUNT_UNLINKED",
+                        # 拒绝时只返回提示，不携带他人的订单数据。
+                        result={"message": message, "code": "ORDER_ACCOUNT_UNLINKED"},
+                        elapsed_ms=_ms(t0),
+                        attempts=0,
+                    )
+                )
 
         timeout_s = self._timeout_override or float(self.settings.tool_timeout_s)
         call_args = self._with_ambient_date(name, args)

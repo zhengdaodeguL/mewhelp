@@ -52,6 +52,68 @@ def payload(call) -> dict:
     return call.result
 
 
+@pytest.mark.parametrize(
+    "name,order_id,principal_id,extra",
+    [
+        ("get_order", "ORD-1001", "U1001", {}),
+        ("track_logistics", "ORD-1003", "U1002", {}),
+        ("request_refund", "ORD-1004", "U1002", {}),
+        ("cancel_order", "ORD-1001", "U1001", {}),
+        ("change_address", "ORD-1001", "U1001", {"address": "北京市朝阳区测试路 8 号"}),
+    ],
+)
+def test_五种订单工具允许本人订单且保留匿名行为(registry, name, order_id, principal_id, extra):
+    args = {"order_id": order_id, **extra}
+    anonymous = registry.call(name, args, principal_id=None)
+    owned = registry.call(name, args, principal_id=principal_id)
+    assert owned.ok and anonymous.ok
+    assert owned.result == anonymous.result
+    assert owned.attempts == anonymous.attempts == 1
+
+
+@pytest.mark.parametrize("name", ["get_order", "track_logistics", "request_refund", "cancel_order", "change_address"])
+@pytest.mark.parametrize("principal_id", ["U1001", "无订单账号"])
+def test_五种订单工具拒绝跨账号且不泄露数据(registry, name, principal_id):
+    args = {"order_id": "ORD-1003"}
+    if name == "change_address":
+        args["address"] = "北京市朝阳区测试路 8 号"
+    call = registry.call(name, args, principal_id=principal_id)
+    assert not call.ok and call.error == "ORDER_ACCOUNT_UNLINKED"
+    assert call.attempts == 0
+    assert registry.drain_audit() == [call]
+    message = (
+        "当前账号未关联这笔订单，暂时无法查询或办理该订单业务。"
+        if principal_id == "U1001"
+        else "您的账号暂未关联订单信息，暂时无法查询或办理订单业务。"
+    )
+    assert call.result == {"code": "ORDER_ACCOUNT_UNLINKED", "message": message}
+
+
+@pytest.mark.parametrize("name", ["get_order", "track_logistics", "request_refund", "cancel_order", "change_address"])
+@pytest.mark.parametrize("principal_id", ["U1001", "无订单账号", None])
+def test_五种订单工具区分订单不存在(registry, name, principal_id):
+    args = {"order_id": "ORD-9999"}
+    if name == "change_address":
+        args["address"] = "北京市朝阳区测试路 8 号"
+    call = registry.call(name, args, principal_id=principal_id)
+    assert not call.ok and call.error == "ORDER_NOT_FOUND"
+    assert "没有找到订单" in payload(call)["message"]
+    assert "未关联" not in payload(call)["message"]
+
+
+@pytest.mark.parametrize("order_id", ["ord 1001", " ord-1001 ", "ORD1001"])
+def test_归属检查复用业务层订单号归一化(registry, order_id):
+    owned = registry.call("get_order", {"order_id": order_id}, principal_id="U1001")
+    assert owned.ok and payload(owned)["order_id"] == "ORD-1001"
+    other = registry.call("get_order", {"order_id": order_id}, principal_id="U1002")
+    assert not other.ok and other.error == "ORDER_ACCOUNT_UNLINKED"
+
+
+def test_本人订单仍受原有业务规则限制(registry):
+    call = registry.call("cancel_order", {"order_id": "ORD-1003"}, principal_id="U1002")
+    assert not call.ok and call.error == "ORDER_NOT_CANCELLABLE"
+
+
 # ======================================================================
 # 1. 夹具自洽性 —— 数据错了，上层所有测试都是在验证错误的东西
 # ======================================================================
