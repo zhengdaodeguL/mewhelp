@@ -432,6 +432,9 @@ class CoreferenceResolver:
         context: str = "",
     ) -> ResolveResult | None:
         """按语义域找实体并替换。没有可用实体时返回 None（交给模型或原样返回）。"""
+        # “这单 ORD-1009”已经指明目标；不能把历史单号补到它前面。
+        if domain == _DOMAIN_ORDER and E.find_order_id(question[pos + len(pronoun) :]):
+            return self._noop(question)
         head = question[:pos]
         entity = self._find_in(head, domain)
         in_sentence = entity is not None
