@@ -10,14 +10,14 @@
 
 ## 为什么两层校验（模型 + 规则）
 
-`llm.chat(task="self_eval")` 给的是语义判断（"这句话是不是被证据支撑"），
+`llm.chat(task="self_eval")` 同时判断“是否答上当前问题”和“是否被证据支撑”，
 但**模型自评本身也是模型**，它可能被自己的上下文说服、可能返回格式垃圾、
-可能直接调用失败。所以本地永远再跑一遍**确定性规则校验**（数字类声明能不能
-在证据里逐字找到）。整段回答按完整句子引用证据时以原文核对为准，
+可能直接调用失败。所以本地再检查明确的未回答话术，以及数字声明的依据。
+整段回答按完整句子引用证据且回答了当前问题时以原文核对为准，
 其余情况取两者中**更保守**的那一份：
 
     unsupported = 模型说没支撑的 ∪ 规则说找不到的
-    grounded    = 模型说过了 且 规则也过了
+    grounded    = 模型说过了 且 规则也过了 且 answered
     coverage    = min(模型给的, 规则算的)
 
 宁可误判成"没通过"（代价是一次转人工），也不放过一处编造（代价是用户照着
@@ -42,6 +42,7 @@ from typing import Any
 
 from ..config import Settings, get_settings
 from ..llm import LLMClient, as_bool
+from ..knowledge import question_focus
 from ..schemas import SelfEvalResult
 
 #: 答案里"可能被编造"的量化声明：天数 / 金额 / 小时 / 工作日 / 折扣 / 百分比。
@@ -74,17 +75,17 @@ class SelfEvaluator:
         self.settings = settings or get_settings()
 
     # --------------------------------------------------------
-    def evaluate(self, answer: str, context: str) -> SelfEvalResult:
+    def evaluate(self, answer: str, context: str, question: str = "") -> SelfEvalResult:
         """核对 `answer` 里的每处量化声明是否都能在 `context` 里找到。
 
         `context` 就是 `RetrievalResult.to_context()` 的产物 —— 用同一份渲染文本，
         是因为模型生成时看到的就是它。用别的形态（比如原始 chunk 列表）做校验，
         会出现"生成时看到了、校验时找不到"的假阳性。
         """
-        local = _rule_based(answer, context)
+        local = _rule_based(answer, context, question)
 
         try:
-            judged = self._ask_model(answer, context)
+            judged = self._ask_model(answer, context, question)
         except Exception as exc:  # noqa: BLE001 — 自评崩了不能拖垮主链路
             return local.model_copy(
                 update={
@@ -103,7 +104,7 @@ class SelfEvaluator:
         # 生成答案整体能在同一份证据中找到（忽略空格及等价单位写法）时，
         # 这是比模型“逐字核对”的否定更直接的支撑。保留非原文答案的保守合并，
         # 例如数字相同但证据不支持的结论仍会触发转人工。
-        if local.grounded and _answer_is_in_context(answer, context):
+        if local.grounded and local.answered and judged.answered and _answer_is_in_context(answer, context):
             return local.model_copy(
                 update={"note": _join_note(local.note, "回答原文可在证据中核对")}
             )
@@ -111,7 +112,7 @@ class SelfEvaluator:
         return _merge(local, judged)
 
     # --------------------------------------------------------
-    def _ask_model(self, answer: str, context: str) -> SelfEvalResult | None:
+    def _ask_model(self, answer: str, context: str, question: str = "") -> SelfEvalResult | None:
         """问模型一次。返回 None 表示"回答不可用"，交给规则那路兜。
 
         不在这里吞异常：抛出去由 `evaluate` 统一收敛，是为了让"调用失败"
@@ -122,8 +123,9 @@ class SelfEvaluator:
             {
                 "role": "system",
                 "content": (
-                    "你是事实校验器。只判断回答里的每一处量化声明（天数、金额、"
-                    "时效、折扣）是否能在给定证据里逐字找到，不要用你自己的知识补充。"
+                    "你是客服答复校验器。检查回答是否回应了用户当前问题，并核对每处"
+                    "事实、条件、数量和结论是否有证据支持，不能只检查数字出现过没有。"
+                    "允许等价复述和有明确依据的区间比较，不要用你自己的知识补充。"
                     "只输出 JSON。"
                 ),
             },
@@ -132,17 +134,21 @@ class SelfEvaluator:
                 "content": (
                     f"证据：\n{context}\n\n"
                     f"<answer>\n{answer}\n</answer>\n\n"
+                    f"<question>\n{question}\n</question>\n\n"
                     "逐条核对上面的回答。要求：\n"
-                    "1. grounded：回答里所有量化声明都能在证据中找到才为 true；\n"
+                    "1. grounded：所有事实及结论均有证据支持才为 true；\n"
                     "2. coverage：被证据支撑的声明占比（0~1）；\n"
                     '3. unsupported_claims：找不到依据的声明原文列表；\n'
-                    '4. note：一句话说明。\n'
-                    '输出格式：{"grounded": bool, "coverage": float, '
+                    '4. answered：是否直接回答了当前问题；无法确认、只复述无关规则、'
+                    '回答少重赔偿却没回答是否少重，均为 false；'
+                    '已答上问题而仅对未被询问的额外事项保留意见，不影响此项；\n'
+                    '5. note：一句话说明。\n'
+                    '输出格式：{"grounded": bool, "answered": bool, "coverage": float, '
                     '"unsupported_claims": [str], "note": str}'
                 ),
             },
         ]
-        resp = self.llm.chat(messages, json_mode=True, task="self_eval")
+        resp = self.llm.chat(messages, temperature=0.0, json_mode=True, task="self_eval")
         payload = _load_payload(resp)
         if payload is None:
             return None
@@ -154,7 +160,7 @@ class SelfEvaluator:
 # ------------------------------------------------------------
 
 
-def _rule_based(answer: str, context: str) -> SelfEvalResult:
+def _rule_based(answer: str, context: str, question: str = "") -> SelfEvalResult:
     """纯规则的兜底校验：回答里的数字能不能在证据里找到。
 
     这一路永远不会失败、不会超时、不需要 API Key，所以它可以作为
@@ -162,6 +168,12 @@ def _rule_based(answer: str, context: str) -> SelfEvalResult:
     """
     answer = answer or ""
     context = context or ""
+
+    if _unanswered(answer, question):
+        return SelfEvalResult(
+            grounded=False, answered=False, coverage=0.0,
+            note="答复为空或未能回答当前问题，不能作为正常完成",
+        )
 
     # 空证据 + 有内容的回答 = 无支撑。这是必须显式拦的一种情况：
     # 规则只能证明"某个数字没找到"，证明不了"整段话没依据"；
@@ -199,6 +211,41 @@ def _rule_based(answer: str, context: str) -> SelfEvalResult:
         unsupported_claims=missing,
         note=note,
     )
+
+
+_UNCERTAIN = re.compile(
+    r"(?:无法|不能|未能|没法|尚不能).{0,6}(?:确认|确定|回答|判断|核实)"
+    r"|(?:没有|没能|未能|未).{0,20}(?:找到|提供).{0,20}(?:依据|信息|规则)"
+    r"|(?:不清楚|不确定|不知道|信息不足|证据不足)"
+)
+
+
+def _unanswered(answer: str, question: str) -> bool:
+    if not answer.strip():
+        return True
+    match = _UNCERTAIN.search(answer)
+    if match is None:
+        return False
+    prefix = answer[:match.start()]
+    # 条件规则“如果无法确认，请……”不等于本次回答失败。
+    if re.search(r"(?:如果|若|当).{0,6}$", prefix):
+        return False
+    q = question_focus(question)
+    current_clause = re.split(r"[。；;\n]", prefix)[-1]
+    aspects = (
+        (r"从哪.*发货|发货地", r"发货", r"从.{2,20}发货|发货地[为是：:].+"),
+        (r"产地", r"产地", r"产地[为是：:].+"),
+        (r"规格", r"规格", r"\d.*(?:斤|克|g|只|装)"),
+        (r"多少钱|价格", r"价格|售价", r"\d.*(?:元|块)|[¥￥]\d"),
+        (r"净重|少重", r"净重|少重|重量", r"\d.*(?:范围内|低于|高于)|不是净重|不能说.*净重"),
+    )
+    # 问题同时问了两个方面，只答其中一个仍是未完成。
+    if any(re.search(asked, q) and re.search(topic, current_clause) for asked, topic, _ in aspects):
+        return True
+    # “发货地已知，产地无法确认”不能因为未被询问的保留意见而误转接。
+    if any(re.search(asked, q) and re.search(fact, prefix) for asked, _, fact in aspects):
+        return False
+    return True
 
 
 def _claims(answer: str) -> list[str]:
@@ -265,7 +312,8 @@ _UNIT_SYNONYMS: tuple[tuple[re.Pattern[str], str], ...] = (
 def _merge(local: SelfEvalResult, judged: SelfEvalResult) -> SelfEvalResult:
     """取两者中更保守的一份。理由见模块 docstring。"""
     unsupported = list(dict.fromkeys(judged.unsupported_claims + local.unsupported_claims))
-    grounded = bool(judged.grounded) and bool(local.grounded)
+    answered = judged.answered and local.answered
+    grounded = bool(judged.grounded) and bool(local.grounded) and answered
     coverage = min(float(judged.coverage), float(local.coverage))
 
     if not grounded:
@@ -289,6 +337,7 @@ def _merge(local: SelfEvalResult, judged: SelfEvalResult) -> SelfEvalResult:
 
     return SelfEvalResult(
         grounded=grounded,
+        answered=answered,
         coverage=round(max(0.0, min(1.0, coverage)), 4),
         unsupported_claims=unsupported,
         note=note,
@@ -338,6 +387,7 @@ def _coerce(payload: dict[str, Any]) -> SelfEvalResult:
 
     return SelfEvalResult(
         grounded=_as_bool(payload.get("grounded")),
+        answered=_as_bool(payload.get("answered", True)),
         coverage=round(max(0.0, min(1.0, coverage)), 4),
         unsupported_claims=_as_str_list(payload.get("unsupported_claims")),
         note=str(payload.get("note") or "")[:500],

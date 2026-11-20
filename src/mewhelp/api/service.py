@@ -834,6 +834,8 @@ class ChatService:
                     "path": result.path,
                     "handoff": result.handoff,
                     "evidence": evidence_payload(result)["chunks"],
+                    # 摘要只用于展示；多轮追问需要完整正文、表格与来源。
+                    "retrieval_evidence": [e.model_dump(mode="json") for e in result.evidences],
                     "tools": tool_payload(result),
                 },
             ),

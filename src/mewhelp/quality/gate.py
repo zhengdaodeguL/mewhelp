@@ -19,13 +19,14 @@
 `checks` 字典逐条可解释，事故复盘时要能指着某一条说"是它拦下来的"：
 
   top_score        最高证据分（精排分）归一化到 0~1
-  evidence_count   有效证据条数（分数**过阈值**的才算 —— 召回总会返回 top_k 条，
+  evidence_count   有效证据条数（分数过阈值，或内容已被确定性规则完整核验 —— 召回总会返回 top_k 条，
                    哪怕库里毫无相关内容，"最不像无关"的那条也会被返回。
-                   不过阈值的就是噪音，不能拿来凑置信度）
+                   无法核验且不过阈值的不能拿来凑置信度）
   score_margin     最高分与次高分的差；只有一条证据时记 0 —— 没有第二条来交叉印证，
                    这个"一致"是假的，不能当成高置信的理由
   entity_coverage  问题里的关键实体（品类/时间/金额）在有效证据里出现的比例
   avg_score        有效证据的平均分：区分"一条独苗"和"一片全都够格"
+  content_supported 是否已从原文核对主体、属性与条件；不改写原始检索分
 
 另外记几个只作审计、不参与决策的量：`recalled_count`（未经阈值过滤的召回条数，
 用来分辨"没召回"还是"召回了但都不够格"）、`entity_count`、`order_id_count`、
@@ -57,6 +58,7 @@ import re
 
 from ..config import Settings, get_settings
 from ..domain import HIGH_RISK_INTENTS, Intent, RefusalReason
+from ..knowledge import answer_from_evidence
 from ..nlu.entities import ORDER_RE
 from ..nlu.entities import normalize_order_id as normalize_entity_order_id
 from ..schemas import GateDecision, RetrievalResult, SlotExtraction
@@ -314,22 +316,29 @@ class ConfidenceGate:
     ) -> GateDecision:
         threshold = self._effective_threshold(intent)
 
+        evidences = (retrieval.evidences if retrieval else None) or []
+        supported = answer_from_evidence(question, evidences)
+        supported_ids = set(supported.chunk_ids) if supported else set()
         raw: list[tuple[float, str]] = []
-        for ev in (retrieval.evidences if retrieval else None) or []:
+        valid: list[tuple[float, str]] = []
+        for ev in evidences:
             raw.append((_safe_float(ev.score), _evidence_text(ev)))
+            if _safe_float(ev.score) >= threshold or ev.chunk_id in supported_ids:
+                valid.append(raw[-1])
 
         # 降序排序：所有判据都建立在"最高分/次高分/有效条数"上，顺序不稳会让
         # 同输入不同输出。sorted 稳定，同分时保持检索给的顺序 —— 仍是确定性的。
         raw.sort(key=lambda pair: pair[0], reverse=True)
 
-        # 有效证据 = 分数过阈值的那些。`top_score` 取的是**全部召回**里的最高分，
+        # 完整、可直接核验的规则也算有效证据；不能让精排分否定原文已覆盖的事实。
+        # 其余证据仍须过阈值。`top_score` 取的是**全部召回**里的最高分，
         # 不是有效证据里的最高分 —— 这两个数只在"至少有一个人过线"时才相等，
         # 而它们不等的那种情况恰恰是最需要区分开的一种：
         #   raw 为空          → 库里真的没有 → no_evidence
         #   raw 不空但全不过线 → 有声噪但不足以回答 → weak_evidence
         # 把这两种都算成 no_evidence，会把"知识缺失"和"检索没做好"混为一谈，
         # 而飞轮上这两种问题的处理方式完全不同（一个补文档，一个调检索）。
-        valid = [pair for pair in raw if pair[0] >= threshold]
+        valid.sort(key=lambda pair: pair[0], reverse=True)
         texts = [text for _, text in valid]
 
         top_score = raw[0][0] if raw else 0.0
@@ -344,6 +353,10 @@ class ConfidenceGate:
         # 证据侧先压掉空白再匹配：证据写 "7 天"、问题抽出的实体是 "7天"，
         # 不归一化就会把"一致"判成"没覆盖"，进而误拒一个本来答得出来的问题。
         coverage, missing = _weighted_coverage(cov_pairs, _squash(" ".join(texts)), intent)
+        if supported:
+            # 此处已核对主体和具体属性/条件；粗槽位如“黑土豆1斤档”“坏单包”
+            # 不应再以逐字匹配推翻完整规则，表头与单元格也不必拼成槽位原句。
+            coverage, missing = 1.0, []
 
         checks = {
             "top_score": round(_clamp01(top_score), 4),
@@ -351,6 +364,7 @@ class ConfidenceGate:
             "score_margin": round(margin, 4),
             "entity_coverage": round(coverage, 4),
             "avg_score": round(avg_score, 4),
+            "content_supported": float(supported is not None),
             # -- 以下只作审计，不参与决策 --
             "recalled_count": float(len(raw)),
             "entity_count": float(len(cov_pairs)),
@@ -378,7 +392,7 @@ class ConfidenceGate:
                 checks,
                 message="抱歉，这个问题我这边暂时没有找到可靠的依据，不敢乱答，帮你转人工确认一下。",
             )
-        elif top_score < threshold:
+        elif top_score < threshold and not supported:
             checks["reject"] = 1.0
             decision = GateDecision.reject(
                 confidence,
@@ -440,6 +454,7 @@ class ConfidenceGate:
             "score_margin": 0.0,
             "entity_coverage": 0.0,
             "avg_score": 0.0,
+            "content_supported": 0.0,
             "recalled_count": 0.0,
             "entity_count": 0.0,
             "order_id_count": 0.0,

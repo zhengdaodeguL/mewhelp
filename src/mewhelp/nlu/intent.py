@@ -45,6 +45,7 @@ import re
 from ..config import get_settings
 from ..domain import HIGH_RISK_INTENTS, INTENT_KEYWORDS, INTENT_LABELS, INTENT_SPECS, Intent
 from ..llm import as_bool, build_llm, extract_json
+from ..knowledge import is_damage_policy_question, product_attribute_question
 from ..schemas import ClassifyResult, SlotExtraction, Turn
 from . import entities as E
 
@@ -224,6 +225,11 @@ class IntentClassifier:
             or "申请" in text
             or any(kw in text for kw in INTENT_KEYWORDS[Intent.HUMAN_HANDOFF])
         ):
+            if is_damage_policy_question(text):
+                return [(Intent.POLICY_FAQ, 0.90, ["售后比例咨询"], 1.0)]
+            if product_attribute_question(text):
+                matched = [kw for kw in INTENT_KEYWORDS[Intent.PRODUCT_FAQ] if kw in text]
+                return [(Intent.PRODUCT_FAQ, 0.90, matched or ["商品属性咨询"], 1.0)]
             for pattern, intent in (
                 (_ORIGIN_QUESTION_RE, Intent.PRODUCT_FAQ),
                 (_AFTERSALES_RULE_RE, Intent.POLICY_FAQ),

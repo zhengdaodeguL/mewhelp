@@ -58,6 +58,8 @@ class AgentState(TypedDict, total=False):
     #: 和 history 是两个来源：history 是"这次聊了什么"（会被滑窗丢掉），
     #: memories 是"这个用户是谁"（跨会话保留）。指代消解和生成都要用。
     memories: list[str]
+    #: 本会话最近一轮已检索到、且与当前商品相关的原始证据。
+    context_evidences: list[Evidence]
 
     # ---------------- ③ 指代消解 + 意图识别 ----------------
     resolved_question: str  # 补全后的完整问题
@@ -127,6 +129,7 @@ def new_state(
         question=question,
         history=list(history or []),
         memories=list(memories or []),
+        context_evidences=[],
         resolved_question="",
         tool_calls=[],
         path=[],

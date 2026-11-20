@@ -224,9 +224,10 @@ _DEFAULT_REFUSAL_TEXT: dict[RefusalReason, str] = {
 
 
 class SelfEvalResult(BaseModel):
-    """生成前自评：回答是否每一句都被证据支撑。"""
+    """生成后自评：回答有依据，并且回答了当前问题。"""
 
     grounded: bool
+    answered: bool = True
     coverage: float = 0.0
     unsupported_claims: list[str] = Field(default_factory=list)
     note: str = ""
