@@ -24,6 +24,7 @@ from fastapi.testclient import TestClient
 
 from mewhelp.api import create_app
 from mewhelp.api.app import INDEX_HTML
+from mewhelp.api.auth import Account
 from mewhelp.api.service import MAX_MESSAGE_CHARS, chunk_text, stream_events
 from mewhelp.config import Settings
 from mewhelp.schemas import ConversationResult
@@ -413,6 +414,56 @@ def test_order_query_cannot_access_shared_fixture_through_chat(client):
     assert "shipping_address" not in resp.text
 
 
+@pytest.mark.parametrize(
+    "principal_id,order_id,status_label",
+    [
+        ("U1001", "ORD-1001", "待付款/待处理"),
+        ("U1002", "ORD-1003", "已发货"),
+        ("U1003", "ORD-1007", "已签收"),
+        ("U1004", "ORD-1009", "已取消"),
+    ],
+)
+def test_订单横条与对话对本人订单的可见性一致(client, monkeypatch, principal_id, order_id, status_label):
+    # 仅替换认证返回的身份，保留原始订单夹具和生产入口的归属检查。
+    monkeypatch.setattr(client.app.state.accounts, "from_token", lambda _: Account(principal_id, "fixture@example.org"))
+    rows = client.get("/api/orders").json()["orders"]
+    assert order_id in {row["order_id"] for row in rows}
+    events = _sse(client, f"帮我查下订单 {order_id} 的状态")
+    answer = events_of(events, "done")[0]["answer"]
+    assert order_id in answer and status_label in answer
+    assert "未关联" not in answer
+    assert any(t["result"]["order_id"] == order_id for t in events_of(events, "tool"))
+    assert "".join(t["text"] for t in events_of(events, "token")) == answer
+
+
+@pytest.mark.parametrize("question", ["查询订单 ORD-1003 的状态", "查询订单 ORD-1003 的物流", "帮我取消订单 ORD-1003"])
+def test_有订单的账号不能借请求参数越权查单(client, monkeypatch, question):
+    monkeypatch.setattr(client.app.state.accounts, "from_token", lambda _: Account("U1001", "fixture@example.org"))
+    response = client.post("/api/chat", json={
+        "user_id": "U1002", "session_id": _session_key(client, "s-other-order"), "message": question,
+    })
+    events = parse_sse(response.text)
+    answer = events_of(events, "done")[0]["answer"]
+    assert answer == "当前账号未关联这笔订单，暂时无法查询或办理该订单业务。"
+    assert events_of(events, "tool") == []
+    from mewhelp.tools.business import load_orders
+
+    order = load_orders()["ORD-1003"]
+    for private in (order["shipping_address"], order["items"][0]["name"], order["logistics"]["tracking_no"], "已发货"):
+        assert private not in response.text
+
+
+@pytest.mark.parametrize("principal_id", ["U1001", "无订单账号"])
+@pytest.mark.parametrize("question", ["查询订单 ORD-9999 的状态", "帮我取消订单 ORD-9999"])
+def test_查单与高风险操作均区分订单不存在(client, monkeypatch, principal_id, question):
+    monkeypatch.setattr(client.app.state.accounts, "from_token", lambda _: Account(principal_id, "fixture@example.org"))
+    events = _sse(client, question)
+    answer = events_of(events, "done")[0]["answer"]
+    assert "没有查到这个订单号" in answer
+    assert "未关联" not in answer
+    assert events_of(events, "tool") == []
+
+
 def _asset_paths(html: str) -> list[str]:
     """从入口页里取出它引用的静态资源路径（React 构建产物）。"""
     return sorted(set(re.findall(r'(?:src|href)="(/assets/[^"]+)"', html)))
@@ -595,7 +646,8 @@ def test_failed_tool_does_not_push_a_result(client):
     events = _sse(client, "帮我查下订单 ORD-9999 的状态")
     assert events_of(events, "tool") == []
     done = events_of(events, "done")[0]
-    assert "暂未关联订单信息" in done["answer"]
+    assert "没有查到这个订单号" in done["answer"]
+    assert "未关联" not in done["answer"]
     serialized = json.dumps(events, ensure_ascii=False)
     for internal in ("error_code", "ToolError", "Traceback"):
         assert internal not in serialized

@@ -480,7 +480,11 @@ def _render_tool_answer(calls: list[ToolCall]) -> str:
     parts: list[str] = []
     for call in renderable:
         if not call.ok:
-            parts.append(_tool_error_text(call.error))
+            text = _tool_error_text(call.error, call.result)
+            # 模型重试查单会留下多条失败记录，连续相同的查单提示只展示一次。
+            if call.error in {"ORDER_ACCOUNT_UNLINKED", "ORDER_NOT_FOUND"} and parts and parts[-1] == text:
+                continue
+            parts.append(text)
             continue
         data = call.result if isinstance(call.result, dict) else {}
         note = data.get("note")
@@ -522,7 +526,7 @@ def _should_escalate(calls: list[ToolCall]) -> bool:
 #: handoff=true 时才补那条"已为你转接人工客服"提示条）。真要转人工时，
 #: 由节点把 handoff 置真、再由 handoff 节点补那句提示，正文不抢这个话。
 _TOOL_ERROR_TEXT: dict[str, str] = {
-    "ORDER_ACCOUNT_UNLINKED": "您的账号暂未关联订单信息，暂时无法查询或办理订单业务。",
+    "ORDER_ACCOUNT_UNLINKED": "当前账号未关联这笔订单，暂时无法查询或办理该订单业务。",
     "ORDER_NOT_FOUND": "没有查到这个订单号，麻烦核对一下再发我（形如 ORD-1007）。",
     "ORDER_NOT_CANCELLABLE": "这笔订单已经发货了，没法直接取消。",
     "ORDER_ADDRESS_LOCKED": "订单已发出，收货地址改不了了。",
@@ -532,7 +536,10 @@ _TOOL_ERROR_TEXT: dict[str, str] = {
 }
 
 
-def _tool_error_text(error: str | None) -> str:
+def _tool_error_text(error: str | None, result: Any = None) -> str:
+    # 注册表已核对账号是否有订单，保留“无订单”和“未关联这笔订单”的区别。
+    if error == "ORDER_ACCOUNT_UNLINKED" and isinstance(result, dict) and result.get("message"):
+        return result["message"]
     if error and error in _TOOL_ERROR_TEXT:
         return _TOOL_ERROR_TEXT[error]
     return "暂时没查到，麻烦核对一下信息再发我。"

@@ -283,6 +283,42 @@ def run_agent(deps, question="帮我查订单 ORD-1001 的状态"):
     return make_agent_node(deps)(state)
 
 
+@pytest.mark.parametrize("repeats", [1, 2, 3, 5])
+@pytest.mark.parametrize(
+    "principal_id,order_id,message",
+    [
+        ("U1001", "ORD-1003", "当前账号未关联这笔订单，暂时无法查询或办理该订单业务。"),
+        ("无订单账号", "ORD-1003", "您的账号暂未关联订单信息，暂时无法查询或办理订单业务。"),
+        ("U1001", "ORD-9999", "没有查到这个订单号，麻烦核对一下再发我（形如 ORD-1007）。"),
+    ],
+)
+def test_重复失败查单只回复一次并保留调用记录(repeats, principal_id, order_id, message):
+    deps = agent_deps(*[[("get_order", {"order_id": order_id})] for _ in range(repeats)])
+    deps.enforce_order_ownership = True
+    state = new_state(
+        request_id="req-repeat", session_id="s-repeat", user_id=principal_id,
+        question=f"帮我查订单 {order_id} 的状态",
+    )
+    out = build_graph(deps).invoke(state)
+    assert len(out["tool_calls"]) == repeats
+    assert all(not call.ok for call in out["tool_calls"])
+    assert out["answer"] == message
+    assert out["handoff"] is False
+
+
+def test_不同查单错误仍分别展示():
+    deps = agent_deps([
+        ("get_order", {"order_id": "ORD-1003"}),
+        ("get_order", {"order_id": "ORD-9999"}),
+    ])
+    deps.enforce_order_ownership = True
+    state = new_state(request_id="req-errors", session_id="s-errors", user_id="U1001", question="查订单 ORD-1003")
+    out = build_graph(deps).invoke(state)
+    assert "未关联这笔订单" in out["answer"]
+    assert "没有查到这个订单号" in out["answer"]
+    assert len(out["answer"].splitlines()) == 2
+
+
 def test_agent_executes_function_calling_plan():
     deps = agent_deps([("get_order", {"order_id": "ORD-1001"})])
     out = run_agent(deps)
