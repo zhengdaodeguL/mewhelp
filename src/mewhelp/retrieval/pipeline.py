@@ -24,6 +24,7 @@ import time
 from pathlib import Path
 
 from ..config import Settings, get_settings
+from ..knowledge import answer_from_evidence
 from ..schemas import Evidence, KbChunk, RetrievalResult
 from .base import Embedder, Reranker, VectorStore
 from .chunking import chunk_document_file, tokenize
@@ -297,8 +298,10 @@ class RetrievalPipeline:
 
         if isinstance(self.reranker, MockReranker) or not any(ev.rerank_score is not None for ev in evidences):
             evidences = self._relevant_candidates(q, evidences, lexical=True)
-        # 闸门只统计过阈值的证据；生成上下文和依据卡片也必须使用同一批。
-        evidences = [ev for ev in evidences if ev.score >= self.settings.confidence_threshold]
+        # 与闸门共用内容判定：完整规则不能仅因精排低分从上下文/依据卡中消失。
+        supported = answer_from_evidence(q, evidences)
+        supported_ids = set(supported.chunk_ids) if supported else set()
+        evidences = [ev for ev in evidences if ev.score >= self.settings.confidence_threshold or ev.chunk_id in supported_ids]
         result.evidences = evidences
         result.reranked_hits = len(evidences)
         # retrieved_ids 取"当前排序的前 fusion_top_k 个"：评估集算 Recall@k
@@ -312,6 +315,10 @@ class RetrievalPipeline:
         """先按查询主题筛候选，避免共同的规格/保存词把其他商品带进来。"""
         if not evidences:
             return []
+        supported = answer_from_evidence(query, evidences)
+        if supported:
+            docs = {e.chunk.doc_id for e in evidences if e.chunk_id in supported.chunk_ids}
+            return [e for e in evidences if e.chunk.doc_id in docs]
         tokens = set(tokenize(query)) - {"多久", "几天", "几步", "哪些", "怎么样", "怎么办", "是否", "能否"}
         if not tokens:
             return []

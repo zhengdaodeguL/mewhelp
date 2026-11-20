@@ -18,17 +18,20 @@
 from __future__ import annotations
 
 import json
+import re
 from collections.abc import Sequence
 from typing import Any
 
 from ..domain import Exit, Intent, NodeName, RefusalReason, ToolError
 from ..generation import current_generation
+from ..knowledge import answer_from_evidence, normalized, previous_evidence
 from ..llm import LLMResponse, extract_json
 from ..nlu.entities import ORDER_RE, find_order_id, normalize_order_id
 from ..schemas import (
     Evidence,
     GateDecision,
     RetrievalResult,
+    ResolveResult,
     SelfEvalResult,
     SlotExtraction,
     TokenUsage,
@@ -48,6 +51,69 @@ def _step(node: str, **details: Any) -> TraceStep:
     return TraceStep(node=node, details=details)
 
 
+class _AnswerTokens:
+    """模型不能自行确认转接；确认话术只由 handoff 节点发出。
+
+    流式也在发送前过滤。只缓冲可能的转接句开头，普通正文继续即时推送，
+    不需要等整句或整段生成结束；同步回答复用同一规则。
+    """
+
+    _leads = tuple(
+        prefix + action
+        for prefix in (
+            "", "已", "已经", "已帮你", "已经帮你", "已为你", "已经为你",
+            "已为您", "已经为您", "我帮你", "我已帮你", "我已经帮你",
+            "我会帮你", "帮你", "帮您", "为你", "为您", "给你",
+        )
+        for action in ("转人工", "转接人工")
+    )
+    _ends = "。！？!?；;\n"
+
+    def __init__(self, emit=None):
+        self.emit = emit
+        self.text = ""
+        self.received = False
+        self.pending = ""
+        self.at_start = True
+        self.discarding = False
+
+    def _emit(self, text):
+        if text:
+            self.text += text
+            if self.emit is not None:
+                self.emit(text)
+
+    def token(self, piece):
+        self.received = True
+        output = []
+        for char in piece:
+            if self.discarding:
+                if char in self._ends:
+                    self.discarding = False
+                    self.at_start = True
+                continue
+            if self.at_start:
+                self.pending += char
+                candidate = self.pending.lstrip(" \t\r\n*_")
+                if candidate in self._leads:
+                    self.pending = ""
+                    self.discarding = True
+                    continue
+                if not candidate or any(lead.startswith(candidate) for lead in self._leads):
+                    continue
+                output.append(self.pending)
+                self.pending = ""
+            else:
+                output.append(char)
+            self.at_start = char in self._ends + "，,"
+        self._emit("".join(output))
+
+    def finish(self):
+        self._emit(self.pending)
+        self.pending = ""
+        return self.text
+
+
 # ============================================================
 # ③ 指代消解 + 意图识别
 # ============================================================
@@ -58,11 +124,15 @@ def make_resolve_node(deps) -> Any:
         q = state.get("question", "")
         history = state.get("history", [])
         memories = state.get("memories", [])
+        context_evidences = []
         try:
-            result = deps.resolver.resolve(q, history, memory=memories)
+            topic, context_evidences = previous_evidence(q, history) if not find_order_id(q) else ("", [])
+            if topic and context_evidences:
+                resolved = q if normalized(topic) in normalized(q) else f"{topic} {q}"
+                result = ResolveResult(original=q, resolved=resolved, rewritten=resolved != q)
+            else:
+                result = deps.resolver.resolve(q, history, memory=memories)
         except Exception as exc:  # noqa: BLE001 — 消解失败不该阻断问答
-            from ..schemas import ResolveResult
-
             result = ResolveResult(original=q, resolved=q, rewritten=False)
             return {
                 "resolved_question": q,
@@ -77,6 +147,7 @@ def make_resolve_node(deps) -> Any:
         return {
             "resolved_question": result.resolved or q,
             "resolve": result,
+            "context_evidences": context_evidences,
             "path": [NodeName.RESOLVE.value],
             "trace": [
                 _step(
@@ -88,6 +159,7 @@ def make_resolve_node(deps) -> Any:
                     # 记下"这一轮有几条用户档案参与"—— 排查"它怎么知道我的单号"
                     # 时，这是唯一的线索
                     memory_items=len(memories),
+                    reused_evidence=len(context_evidences),
                 )
             ],
         }
@@ -183,6 +255,8 @@ def route_by_exit(state: AgentState) -> str:
 def make_retrieve_node(deps) -> Any:
     def retrieve_node(state: AgentState) -> dict[str, Any]:
         query = state.get("resolved_question") or state.get("question", "")
+        prior = state.get("context_evidences", [])
+        errors = []
         try:
             result = deps.retriever.retrieve(query)
         except Exception as exc:  # noqa: BLE001 — 检索挂了要能退化成"无证据"，而不是崩
@@ -190,16 +264,26 @@ def make_retrieve_node(deps) -> Any:
             # 检索失败 = 一条证据都没有 = 闸门必然拒答，但拒答话术得是人话。
             # 不在这里给 answer 的话，handoff 节点会输出一句通用的转人工，
             # 用户完全不知道发生了什么。
-            return {
-                "retrieval": result,
-                "answer": "抱歉，知识库暂时查询不通，我帮你转人工核实一下。",
-                "path": [NodeName.RETRIEVE.value],
-                "trace": [_step(NodeName.RETRIEVE.value, error=str(exc), fallback=True)],
-                "errors": [f"retrieve: {exc}"],
-            }
+            errors = [f"retrieve: {exc}"]
+            if not prior:
+                return {
+                    "retrieval": result,
+                    "answer": "抱歉，知识库暂时查询不通，我帮你转人工核实一下。",
+                    "path": [NodeName.RETRIEVE.value],
+                    "trace": [_step(NodeName.RETRIEVE.value, error=str(exc), fallback=True)],
+                    "errors": errors,
+                }
+
+        # 同 chunk 的当前版本优先；历史证据来自已校验会话的原始快照，不来自旧答复。
+        by_id = {e.chunk_id: e for e in result.evidences}
+        reused = sum(e.chunk_id not in by_id for e in prior)
+        for evidence in prior:
+            by_id.setdefault(evidence.chunk_id, evidence)
+        result = result.model_copy(update={"evidences": list(by_id.values())})
 
         return {
             "retrieval": result,
+            "errors": errors,
             "path": [NodeName.RETRIEVE.value],
             "trace": [
                 _step(
@@ -210,6 +294,7 @@ def make_retrieve_node(deps) -> Any:
                     fused_hits=result.fused_hits,
                     reranked_hits=result.reranked_hits,
                     top_score=round(result.top_score, 4),
+                    reused_evidence=reused,
                     # 只记 chunk_id 和标题，不记全文 —— 日志不该被证据正文撑爆
                     chunks=[
                         {"chunk_id": e.chunk_id, "title": e.chunk.title, "score": round(e.score, 4)}
@@ -730,6 +815,16 @@ def make_generate_node(deps) -> Any:
             }
 
         retrieval = state.get("retrieval")
+        question = state.get("resolved_question") or state.get("question", "")
+        supported = answer_from_evidence(question, retrieval.evidences if retrieval else [])
+        if supported:
+            return {
+                "answer": supported.text,
+                "handoff": False,
+                "refusal_reason": None,
+                "path": [NodeName.GENERATE.value],
+                "trace": [_step(NodeName.GENERATE.value, source="evidence_rule", rule=supported.kind, chunks=list(supported.chunk_ids))],
+            }
         context = retrieval.to_context() if retrieval else ""
         usage = TokenUsage()
 
@@ -745,12 +840,13 @@ def make_generate_node(deps) -> Any:
             ) + "\n\n"
 
         generation = current_generation.get()
+        tokens = _AnswerTokens(generation.token if generation is not None else None)
         if generation is not None:
             generation.prepare(state)
         generate = deps.llm.chat
         if generation is not None:
             generate = lambda messages, **kw: deps.llm.chat_stream(
-                messages, on_token=generation.token, **kw
+                messages, on_token=tokens.token, **kw
             )
         try:
             resp = generate(
@@ -759,7 +855,10 @@ def make_generate_node(deps) -> Any:
                         "role": "system",
                         "content": (
                             "你是电商客服。只根据下面给出的知识库证据回答，"
-                            "不要引入证据之外的信息。证据不足时直接说无法确认。"
+                            "不要引入证据之外的信息。必须直接回答用户当前的问题；"
+                            "区分规格/范围判断与赔偿咨询，不能用另一条政策代替回答。"
+                            "证据不足时明确说明缺少什么，并追问必要信息或说明需要人工核实，"
+                            "不能把一句无法确认当作已解决。答上问题时不添加转人工话术。"
                             "通用商品、政策和售后规则咨询直接据实回答，不索要订单号。"
                             "已知的用户信息可以用来理解用户在说哪一单、什么偏好，"
                             "但它同样不是回答依据。"
@@ -775,8 +874,11 @@ def make_generate_node(deps) -> Any:
                     },
                 ],
                 task="generate",
+                temperature=0.0,
             )
-            answer = resp.text
+            if not tokens.received:
+                tokens.token(resp.text)
+            answer = tokens.finish()
             usage = usage.add(_usage_from(resp))
         except Exception as exc:  # noqa: BLE001 — 生成失败走兜底话术，不是 500
             if generation is not None and generation.text:
@@ -785,6 +887,7 @@ def make_generate_node(deps) -> Any:
             return {
                 "answer": "抱歉，我这边暂时没能组织出可靠的答复，帮你转人工确认。",
                 "handoff": True,
+                "refusal_reason": RefusalReason.SELF_EVAL_FAILED,
                 "path": [NodeName.GENERATE.value],
                 "trace": [_step(NodeName.GENERATE.value, error=str(exc), fallback=True)],
                 "errors": [f"generate: {exc}"],
@@ -794,11 +897,18 @@ def make_generate_node(deps) -> Any:
         selfeval = SelfEvalResult(grounded=True, coverage=1.0)
         trace_err: str | None = None
         try:
-            selfeval = deps.self_eval.evaluate(answer, context)
-        except Exception as exc:  # noqa: BLE001 —— 自评挂了就当"没评过"，不能因此降级答复
+            selfeval = deps.self_eval.evaluate(answer, context, question=question)
+        except Exception as exc:  # noqa: BLE001 — 未完成校验不能伪装成通过
             trace_err = str(exc)
+            selfeval = SelfEvalResult(grounded=False, answered=False, coverage=0.0)
 
-        if not selfeval.grounded:
+        if not selfeval.grounded or not selfeval.answered:
+            refusal = "抱歉，这个问题暂时未能给出可靠答复，我帮你转人工核实。"
+            # 已发出的流式正文只能补充更正；非流式不把未通过的回答交付给用户。
+            if generation is not None and generation.text:
+                answer += "\n\n抱歉，上面的答复未能可靠回答这个问题，我帮你转人工核实。"
+            else:
+                answer = refusal
             return {
                 "answer": answer,
                 "handoff": True,
@@ -809,6 +919,7 @@ def make_generate_node(deps) -> Any:
                     _step(
                         NodeName.GENERATE.value,
                         self_eval=False,
+                        answered=selfeval.answered,
                         coverage=selfeval.coverage,
                         unsupported=selfeval.unsupported_claims,
                         error=trace_err,
@@ -818,6 +929,8 @@ def make_generate_node(deps) -> Any:
 
         return {
             "answer": answer,
+            "handoff": False,
+            "refusal_reason": None,
             "usage": usage,
             "path": [NodeName.GENERATE.value],
             "trace": [
@@ -837,10 +950,12 @@ def make_generate_node(deps) -> Any:
 def make_handoff_node(deps) -> Any:
     def handoff_node(state: AgentState) -> dict[str, Any]:
         gate = state.get("gate")
-        # 已经有答复的（高风险流程业务拒绝等）沿用答复，只补一句转人工
+        # 转接由拒答路径或用户明确请求触发；同一答复只保留一条转接通知。
         existing = state.get("answer") or ""
         if existing and state.get("handoff"):
-            answer = existing + "\n\n已经帮你转接人工客服进一步处理。"
+            answer = existing
+            if not re.search(r"转(?:接)?人工", existing):
+                answer += "\n\n已经帮你转接人工客服进一步处理。"
         elif gate and not gate.passed and gate.message:
             answer = gate.message
         else:
