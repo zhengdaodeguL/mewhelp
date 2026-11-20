@@ -173,7 +173,9 @@ def make_classify_node(deps) -> Any:
         history = state.get("history", [])
         try:
             classify = deps.classifier.classify(text)
-            slots = deps.classifier.extract_slots(state.get("question", ""), history)
+            slots = deps.classifier.extract_slots(
+                state.get("question", ""), history, intent=classify.intent,
+            )
         except Exception as exc:  # noqa: BLE001
             from ..domain import INTENT_LABELS
             from ..schemas import ClassifyResult
@@ -893,7 +895,16 @@ def make_generate_node(deps) -> Any:
                 "errors": [f"generate: {exc}"],
             }
 
-        # 自评仍在生成完成后执行，决定 done 的转接标志；流式正文已逐片发出。
+        if generation is not None and answer.strip():
+            # 正文已完整交付，流可以关闭；核验继续执行并原位更新同一轮。
+            # 不把“尚未核验”伪装成通过，前端会同步核验后的更正/转接状态。
+            generation.complete({
+                **state, "answer": answer, "handoff": False,
+                "usage": (state.get("usage") or TokenUsage()).add(usage),
+                "path": [*state.get("path", []), NodeName.GENERATE.value],
+            }, verifying=True)
+
+        # 同步和异步收尾使用同一次 answered/grounded 检查，温度保持 0。
         selfeval = SelfEvalResult(grounded=True, coverage=1.0)
         trace_err: str | None = None
         try:
@@ -987,6 +998,11 @@ def make_flywheel_node(deps) -> Any:
     def flywheel_node(state: AgentState) -> dict[str, Any]:
         if not state.get("handoff"):
             return {"path": [NodeName.FLYWHEEL.value], "trace": [_step(NodeName.FLYWHEEL.value, skipped=True)]}
+
+        generation = current_generation.get()
+        if generation is not None:
+            # 拒答已经确定；问题池写入不应挡住正文或 done。
+            generation.complete(state)
 
         from ..flywheel.feedback import source_for
         from ..schemas import FlywheelRecord

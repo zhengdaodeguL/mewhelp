@@ -537,7 +537,8 @@ def test_session_detail_is_user_facing_only(client):
     detail = client.get(f"/api/sessions/{session_id}").json()
     assert len(detail["messages"]) == 2
     for msg in detail["messages"]:
-        assert set(msg) == {"role", "content", "handoff", "request_id", "evidence", "tools"}
+        assert set(msg) == {"role", "content", "handoff", "request_id", "evidence", "tools", "status"}
+        assert msg["status"] == "complete"
         assert isinstance(msg["evidence"], list)
         assert isinstance(msg["tools"], list)
     assert detail["messages"][0]["role"] == "user"

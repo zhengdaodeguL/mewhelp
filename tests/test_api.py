@@ -187,7 +187,7 @@ def test_chat_sse_event_order_and_tokens(client):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("phase", ["before_token", "during_token"])
-async def test_http_disconnect_cancels_generation_without_saving(client, monkeypatch, phase):
+async def test_http_disconnect_cancels_generation_and_saves_incomplete_turn(client, monkeypatch, phase):
     """直接发送 ASGI http.disconnect，验证浏览器断连到模型取消的完整链路。"""
     service = client.app.state.service
     llm = client.app.state.deps.llm
@@ -240,14 +240,19 @@ async def test_http_disconnect_cancels_generation_without_saving(client, monkeyp
     }
     await asyncio.wait_for(client.app(scope, receive, send), 5)
     await asyncio.wait_for(closed.wait(), 3)
+    await service.drain()
     assert sent[0]["status"] == 200
     assert not any(b"event: done" in m.get("body", b"") for m in sent)
-    assert service.sessions.load(session_id, user_id=client.test_user_id) == []
-    assert service.sessions.get_session(session_id, user_id=client.test_user_id) is None
+    saved = service.sessions.load(session_id, user_id=client.test_user_id)
+    assert [t.role for t in saved] == ["user", "assistant"]
+    assert saved[-1].metadata["status"] == "stopped"
+    assert saved[-1].content == ("" if phase == "before_token" else "尚未完成的回答")
+    assert service.sessions.get_session(session_id, user_id=client.test_user_id) is not None
     monkeypatch.setattr(llm, "chat_stream", original_stream)
     retry = client.post("/api/chat", json={"session_id": session_id, "message": "尺码怎么选"})
     assert events_of(parse_sse(retry.text), "done")
-    assert [t.role for t in service.sessions.load(session_id, user_id=client.test_user_id)] == ["user", "assistant"]
+    assert client.get(f"/api/sessions/{session_id}").json()["ok"]
+    assert [t.role for t in service.sessions.load(session_id, user_id=client.test_user_id)] == ["user", "assistant"] * 2
 
 
 def test_chat_sse_does_not_expose_unlinked_order_data(client):

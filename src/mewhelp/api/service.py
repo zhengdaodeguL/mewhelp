@@ -20,6 +20,7 @@ import hashlib
 import json
 import logging
 import re
+import secrets
 import threading
 import time
 from collections import OrderedDict
@@ -38,6 +39,7 @@ from ..memory.store import MemoryStore
 from ..schemas import (
     MEMORY_KIND_LABELS,
     ConversationResult,
+    Evidence,
     KbChunk,
     RetrievalResult,
     SessionDetail,
@@ -76,6 +78,7 @@ EMPTY_INPUT_ANSWER = (
     "你想咨询什么问题？直接说就行，比如「帮我查下订单 ORD-1002 到哪了」。"
 )
 TOO_LONG_ANSWER = f"你的问题太长了（超过 {MAX_MESSAGE_CHARS} 字），麻烦精简一下再发我。"
+_STOP_STREAM = object()
 
 #: 会话里保留的最大轮数（含 user/assistant）。滑窗/摘要只关心最近若干轮，
 #: 但多留一个远大于窗口的余量，好让指代消解在长会话里仍有东西可查。
@@ -236,6 +239,7 @@ def to_session_messages(turns: Sequence[Turn]) -> list[SessionMessage]:
                 content=t.content,
                 handoff=bool(meta.get("handoff")) if t.role == "assistant" else False,
                 request_id=str(meta.get("request_id") or ""),
+                status=meta.get("status", "complete"),
                 evidence=meta.get("evidence", []) if t.role == "assistant" else [],
                 tools=meta.get("tools", []) if t.role == "assistant" else [],
             )
@@ -258,6 +262,7 @@ class SessionStore:
     def __init__(self, settings: Settings | None = None, *, max_turns: int = DEFAULT_MAX_TURNS):
         self.settings = settings or get_settings()
         self.max_turns = max(2, int(max_turns))
+        self._write_lock = threading.RLock()
         #: 最近一次存储失败的原因。不抛异常，但必须能被诊断（否则"历史丢了"
         #: 会表现为"多轮突然失忆"，而没有任何线索）。
         self.last_error: str | None = None
@@ -280,7 +285,10 @@ class SessionStore:
             logger.warning("[api] 会话历史读取失败（按无历史继续）：%s", exc)
             return []
 
-    def append(self, session_id: str, user_id: str, turns: Sequence[Turn]) -> list[Turn]:
+    def append(
+        self, session_id: str, user_id: str, turns: Sequence[Turn], *, replace: bool = False,
+        existing_only: bool = False,
+    ) -> list[Turn]:
         """把新的轮次追加进会话，返回追加后的完整历史。
 
         截断保留**最近的**轮次：滑窗和摘要都只看近处，丢最早的那些对回答
@@ -294,9 +302,11 @@ class SessionStore:
             return []
         check_cancelled()
         try:
-            with session_scope(settings=self.settings) as s:
+            with self._write_lock, session_scope(settings=self.settings) as s:
                 row = s.get(SessionRow, session_id)
                 if row is None:
+                    if existing_only:
+                        return []
                     row = SessionRow(
                         session_id=session_id,
                         user_id=user_id or "",
@@ -310,7 +320,24 @@ class SessionStore:
                 elif row.user_id != user_id:
                     raise SessionOwnershipError
                 history = decode_turns(row.turns_json)
-                history.extend(turns)
+                if replace:
+                    # SSE 的待核验快照、最终核验结果与停止结果共用同一个问答 ID。
+                    # 原位更新保留轮次顺序，不为异步收尾再追加一轮。
+                    positions = {
+                        (t.metadata.get("request_id"), t.role): i
+                        for i, t in enumerate(history) if t.metadata.get("request_id")
+                    }
+                    if existing_only and any((t.metadata.get("request_id"), t.role) not in positions for t in turns):
+                        return []
+                    for turn in turns:
+                        key = (turn.metadata.get("request_id"), turn.role)
+                        if key in positions:
+                            history[positions[key]] = turn
+                        else:
+                            positions[key] = len(history)
+                            history.append(turn)
+                else:
+                    history.extend(turns)
                 if len(history) > self.max_turns:
                     history = history[-self.max_turns :]
                 row.turns_json = encode_turns(history)
@@ -609,6 +636,145 @@ class ChatService:
         self.memory = memory
         #: 抽取记忆用的模型。没给就只读不写（读是纯查询，写要花一次模型调用）。
         self.llm = llm
+        # 持有收尾任务直到完成；HTTP 断连不应让落库任务被垃圾回收或取消。
+        self._background: set[asyncio.Task] = set()
+        self._active: dict[tuple[str, str, str], GenerationContext] = {}
+        self._session_tail: dict[tuple[str, str], asyncio.Future] = {}
+        self._stopping: dict[tuple[str, str, str], asyncio.Task] = {}
+        self._deleted_sessions: OrderedDict[tuple[str, str], None] = OrderedDict()
+
+    def _track(self, coroutine) -> asyncio.Task:
+        task = asyncio.create_task(coroutine)
+        self._background.add(task)
+
+        def finished(task):
+            self._background.discard(task)
+            if not task.cancelled() and task.exception() is not None:
+                logger.error("[api] 异步收尾失败", exc_info=task.exception())
+
+        task.add_done_callback(finished)
+        return task
+
+    async def drain(self) -> None:
+        """关服/离线调用等待已登记的收尾；不放在 HTTP 正文流的关闭路径上。"""
+        while self._background:
+            await asyncio.gather(*list(self._background), return_exceptions=True)
+
+    async def wait_for_session(self, user_id: str, session_id: str = "") -> None:
+        """正文结束后的读操作等收尾，保证刷新/反馈能读到刚完成的那轮。"""
+        pending = [
+            g.settled for (uid, sid, _), g in self._active.items()
+            if uid == user_id and (not session_id or sid == session_id)
+            and (g.done_sent or g.cancelled.is_set())
+        ]
+        pending.extend(
+            task for (uid, sid, _), task in self._stopping.items()
+            if uid == user_id and (not session_id or sid == session_id)
+        )
+        if pending:
+            await asyncio.gather(*(asyncio.shield(task) for task in pending))
+
+    def _stored_result(self, user_id: str, session_id: str, request_id: str) -> ConversationResult | None:
+        turns = self.sessions.load(session_id, user_id=user_id)
+        reply = next((t for t in reversed(turns) if t.role == "assistant" and t.metadata.get("request_id") == request_id), None)
+        if reply is None:
+            return None
+        question = next((t.content for t in reversed(turns) if t.role == "user" and t.metadata.get("request_id") == request_id), "")
+        return ConversationResult(
+            user_id=user_id, session_id=session_id, request_id=request_id, question=question,
+            answer=reply.content, status=reply.metadata.get("status", "complete"),
+            handoff=bool(reply.metadata.get("handoff")),
+            evidences=[Evidence.model_validate(e) for e in reply.metadata.get("retrieval_evidence", [])],
+        )
+
+    async def stop(
+        self, *, user_id: str, session_id: str, request_id: str, message: str, answer: str | None = None,
+    ) -> ConversationResult | None:
+        """明确停止 + 保存确认；也覆盖原 POST 尚未到达的窗口。"""
+        key = (user_id, session_id, request_id)
+        if key[:2] in self._deleted_sessions:
+            return None
+        if any(uid != user_id and sid == session_id for uid, sid, _ in self._active):
+            raise SessionOwnershipError
+        # 先检查所有权，不能用停止接口给别人的会话写入一轮。
+        stored = self._stored_result(user_id, session_id, request_id)
+        if generation := self._active.get(key):
+            if not generation.done_sent:
+                source = generation.text or (generation.state or {}).get("answer", "")
+                # 只接受确实生成过的前缀，不能把客户端提供的任意文本当作助手答复。
+                generation.stop_answer = answer if answer is not None and source.startswith(answer) else generation.delivered
+                generation.cancel()
+                if generation.producer is not None:
+                    generation.producer.cancel()
+            await asyncio.shield(generation.settled)
+            return await self._confirm_stopped_prefix(self._stored_result(user_id, session_id, request_id), answer)
+        if stored is not None:
+            return await self._confirm_stopped_prefix(stored, answer)
+        if key not in self._stopping:
+            previous = self._session_tail.get((user_id, session_id))
+
+            async def save():
+                if previous is not None:
+                    await asyncio.shield(previous)
+                result = ConversationResult(
+                    user_id=user_id, session_id=session_id, request_id=request_id,
+                    question=message.strip()[:MAX_MESSAGE_CHARS], answer="", status="stopped",
+                )
+                await asyncio.to_thread(self._persist, result)
+
+            self._stopping[key] = task = self._track(save())
+            self._session_tail[key[:2]] = task
+
+            def stopped(task):
+                if self._stopping.get(key) is task:
+                    self._stopping.pop(key, None)
+                if self._session_tail.get(key[:2]) is task:
+                    self._session_tail.pop(key[:2], None)
+
+            task.add_done_callback(stopped)
+        task = self._stopping[key]
+        try:
+            await asyncio.shield(task)
+        finally:
+            if task.done():
+                self._stopping.pop(key, None)
+        return self._stored_result(user_id, session_id, request_id)
+
+    async def _confirm_stopped_prefix(self, result, received: str | None):
+        # 浏览器可能先断连再送达停止确认。此时后端已保存的发送队列可能比
+        # 浏览器实际收到的多几片，只能收缩为已生成过的前缀，不能接受任意替换。
+        if result is None or result.status != "stopped" or received is None or result.answer == received:
+            return result
+        if not result.answer.startswith(received):
+            return result
+        turns = await asyncio.to_thread(self.sessions.load, result.session_id, user_id=result.user_id)
+        reply = next((t for t in turns if t.role == "assistant" and t.metadata.get("request_id") == result.request_id), None)
+        if reply is None:
+            return None
+        saved = await asyncio.to_thread(
+            self.sessions.append, result.session_id, result.user_id,
+            [reply.model_copy(update={"content": received})], replace=True, existing_only=True,
+        )
+        if not saved:
+            return None
+        result.answer = received
+        return result
+
+    async def delete_session(self, user_id: str, session_id: str) -> bool:
+        """先结束在途写入再删除，晚到的停止确认不能重建已删除的会话。"""
+        self.sessions.load(session_id, user_id=user_id)
+        key = (user_id, session_id)
+        self._deleted_sessions[key] = None
+        self._deleted_sessions.move_to_end(key)
+        while len(self._deleted_sessions) > 256:
+            self._deleted_sessions.popitem(last=False)
+        for (uid, sid, _), generation in list(self._active.items()):
+            if (uid, sid) == key and not generation.done_sent:
+                generation.cancel()
+                if generation.producer is not None:
+                    generation.producer.cancel()
+        await self.wait_for_session(user_id, session_id)
+        return await asyncio.to_thread(self.sessions.delete, session_id, user_id=user_id)
 
     # ------------------------------------------------------------------
     def ask(
@@ -618,6 +784,7 @@ class ChatService:
         session_id: str,
         message: str,
         quote: str = "",
+        request_id: str = "",
     ) -> ConversationResult:
         check_cancelled()
         text = (message or "").strip()
@@ -651,7 +818,7 @@ class ChatService:
         # 否则"用户说了句废话"这条记录在会话里会凭空消失，多轮上下文会断。
         if not text:
             result = _guarded_result(
-                request_id="",
+                request_id=request_id,
                 session_id=session_id,
                 user_id=user_id,
                 question="",
@@ -662,7 +829,7 @@ class ChatService:
 
         if len(text) > MAX_MESSAGE_CHARS:
             result = _guarded_result(
-                request_id="",
+                request_id=request_id,
                 session_id=session_id,
                 user_id=user_id,
                 question=text[:MAX_MESSAGE_CHARS],
@@ -671,22 +838,19 @@ class ChatService:
             )
             return self._finish(result, state=None)
 
-        request_id = _request_id(session_id, user_id, text, len(history))
+        request_id = request_id or _request_id(session_id, user_id, text, len(history))
         t0 = time.perf_counter()
 
-        # 记忆抽取**和图并行跑**，不要串在答复之后。
-        #
-        # 它只依赖用户这句话，不依赖图算出什么 —— 而真模型跑一趟要 1~3 秒。
-        # 串行的话，这段时间正好落在"图已经跑完、第一个字还没推出去"的窗口里：
-        # 用户盯着一个空气泡多等一个完整往返，且这期间点"停止"会留下一个
-        # 永远不会有内容的占位气泡（它连第一个 token 都没等到）。
-        #
-        # 并发跑不产生任何顺序问题：真正决定先后的是 `_memorize` 里那三步
-        # （先记命中、再落库、最后回读），这里的线程只负责"问模型要候选"。
-        learner = _extract_in_background(self.llm, text) if (self.memory and self.llm) else None
+        # 同步调用的记忆抽取与图并行；SSE 则在 done 之后启动，避免档案
+        # 模型的等待挡住首字。两条路径仍由 _memorize 按相同顺序保存候选。
         generation = current_generation.get()
+        learner = _extract_in_background(self.llm, text) if (self.memory and self.llm and generation is None) else None
         if generation is not None:
             generation.learner = learner
+            generation.state = new_state(
+                request_id=request_id, session_id=session_id, user_id=user_id,
+                question=text, history=list(history), memories=memory_lines,
+            )
 
         try:
             state = self.graph.invoke(
@@ -753,6 +917,8 @@ class ChatService:
         if generation is not None:
             # SSE 消费完所有正文后才提交，不能在排队发送前就保存整轮。
             generation.finish = state
+            if state is not None:
+                generation.state = state
             return result
         self.cache.put(CachedRun(result=result, retrieval=retrieval))
         self._record_trace(result)
@@ -833,6 +999,7 @@ class ChatService:
                     "exit": _value(result.exit),
                     "path": result.path,
                     "handoff": result.handoff,
+                    "status": result.status,
                     "evidence": evidence_payload(result)["chunks"],
                     # 摘要只用于展示；多轮追问需要完整正文、表格与来源。
                     "retrieval_evidence": [e.model_dump(mode="json") for e in result.evidences],
@@ -840,13 +1007,65 @@ class ChatService:
                 },
             ),
         ]
-        self.sessions.append(result.session_id, result.user_id, turns)
+        self.sessions.append(
+            result.session_id, result.user_id, turns,
+            replace=current_generation.get() is not None or result.status in {"stopped", "interrupted"},
+        )
 
     async def stream(self, **kwargs: Any) -> AsyncIterator[dict[str, str]]:
-        """保留同步图，通过请求上下文即时转发最终生成的分片。"""
+        """正文以 done 结束；核验、记忆与持久化由保留引用的任务完成。
+
+        HTTP 消费者收到 done 就关闭迭代器。离线消费者若遍历到耗尽，则同时
+        等待收尾，便于测试/CLI 读取最终结果。aclose 不会取消已交付的答案。
+        """
         generation = GenerationContext()
+        kwargs = dict(kwargs)
+        kwargs["request_id"] = kwargs.get("request_id") or f"req_{secrets.token_hex(12)}"
+        generation.request_id = kwargs["request_id"]
+        key = (kwargs["user_id"], kwargs["session_id"], generation.request_id)
+        session_key = key[:2]
+        if session_key in self._deleted_sessions:
+            raise SessionOwnershipError
+        if pending_stop := self._stopping.get(key):
+            await asyncio.shield(pending_stop)
+        if existing := self._active.get(key):
+            await asyncio.shield(existing.settled)
+        if stored := self._stored_result(*key):
+            async for event in stream_events(stored):
+                yield event
+            return
+        if any(uid != key[0] and sid == key[1] for uid, sid, _ in self._active):
+            raise SessionOwnershipError
+        # 同会话的前一轮，以及同用户已交付的档案更新，须先可读再开始下一轮。
+        # 其它用户/仍在独立会话生成的请求可以并行。
+        predecessors = {
+            g.settled for (uid, _, _), g in self._active.items() if uid == key[0] and g.done_sent
+        }
+        if previous := self._session_tail.get(session_key):
+            predecessors.add(previous)
+        self._session_tail[session_key] = generation.settled
+        self._active[key] = generation
+        generation.state = new_state(
+            request_id=generation.request_id, session_id=kwargs["session_id"],
+            user_id=kwargs["user_id"], question=(kwargs.get("message") or "").strip(),
+        )
         queue: asyncio.Queue = asyncio.Queue()
+        generation.on_cancel = lambda: queue.put_nowait(_STOP_STREAM)
         prepared: ConversationResult | None = None
+        delivered_done = False
+        failed = False
+        result: ConversationResult | None = None
+        started = time.perf_counter()
+        first_token_at: float | None = None
+        last_token_at: float | None = None
+
+        def settle():
+            if not generation.settled.done():
+                generation.settled.set_result(None)
+            if self._active.get(key) is generation:
+                self._active.pop(key, None)
+            if self._session_tail.get(session_key) is generation.settled:
+                self._session_tail.pop(session_key, None)
 
         def emit(event):
             generation.check()
@@ -855,9 +1074,10 @@ class ChatService:
         def prepare(state):
             nonlocal prepared
             generation.check()
+            generation.state = state
             prepared = result_from_state(state, latency_ms=0)
-            # memory 必须先于 token；沿用原有抽取结果，不增加模型调用。
-            self._memorize(prepared, learner=generation.learner)
+            # 只读已有档案；抽取/更新绝不挡住首字。新档案由收尾后 REST 同步。
+            prepared.memories = self.memory.list(prepared.user_id) if self.memory else []
             for event in _opening_events(prepared):
                 emit(event)
 
@@ -866,37 +1086,94 @@ class ChatService:
             generation.text += piece
             emit(sse_event(EVENT_TOKEN, {"text": piece}))
 
+        def complete(state, *, verifying=False):
+            if generation.response_ready:
+                return
+            generation.check()
+            generation.state = state
+            answer = result_from_state(state, latency_ms=_ms(started))
+            answer.status = "verifying" if verifying else "complete"
+            generation.response_ready = True
+            emit(answer)
+            # done 发出、初始快照持久化之后再开始模型自评/飞轮。
+            # 等待本身也可取消；停止时不会继续跑自评或发更正。
+            generation.run(generation.released.wait())
+
         generation.prepare = prepare
         generation.token = token
+        generation.complete = complete
 
         async def produce():
             context_token = current_generation.set(generation)
             try:
+                if predecessors:
+                    await asyncio.gather(*(asyncio.shield(p) for p in predecessors))
+                generation.check()
                 result = await asyncio.to_thread(self.ask, **kwargs)
-                queue.put_nowait(result)
+                if not generation.response_ready:
+                    queue.put_nowait(result)
+                await generation.closed.wait()
+                await generation.released.wait()
+                generation.check()
+                await asyncio.to_thread(self._memorize, result, learner=generation.learner)
+                await asyncio.to_thread(self._commit_stream, generation, result)
+            except asyncio.CancelledError:
+                # 也处理宿主任务取消，确保同步图里等待的异步 HTTP 一并结束。
+                generation.cancel()
+                queue.put_nowait(_STOP_STREAM)
             except Exception as exc:
-                queue.put_nowait(exc)
+                if generation.done_sent:
+                    logger.exception("[api] 答复收尾失败 request_id=%s", generation.request_id)
+                    failed_result = result_from_state(generation.state, latency_ms=_ms(started))
+                    failed_result.answer = generation.delivered + "\n\n答复核验未完成，请重新提问或联系人工客服。"
+                    failed_result.status = "interrupted"
+                    await asyncio.to_thread(self._persist, failed_result)
+                else:
+                    queue.put_nowait(exc)
             finally:
+                if generation.done_sent:
+                    settle()
                 current_generation.reset(context_token)
 
-        producer = asyncio.create_task(produce())
+        producer = self._track(produce())
+        generation.producer = producer
+
+        async def release():
+            context_token = current_generation.set(generation)
+            try:
+                if self.memory and self.llm and result is not None:
+                    # 只依赖用户原话，和后续自评/飞轮并行；仍在 done 之后启动。
+                    generation.learner = _extract_in_background(self.llm, result.question)
+                if result is not None and generation.response_ready:
+                    # 核验期间刷新页面仍能恢复正文与“核对中”状态。
+                    await asyncio.to_thread(self._persist, result)
+            finally:
+                generation.released.set()
+                current_generation.reset(context_token)
+
+        def sent(event):
+            nonlocal first_token_at, last_token_at
+            if event["event"] == EVENT_TOKEN:
+                now = time.perf_counter()
+                first_token_at = first_token_at or now
+                last_token_at = now
+                generation.delivered += json.loads(event["data"])["text"]
+            return event
+
         try:
             while True:
                 item = await queue.get()
+                if item is _STOP_STREAM:
+                    return
                 if isinstance(item, Exception):
                     raise item
                 if isinstance(item, ConversationResult):
                     result = item
                     break
-                yield item
+                yield sent(item)
             generation.check()
             if prepared is None:
-                # 追问、工具答复与兜底没有模型流，一次发送全文，不造打字延迟。
-                context_token = current_generation.set(generation)
-                try:
-                    await asyncio.to_thread(self._memorize, result, learner=generation.learner)
-                finally:
-                    current_generation.reset(context_token)
+                result.memories = self.memory.list(result.user_id) if self.memory else []
                 for event in _opening_events(result):
                     yield event
             else:
@@ -904,19 +1181,57 @@ class ChatService:
             if not result.answer.startswith(generation.text):
                 raise RuntimeError("流式正文与最终答复不一致")
             suffix = result.answer[len(generation.text):]
-            if suffix:
-                yield sse_event(EVENT_TOKEN, {"text": suffix})
+            # 规则/工具/拒答本来已是完整结果，直接分片排空，不伪造打字等待。
+            for piece in chunk_text(suffix):
+                generation.check()
+                yield sent(sse_event(EVENT_TOKEN, {"text": piece}))
             generation.check()
-            # 恢复上下文后提交，让存储边界仍能观察断连；_finish 只登记一次。
-            context_token = current_generation.set(generation)
-            try:
-                await asyncio.to_thread(self._commit_stream, generation, result)
-            finally:
-                current_generation.reset(context_token)
+            delivered_done = True
+            generation.done_sent = True
+            now = time.perf_counter()
+            logger.info(
+                "[api] stream done request_id=%s first_token_ms=%.1f tail_ms=%.1f elapsed_ms=%.1f status=%s",
+                generation.request_id, ((first_token_at or now) - started) * 1000,
+                (now - (last_token_at or now)) * 1000, (now - started) * 1000, result.status,
+            )
             yield sse_event(EVENT_DONE, done_payload(result))
+        except Exception:
+            failed = True
+            raise
         finally:
-            generation.cancel()
-            producer.cancel()
+            if delivered_done:
+                generation.closed.set()
+                self._track(release())
+            else:
+                generation.cancel()
+                producer.cancel()
+                if not failed or generation.delivered:
+                    partial = result_from_state(generation.state, latency_ms=_ms(started))
+                    partial.answer = generation.stop_answer if generation.stop_answer is not None else generation.delivered
+                    partial.status = "interrupted" if failed else "stopped"
+                    partial.handoff = False
+                    partial.refusal_reason = None
+
+                    async def save_partial():
+                        # 取消模型请求，仍须保存已交付的部分；写入脱离取消上下文。
+                        context_token = current_generation.set(None)
+                        try:
+                            if predecessors:
+                                await asyncio.gather(*(asyncio.shield(p) for p in predecessors))
+                            await asyncio.to_thread(self._persist, partial)
+                        finally:
+                            settle()
+                            current_generation.reset(context_token)
+
+                    saving = self._track(save_partial())
+                    try:
+                        await asyncio.shield(saving)
+                    except asyncio.CancelledError:
+                        pass  # ASGI 断连可能再次取消；任务仍由服务持有并在关服时 drain。
+                else:
+                    settle()
+        # 完整耗尽迭代器的离线调用等待最终状态；HTTP 在 done 处 aclose，跳过此处。
+        await asyncio.shield(producer)
 
     def _commit_stream(self, generation, result):
         generation.check()
@@ -1043,10 +1358,13 @@ def memory_to_public(item: Any) -> dict[str, Any]:
 
 
 def done_payload(result: ConversationResult) -> dict[str, Any]:
-    return {
+    payload = {
         "answer": result.answer,
         "handoff": result.handoff,
     }
+    if result.status != "complete":
+        payload["status"] = result.status
+    return payload
 
 
 def _opening_events(result: ConversationResult) -> Iterator[dict[str, str]]:
@@ -1069,11 +1387,12 @@ async def stream_events(result: ConversationResult) -> AsyncIterator[dict[str, s
     不必自己判断"这次是不是空列表"。也正因如此，`test_stream_events_on_short_answer`
     里那个没有任何记忆的结果，事件序列仍然是老的四件套。
 
-    已完成结果直接发送全文；在线生成使用 ChatService.stream 即时转发模型分片。
+    已完成结果立即分片排空，不添加打字等待；在线生成即时转发模型分片。
     """
     for event in _opening_events(result):
         yield event
-    yield sse_event(EVENT_TOKEN, {"text": result.answer})
+    for piece in chunk_text(result.answer):
+        yield sse_event(EVENT_TOKEN, {"text": piece})
     yield sse_event(EVENT_DONE, done_payload(result))
 
 

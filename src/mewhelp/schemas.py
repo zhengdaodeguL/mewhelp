@@ -372,6 +372,7 @@ class SessionMessage(BaseModel):
     handoff: bool = False
     #: 不透明句柄：反馈与收藏的键，界面不展示
     request_id: str = ""
+    status: Literal["complete", "verifying", "stopped", "interrupted"] = "complete"
     #: 与该轮正文一同保存的用户资料，沿用 SSE 的展示契约。
     evidence: list[dict[str, str]] = Field(default_factory=list)
     tools: list[dict[str, Any]] = Field(default_factory=list)
@@ -442,6 +443,8 @@ class ConversationResult(BaseModel):
     exit: Exit | None = None
 
     answer: str = ""
+    #: 正文流结束与核验完成分开；停止/断连的部分答复不能冒充完整答案。
+    status: Literal["complete", "verifying", "stopped", "interrupted"] = "complete"
     #: 走的是哪条路径，前端/面试演示时一眼看出分流对不对
     path: list[str] = Field(default_factory=list)
     refusal_reason: RefusalReason | None = None

@@ -14,9 +14,10 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { fetchSession, sendFeedback, streamChat } from '../api/client'
+import { fetchMemories, fetchSession, sendFeedback, stopChat, streamChat, waitForTurn } from '../api/client'
 import type { ChatMessage, MemoryItem, Rating } from '../types'
 import { mergeCards, startWorkspaceTurn, type WorkspaceCard } from '../workspace'
+import { stopMessages } from '../chat-state'
 
 function randomId(prefix: string): string {
   const rand =
@@ -47,7 +48,7 @@ function notice(content: string): ChatMessage {
 }
 
 /** 服务端的历史消息 → 界面消息。 */
-function fromHistory(rows: Array<{ role: string; content: string; handoff: boolean; requestId: string }>): ChatMessage[] {
+function fromHistory(rows: Array<{ role: string; content: string; handoff: boolean; requestId: string; status?: ChatMessage['status'] }>): ChatMessage[] {
   const out: ChatMessage[] = []
   rows.forEach((r, i) => {
     const role = r.role === 'user' ? 'user' : 'assistant'
@@ -56,10 +57,11 @@ function fromHistory(rows: Array<{ role: string; content: string; handoff: boole
       role,
       kind: 'normal',
       content: r.content,
+      status: r.status,
       // 句柄要带回来：历史里的消息也要能点赞、能收藏
       turnId: r.requestId || undefined,
     })
-    if (role === 'assistant' && r.handoff) out.push(notice(HANDOFF_NOTICE))
+    if (role === 'assistant' && r.handoff) out.push({ ...notice(HANDOFF_NOTICE), id: `handoff-${r.requestId}` })
   })
   return out
 }
@@ -79,6 +81,13 @@ export function useChat({ sessionId, quote, onTurnEnd, onMemory }: Options) {
   const [cards, setCards] = useState<WorkspaceCard[]>([])
   const [isStreaming, setIsStreaming] = useState(false)
   const abortRef = useRef<AbortController | null>(null)
+  const activeTurnRef = useRef<{
+    requestId: string; replyId: string; sessionId: string; message: string; answer: string
+  } | null>(null)
+  const syncsRef = useRef(new Map<string, AbortController>())
+  const sessionRef = useRef(sessionId)
+  sessionRef.current = sessionId
+  const latestReplyRef = useRef('')
   //: 用户是否已经在本会话里发过消息。恢复历史是异步的，如果它比用户的手速慢，
   //: 回来的那一刻会把刚发出去的消息连同占位气泡一起抹掉 —— 用户看到自己打的字
   //: 凭空消失了。这个标记就是那道"晚到的响应不许覆盖新输入"的护栏。
@@ -92,10 +101,45 @@ export function useChat({ sessionId, quote, onTurnEnd, onMemory }: Options) {
     onMemoryRef.current = onMemory
   }, [onTurnEnd, onMemory])
 
+  const syncTurn = useCallback((sid: string, requestId: string, replyId: string) => {
+    if (syncsRef.current.has(requestId)) return
+    const controller = new AbortController()
+    syncsRef.current.set(requestId, controller)
+    void waitForTurn(sid, requestId, controller.signal, (session, reply) => {
+      if (sessionRef.current !== sid) return
+      setMessages((prev) => {
+        const updated = prev.map((m) => m.id === replyId
+          ? { ...m, content: reply.content, streaming: false, status: reply.status, turnId: requestId }
+          : m)
+        const noticeId = `handoff-${requestId}`
+        if (reply.handoff && !updated.some((m) => m.id === noticeId)) {
+          const index = updated.findIndex((m) => m.id === replyId)
+          if (index !== -1) updated.splice(index + 1, 0, { ...notice(HANDOFF_NOTICE), id: noticeId })
+        }
+        return updated
+      })
+      if (latestReplyRef.current === replyId) setCards(session.cards)
+    }).then(async (saved) => {
+      if (controller.signal.aborted) return
+      if (saved) {
+        onTurnEndRef.current?.()
+        const items = await fetchMemories(controller.signal)
+        if (!controller.signal.aborted) onMemoryRef.current?.(items)
+      } else if (sessionRef.current === sid) {
+        setMessages((prev) => [...prev, notice('暂时未能确认这轮对话的保存结果，请稍后刷新历史。')])
+      }
+    }).finally(() => syncsRef.current.delete(requestId))
+  }, [])
+
   /** 换会话：中断在途请求、清空工作区、把历史拉回来。 */
   useEffect(() => {
+    const previous = activeTurnRef.current
     abortRef.current?.abort()
     abortRef.current = null
+    activeTurnRef.current = null
+    if (previous) {
+      void stopChat(previous).then(() => syncTurn(previous.sessionId, previous.requestId, previous.replyId))
+    }
     setIsStreaming(false)
     setCards([])
     setMessages([])
@@ -111,15 +155,24 @@ export function useChat({ sessionId, quote, onTurnEnd, onMemory }: Options) {
       if (restored.ok && restored.messages.length > 0) {
         setMessages(fromHistory(restored.messages))
         setCards(restored.cards)
+        restored.messages.forEach((message, i) => {
+          if (message.role === 'assistant' && message.status === 'verifying') {
+            syncTurn(sessionId, message.requestId, `h${i}-assistant`)
+          }
+        })
       }
     })
     return () => {
       alive = false
       controller.abort()
     }
-  }, [sessionId])
+  }, [sessionId, syncTurn])
 
-  useEffect(() => () => abortRef.current?.abort(), [])
+  useEffect(() => () => {
+    abortRef.current?.abort()
+    if (activeTurnRef.current) void stopChat(activeTurnRef.current)
+    for (const controller of syncsRef.current.values()) controller.abort()
+  }, [])
 
   const send = useCallback(
     async (rawText: string) => {
@@ -133,12 +186,15 @@ export function useChat({ sessionId, quote, onTurnEnd, onMemory }: Options) {
         content: text,
       }
       const replyId = randomId('a')
+      const requestId = randomId('req')
+      latestReplyRef.current = replyId
       const placeholder: ChatMessage = {
         id: replyId,
         role: 'assistant',
         kind: 'normal',
         content: '',
         streaming: true,
+        turnId: requestId,
       }
 
       setMessages((prev) => [...prev, userMessage, placeholder])
@@ -148,81 +204,78 @@ export function useChat({ sessionId, quote, onTurnEnd, onMemory }: Options) {
 
       const controller = new AbortController()
       abortRef.current = controller
+      activeTurnRef.current = { requestId, replyId, sessionId, message: text, answer: '' }
 
       const patchReply = (updater: (msg: ChatMessage) => ChatMessage) => {
+        if (controller.signal.aborted || sessionRef.current !== sessionId) return
         setMessages((prev) => prev.map((m) => (m.id === replyId ? updater(m) : m)))
       }
 
       await streamChat(
         text,
-        { sessionId, quote, signal: controller.signal },
+        { sessionId, requestId, quote, signal: controller.signal },
         {
           onToken: (piece) => {
+            if (!controller.signal.aborted && activeTurnRef.current?.requestId === requestId) {
+              activeTurnRef.current.answer += piece
+            }
             patchReply((m) => ({ ...m, content: m.content + piece }))
           },
           onCards: (incoming) => {
+            if (controller.signal.aborted || sessionRef.current !== sessionId) return
             setCards((prev) => mergeCards(prev, incoming))
           },
           onMemory: (items) => {
+            if (controller.signal.aborted || sessionRef.current !== sessionId) return
             onMemoryRef.current?.(items)
           },
           onTurnId: (id) => {
             // 反馈和收藏都要用它当键，所以一拿到就挂到气泡上
             patchReply((m) => ({ ...m, turnId: id }))
           },
-          onDone: ({ handoff }) => {
+          onDone: ({ handoff, status }) => {
+            if (controller.signal.aborted || sessionRef.current !== sessionId) return
             if (handoff) {
               // 转人工是真实业务结果，用户必须知道 —— 用一个独立提示条，不混进答复正文
               setMessages((prev) => [
-                ...prev.map((m) => (m.id === replyId ? { ...m, streaming: false } : m)),
-                notice(HANDOFF_NOTICE),
+                ...prev.map((m) => (m.id === replyId ? { ...m, streaming: false, status } : m)),
+                { ...notice(HANDOFF_NOTICE), id: `handoff-${requestId}` },
               ])
             } else {
-              patchReply((m) => ({ ...m, streaming: false }))
+              patchReply((m) => ({ ...m, streaming: false, status }))
             }
             setIsStreaming(false)
-            onTurnEndRef.current?.()
+            activeTurnRef.current = null
+            syncTurn(sessionId, requestId, replyId)
           },
           onError: (message) => {
+            if (controller.signal.aborted || sessionRef.current !== sessionId) return
             patchReply((m) => ({
               ...m,
               streaming: false,
-              kind: 'notice',
-              content: message,
+              status: 'interrupted',
+              content: m.content || message,
             }))
             setIsStreaming(false)
+            activeTurnRef.current = null
+            syncTurn(sessionId, requestId, replyId)
           },
         },
       )
     },
-    [isStreaming, sessionId, quote],
+    [isStreaming, sessionId, quote, syncTurn],
   )
 
-  /**
-   * 停止当前生成：把已收到的内容定格为最终答复，不再继续等。
-   *
-   * 一个字都没收到的那种"停止"要单独处理：占位气泡留着就是一个永久空白框 ——
-   * 它没有重问按钮（重问挂在用户消息上），也没有任何可读内容，用户只会以为
-   * 界面坏了。这种气泡直接撤掉，连同它对应的那条用户消息一起 —— 留着用户消息
-   * 而拿走回复，看起来像"我说了话但没人理"。整轮撤掉，用户可以重打一次。
-   *
-   * （真模型下这个窗口是真实存在的：答复算完到第一个 token 之间还要跑一次
-   * 记忆抽取，那段时间界面正好停在一个空气泡上。）
-   */
+  /** 停止模型请求，保留这一轮；随后按同一个问答 ID 同步后端保存结果。 */
   const stop = useCallback(() => {
+    const turn = activeTurnRef.current
     abortRef.current?.abort()
     abortRef.current = null
-    setMessages((prev) => {
-      const last = prev[prev.length - 1]
-      if (last?.streaming && !last.content) {
-        const trimmed = prev.slice(0, -1)
-        const prevMsg = trimmed[trimmed.length - 1]
-        return prevMsg?.role === 'user' ? trimmed.slice(0, -1) : trimmed
-      }
-      return prev.map((m) => (m.streaming ? { ...m, streaming: false } : m))
-    })
+    activeTurnRef.current = null
+    setMessages(stopMessages)
     setIsStreaming(false)
-  }, [])
+    if (turn) void stopChat(turn).then(() => syncTurn(turn.sessionId, turn.requestId, turn.replyId))
+  }, [syncTurn])
 
   /** 重问上一条：把最后一条用户消息之后的对话丢掉，再原样问一次。 */
   const retryLast = useCallback(() => {

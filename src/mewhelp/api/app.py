@@ -41,6 +41,7 @@ from ..workflow.graph import GraphDeps, build_deps, build_graph
 from .auth import Account, AccountError, AccountStore, SESSION_COOKIE, SESSION_TTL
 from .service import (
     EVENT_ERROR,
+    MAX_MESSAGE_CHARS,
     ChatService,
     CachedRun,
     ResultCache,
@@ -74,6 +75,8 @@ class ChatRequest(BaseModel):
         default_factory=lambda: f"s_{secrets.token_hex(12)}", max_length=64
     )
     message: str = ""
+    #: 浏览器在发送前分配，首字前停止也能用同一个句柄找回已保存的问答。
+    request_id: str = Field(default="", max_length=64)
     #: 引用提问：用户在界面上明确指向的那一句原话。
     #: 它进的是**当轮上下文**，不落库 —— 引用的消息本身已经在会话历史里了，
     #: 再存一遍会让它在下一次提问时出现两次。
@@ -85,6 +88,13 @@ class FeedbackRequest(BaseModel):
     request_id: str = ""
     thumbs_down: bool = False
     comment: str | None = None
+
+
+class StopRequest(BaseModel):
+    session_id: str = Field(min_length=1, max_length=64)
+    request_id: str = Field(min_length=1, max_length=64)
+    message: str = Field(max_length=MAX_MESSAGE_CHARS)
+    answer: str | None = Field(default=None, max_length=16000)
 
 
 class ReviewRequest(BaseModel):
@@ -390,6 +400,7 @@ def create_app(deps: GraphDeps | None = None) -> FastAPI:
         try:
             yield
         finally:
+            await service.drain()
             tracer.close()
 
     app = FastAPI(
@@ -522,9 +533,12 @@ def create_app(deps: GraphDeps | None = None) -> FastAPI:
                     session_id=payload.session_id,
                     message=payload.message,
                     quote=payload.quote,
+                    request_id=payload.request_id,
                 )) as events:
                     async for event in events:
                         yield event
+                        if event["event"] == "done":
+                            break
             except SessionOwnershipError:
                 yield sse_event(EVENT_ERROR, {"message": "这次对话不可用，请新建对话后重试。"})
                 return
@@ -533,6 +547,14 @@ def create_app(deps: GraphDeps | None = None) -> FastAPI:
                 yield sse_event(EVENT_ERROR, {"message": "服务暂时不可用，请稍后再试。"})
                 return
         return EventSourceResponse(gen())
+
+    @app.post("/api/chat/stop")
+    async def stop_chat(payload: StopRequest, account: Account = Depends(require_account)) -> dict[str, Any]:
+        try:
+            result = await service.stop(user_id=account.user_id, **payload.model_dump())
+        except SessionOwnershipError:
+            raise HTTPException(status_code=404, detail="这次对话不可用。") from None
+        return {"ok": result is not None, "status": result.status if result else "stopped"}
 
     # ------------------------------------------------------------
     # 反馈
@@ -547,6 +569,7 @@ def create_app(deps: GraphDeps | None = None) -> FastAPI:
         分诊）是**运营侧**的事 —— 那些字段原本就站在这里往外发，
         等于把一个审核台接口开给了普通用户。审核台走 `python -m mewhelp.cli flywheel`。
         """
+        await service.wait_for_session(account.user_id, payload.session_id)
         if service.sessions.get_session(payload.session_id, user_id=account.user_id) is None:
             return {"ok": False}
         saved = await run_in_threadpool(_save_feedback, deps, cache, payload, account.user_id)
@@ -563,6 +586,7 @@ def create_app(deps: GraphDeps | None = None) -> FastAPI:
         列表里刻意没有摘要和路径 —— 这一栏的作用是"让用户认出是哪次对话"，
         多给的信息只会挤掉真正有用的那行标题。
         """
+        await service.wait_for_session(account.user_id)
         rows = service.sessions.list_sessions(account.user_id, limit=limit)
         return {
             "count": len(rows),
@@ -588,6 +612,7 @@ def create_app(deps: GraphDeps | None = None) -> FastAPI:
         意图、节点路径、出口这些存在库里但不该回到界面上。过滤写在服务层
         而不是这里，是为了让 CLI 复用同一份口径。
         """
+        await service.wait_for_session(account.user_id, session_id)
         detail = service.sessions.get_session(session_id, user_id=account.user_id)
         if detail is None:
             return {"ok": False, "error": "NOT_FOUND", "session_id": session_id}
@@ -602,6 +627,7 @@ def create_app(deps: GraphDeps | None = None) -> FastAPI:
                     "content": m.content,
                     "handoff": m.handoff,
                     "request_id": m.request_id,
+                    "status": m.status,
                     "evidence": m.evidence,
                     "tools": m.tools,
                 }
@@ -616,6 +642,7 @@ def create_app(deps: GraphDeps | None = None) -> FastAPI:
         account: Account = Depends(require_account),
     ) -> dict[str, Any]:
         """改名。传空标题表示"恢复成自动生成的标题"（下一次追加时会重算）。"""
+        await service.wait_for_session(account.user_id, session_id)
         ok = service.sessions.rename(
             session_id, payload.title, user_id=account.user_id
         )
@@ -630,7 +657,10 @@ def create_app(deps: GraphDeps | None = None) -> FastAPI:
         注意它**不动长期记忆**：用户清掉的是聊天记录，不是"你认识我"。
         这两件事被混在一起的那天，用户会发现自己写下的备忘也跟着没了。
         """
-        ok = service.sessions.delete(session_id, user_id=account.user_id)
+        try:
+            ok = await service.delete_session(account.user_id, session_id)
+        except SessionOwnershipError:
+            ok = False
         return {"ok": ok, "session_id": session_id}
 
     # ------------------------------------------------------------
@@ -639,6 +669,7 @@ def create_app(deps: GraphDeps | None = None) -> FastAPI:
     @app.get("/api/memories")
     async def memories(account: Account = Depends(require_account)) -> dict[str, Any]:
         """这个用户的全部记忆（钉住的排前面）。"""
+        await service.wait_for_session(account.user_id)
         items = memory_store.list(account.user_id)
         return {"count": len(items), "items": [memory_to_public(i) for i in items]}
 

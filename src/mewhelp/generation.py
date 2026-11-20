@@ -18,8 +18,20 @@ class GenerationContext:
         self.prepare: Any = None
         self.token: Any = None
         self.finish: Any = None
+        self.complete: Any = None
+        self.state: Any = None
+        self.request_id = ""
+        self.response_ready = False
+        self.done_sent = False
+        self.settled = self.loop.create_future()
+        self.producer: asyncio.Task | None = None
+        self.stop_answer: str | None = None
+        self.on_cancel: Any = None
+        self.closed = asyncio.Event()
+        self.released = asyncio.Event()
         self.learner: Any = None
         self.text = ""
+        self.delivered = ""
 
     def check(self) -> None:
         if self.cancelled.is_set():
@@ -44,8 +56,11 @@ class GenerationContext:
 
     def cancel(self) -> None:
         with self._lock:
+            first = not self.cancelled.is_set()
             self.cancelled.set()
             pending = list(self._pending)
+        if first and self.on_cancel is not None and not self.loop.is_closed():
+            self.loop.call_soon_threadsafe(self.on_cancel)
         for future in pending:
             future.cancel()
 

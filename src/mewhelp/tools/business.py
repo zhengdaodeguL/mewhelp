@@ -223,6 +223,9 @@ def order_summary(order: dict[str, Any], *, today: date | None = None) -> dict[s
         "days_since_delivery": (ref - delivered_on).days if delivered_on else None,
         "refund_status": order.get("refund_status", "none"),
         "created_at": order.get("created_at"),
+        # 只接受明确的发货字段，揽收/预计送达时间不是发货时间。
+        "shipped_at": order.get("shipped_at"),
+        "shipped_on": order.get("shipped_on"),
         "items": [
             {
                 "sku": i["sku"],
@@ -315,6 +318,8 @@ def get_order(order_id: str) -> dict[str, Any]:
     details = [f"订单 {summary['order_id']} 当前状态：{summary['status_label']}。"]
     if summary.get("created_at"):
         details.append(f"下单日期：{str(summary['created_at'])[:10]}。")
+    shipped = summary.get("shipped_on") or summary.get("shipped_at")
+    details.append(f"发货日期：{str(shipped)[:10] if shipped else '暂无记录'}。")
     if summary.get("delivered_on"):
         details.append(f"签收日期：{summary['delivered_on']}。")
     elif (order.get("logistics") or {}).get("events"):

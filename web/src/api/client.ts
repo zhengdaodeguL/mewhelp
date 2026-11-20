@@ -14,7 +14,7 @@
  * 所有读接口都遵守同一条纪律：**拿不到就返回空，不抛**。面板少一块比整页白屏好。
  */
 
-import type { HistoryMessage, MemoryItem, SessionBrief, TurnOutcome } from '../types'
+import type { HistoryMessage, MemoryItem, MessageStatus, SessionBrief, TurnOutcome } from '../types'
 import { cardsFromEvidence, cardsFromHistory, cardsFromTools, type WorkspaceCard } from '../workspace'
 import { drainEvents, normalizeSse } from './sse'
 
@@ -89,6 +89,7 @@ export interface StreamCallbacks {
 
 export interface ChatOptions {
   sessionId: string
+  requestId?: string
   /**
    * 引用提问：用户明确指向的那一句。
    *
@@ -98,6 +99,25 @@ export interface ChatOptions {
    */
   quote?: string
   signal?: AbortSignal
+}
+
+export async function stopChat(turn: {
+  sessionId: string; requestId: string; message: string; answer: string
+}): Promise<boolean> {
+  try {
+    const response = await fetch(`${API_BASE}/api/chat/stop`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      credentials: 'same-origin',
+      body: JSON.stringify({
+        session_id: turn.sessionId, request_id: turn.requestId,
+        message: turn.message.slice(0, 2000), answer: turn.answer,
+      }),
+    })
+    return response.ok && ((await response.json()) as { ok?: boolean }).ok === true
+  } catch {
+    return false
+  }
 }
 
 export async function streamChat(
@@ -113,12 +133,14 @@ export async function streamChat(
       body: JSON.stringify({
         message,
         session_id: options.sessionId,
+        request_id: options.requestId ?? '',
         quote: options.quote ?? '',
       }),
       credentials: 'same-origin',
       signal: options.signal,
     })
-  } catch {
+  } catch (err) {
+    if (options.signal?.aborted || (err as Error)?.name === 'AbortError') return
     callbacks.onError('网络连接不太顺畅，请检查网络后重试。')
     return
   }
@@ -159,7 +181,10 @@ export async function streamChat(
           callbacks.onMemory(items)
         } else if (event === 'done') {
           finished = true
-          callbacks.onDone({ handoff: Boolean((data as { handoff?: boolean })?.handoff) })
+          callbacks.onDone({
+            handoff: Boolean((data as { handoff?: boolean })?.handoff),
+            status: messageStatus((data as { status?: unknown })?.status),
+          })
         } else if (event === 'error') {
           finished = true
           const message = (data as { message?: string })?.message
@@ -180,7 +205,7 @@ export async function streamChat(
 
   if (!finished) {
     // 流断了但没收到 done —— 仍要把已收到的内容收尾，避免气泡一直转
-    callbacks.onDone({ handoff: false })
+    callbacks.onDone({ handoff: false, status: 'interrupted' })
   }
 }
 
@@ -242,6 +267,10 @@ function isRecord(v: unknown): v is Record<string, unknown> {
 
 function str(v: unknown): string {
   return typeof v === 'string' ? v : ''
+}
+
+function messageStatus(value: unknown): MessageStatus {
+  return value === 'verifying' || value === 'stopped' || value === 'interrupted' ? value : 'complete'
 }
 
 export function memoryItems(raw: unknown): MemoryItem[] {
@@ -316,11 +345,42 @@ export async function fetchSession(
         content: str(r.content),
         handoff: r.handoff === true,
         requestId: str(r.request_id),
+        status: messageStatus(r.status),
       })),
     }
   } catch {
     return empty
   }
+}
+
+/** 正文 SSE 已结束，单独同步这一轮的落库/核验结果；不让光标为收尾继续转。 */
+export async function waitForTurn(
+  sessionId: string,
+  requestId: string,
+  signal: AbortSignal,
+  onSnapshot: (session: RestoredSession, reply: HistoryMessage) => void,
+): Promise<boolean> {
+  const deadline = Date.now() + 30_000
+  while (!signal.aborted && Date.now() < deadline) {
+    const session = await fetchSession(sessionId, signal)
+    if (signal.aborted) return false
+    const reply = session.messages.find((m) => m.role === 'assistant' && m.requestId === requestId)
+    if (reply) {
+      onSnapshot(session, reply)
+      if (reply.status !== 'verifying') return true
+    }
+    await new Promise<void>((resolve) => {
+      const finish = () => {
+        clearTimeout(timer)
+        signal.removeEventListener('abort', finish)
+        resolve()
+      }
+      const timer = setTimeout(finish, 250)
+      signal.addEventListener('abort', finish, { once: true })
+      if (signal.aborted) finish()
+    })
+  }
+  return false
 }
 
 export async function renameSession(

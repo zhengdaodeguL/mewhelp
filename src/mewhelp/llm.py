@@ -15,7 +15,9 @@ Mock 不是"返回固定字符串"，而是按任务类型做**规则化推理**
 
 from __future__ import annotations
 
+import asyncio
 import json
+import logging
 import re
 import time
 from abc import ABC, abstractmethod
@@ -25,6 +27,8 @@ from typing import Any, Iterable, Sequence
 from .config import Settings, get_settings
 from .generation import current_generation, check_cancelled
 from .schemas import TokenUsage
+
+logger = logging.getLogger("mewhelp.llm")
 
 
 class LLMError(RuntimeError):
@@ -576,7 +580,7 @@ class OpenAILLMClient(LLMClient):
         )
         self.model = self.settings.llm_model
 
-    def _timeout(self) -> Any:
+    def _timeout(self, timeout_s: float | None = None) -> Any:
         """连接超时单独调短，读写沿用 `llm_timeout_s`。
 
         中转域名下常挂着多个 IP，挑中黑洞 IP 时连接会一直挂着 —— 如果连接阶段
@@ -585,10 +589,22 @@ class OpenAILLMClient(LLMClient):
         """
         import httpx
 
-        return httpx.Timeout(
-            self.settings.llm_timeout_s,
-            connect=self.settings.llm_connect_timeout_s,
-        )
+        budget = self.settings.llm_timeout_s if timeout_s is None else timeout_s
+        return httpx.Timeout(budget, connect=min(self.settings.llm_connect_timeout_s, budget))
+
+    def _budget(self, task: str) -> tuple[float, int]:
+        limits = {
+            "resolve": self.settings.llm_aux_timeout_s,
+            "classify": self.settings.llm_aux_timeout_s,
+            "slots": self.settings.llm_aux_timeout_s,
+            "memory": self.settings.llm_aux_timeout_s,
+            "summarize": self.settings.llm_aux_timeout_s,
+            "plan_tool": self.settings.llm_plan_timeout_s,
+            "self_eval": self.settings.llm_eval_timeout_s,
+        }
+        if task in limits:
+            return min(self.settings.llm_timeout_s, limits[task]), 0
+        return self.settings.llm_timeout_s, self.settings.llm_max_retries
 
     def chat(
         self,
@@ -632,18 +648,39 @@ class OpenAILLMClient(LLMClient):
             kwargs.update(stream=True, stream_options={"include_usage": True})
 
         context = current_generation.get()
+        timeout_s, retries = self._budget(task)
+        observation = {
+            "task": task, "timeout_s": timeout_s, "max_retries": retries,
+            "request_id": getattr(context, "request_id", ""),
+        }
         check_cancelled()
         try:
             if context is not None:
-                resp = context.run(self._request_async(kwargs, on_token))
-            elif on_token is not None:
-                with self._client.chat.completions.create(**kwargs) as stream:
-                    resp = self._collect_stream(stream, on_token)
+                resp = context.run(self._request_async(kwargs, on_token, timeout_s, retries))
             else:
-                resp = self._client.chat.completions.create(**kwargs)
+                client = self._client
+                if (timeout_s, retries) != (self.settings.llm_timeout_s, self.settings.llm_max_retries):
+                    client = client.with_options(timeout=self._timeout(timeout_s), max_retries=retries)
+                if on_token is not None:
+                    with client.chat.completions.create(**kwargs) as stream:
+                        resp = self._collect_stream(stream, on_token)
+                else:
+                    resp = client.chat.completions.create(**kwargs)
+        except asyncio.CancelledError:
+            logger.info("llm cancelled task=%s", task, extra={**observation, "elapsed_ms": (time.perf_counter() - t0) * 1000})
+            raise
         except Exception as exc:  # noqa: BLE001 — 统一收敛成 LLMError
-            raise LLMError(f"LLM 调用失败: {exc}") from exc
+            elapsed = (time.perf_counter() - t0) * 1000
+            timed_out = isinstance(exc, TimeoutError) or "timeout" in type(exc).__name__.lower()
+            logger.warning(
+                "llm %s task=%s elapsed_ms=%.1f timeout_s=%s max_retries=%s error=%s",
+                "timeout" if timed_out else "failed", task, elapsed, timeout_s, retries, type(exc).__name__,
+                extra={**observation, "elapsed_ms": elapsed, "timed_out": timed_out},
+            )
+            raise LLMError(f"LLM 调用失败: {exc} (task={task}, elapsed_ms={elapsed:.1f}, timeout_s={timeout_s}, max_retries={retries})") from exc
         check_cancelled()
+        logger.info("llm completed task=%s elapsed_ms=%.1f", task, (time.perf_counter() - t0) * 1000,
+                    extra={**observation, "elapsed_ms": (time.perf_counter() - t0) * 1000})
 
         choice = resp.choices[0]
         message = choice.message
@@ -702,15 +739,17 @@ class OpenAILLMClient(LLMClient):
             reasoning=reasoning,
         )
 
-    async def _request_async(self, kwargs, on_token):
+    async def _request_async(self, kwargs, on_token, timeout_s, retries):
         """请求级异步连接，停止时连响应头等待、重试等待和读流一起取消。"""
         from openai import AsyncOpenAI
 
-        async with AsyncOpenAI(
+        # SDK 的 read timeout 只限制两次读取的间隔；再约束整次请求，防止
+        # 中转持续发空分片/思维链导致永不结束。重试与退避也包含在总预算内。
+        async with asyncio.timeout(timeout_s * (retries + 1)), AsyncOpenAI(
             api_key=self.settings.openai_api_key,
             base_url=self.settings.openai_base_url,
-            timeout=self._timeout(),
-            max_retries=self.settings.llm_max_retries,
+            timeout=self._timeout(timeout_s),
+            max_retries=retries,
         ) as client:
             response = await client.chat.completions.create(**kwargs)
             if on_token is None:

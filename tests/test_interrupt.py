@@ -106,14 +106,19 @@ async def test_stream_tokens_arrive_before_generation_finishes(streaming_service
     assert remaining[-1]["event"] == "done"
     answer = "".join(json.loads(e["data"])["text"] for e in opening + remaining if e["event"] == "token")
     assert json.loads(remaining[-1]["data"])["answer"] == answer
-    assert json.loads(remaining[-1]["data"])["handoff"] is handoff
-    assert service.sessions.load("s", user_id="u")[-1].content == answer
+    assert json.loads(remaining[-1]["data"])["status"] == "verifying"
+    assert json.loads(remaining[-1]["data"])["handoff"] is False
+    saved = service.sessions.load("s", user_id="u")[-1]
+    assert saved.content.startswith(answer)
+    assert saved.metadata["handoff"] is handoff
+    if handoff:
+        assert "未能可靠回答" in saved.content
     assert llm.stream_calls == ["generate"]
     assert llm.evaluated
 
 
 @pytest.mark.asyncio
-async def test_stop_closes_request_without_saving_and_retry_saves_once(streaming_service):
+async def test_stop_closes_request_saves_partial_and_retry_keeps_one_session(streaming_service):
     service, llm = streaming_service
     events = service.stream(user_id="u", session_id="s", message="尺码怎么选")
     await asyncio.wait_for(_first_token(events), 3)
@@ -121,19 +126,22 @@ async def test_stop_closes_request_without_saving_and_retry_saves_once(streaming
     await events.aclose()
     await asyncio.wait_for(llm.request_closed.wait(), 3)
     assert not llm.evaluated
-    assert service.sessions.load("s", user_id="u") == []
-    assert service.sessions.list_sessions("u") == []
+    saved = service.sessions.load("s", user_id="u")
+    assert [t.role for t in saved] == ["user", "assistant"]
+    assert saved[-1].content == "第一片"
+    assert saved[-1].metadata["status"] == "stopped"
+    assert len(service.sessions.list_sessions("u")) == 1
     assert len(service.cache) == 0
     llm.next_piece.set()
     retry = [e async for e in service.stream(user_id="u", session_id="s", message="尺码怎么选")]
     assert retry[-1]["event"] == "done"
     assert len(service.sessions.list_sessions("u")) == 1
-    assert [t.role for t in service.sessions.load("s", user_id="u")] == ["user", "assistant"]
+    assert [t.role for t in service.sessions.load("s", user_id="u")] == ["user", "assistant"] * 2
     assert len(service.cache) == 1
 
 
 @pytest.mark.asyncio
-async def test_broken_stream_does_not_save_partial_answer(streaming_service):
+async def test_broken_stream_saves_partial_as_incomplete(streaming_service):
     service, llm = streaming_service
     events = service.stream(user_id="u", session_id="s", message="尺码怎么选")
     await asyncio.wait_for(_first_token(events), 3)
@@ -142,12 +150,14 @@ async def test_broken_stream_does_not_save_partial_answer(streaming_service):
     with pytest.raises(LLMError, match="中途失败"):
         await anext(events)
     assert not llm.evaluated
-    assert service.sessions.load("s", user_id="u") == []
+    saved = service.sessions.load("s", user_id="u")
+    assert len(saved) == 2 and saved[-1].content == "第一片"
+    assert saved[-1].metadata["status"] == "interrupted"
     assert len(service.cache) == 0
 
 
 @pytest.mark.asyncio
-async def test_stop_after_final_token_still_skips_persistence(streaming_service):
+async def test_stop_after_final_token_saves_without_claiming_validation_passed(streaming_service):
     service, llm = streaming_service
     events = service.stream(user_id="u", session_id="s", message="尺码怎么选")
     await asyncio.wait_for(_first_token(events), 3)
@@ -155,12 +165,14 @@ async def test_stop_after_final_token_still_skips_persistence(streaming_service)
     assert json.loads((await anext(events))["data"])["text"] == "第二片"
     await events.aclose()
     await events.aclose()
-    assert service.sessions.load("s", user_id="u") == []
+    saved = service.sessions.load("s", user_id="u")
+    assert len(saved) == 2 and saved[-1].content == "第一片第二片"
+    assert saved[-1].metadata["status"] == "stopped"
     assert len(service.cache) == 0
 
 
 @pytest.mark.asyncio
-async def test_stop_cancels_background_memory_request(streaming_service):
+async def test_stop_before_done_never_starts_background_memory_request(streaming_service):
     from mewhelp.memory.store import MemoryStore
 
     service, llm = streaming_service
@@ -182,14 +194,14 @@ async def test_stop_cancels_background_memory_request(streaming_service):
 
     llm.chat = chat
     events = service.stream(user_id="u", session_id="s", message="尺码怎么选")
-    consumer = asyncio.create_task(anext(events))
-    await asyncio.wait_for(entered.wait(), 3)
-    consumer.cancel()
-    with pytest.raises(asyncio.CancelledError):
-        await consumer
-    await asyncio.wait_for(closed.wait(), 3)
-    assert llm.stream_calls == []
-    assert service.sessions.load("s", user_id="u") == []
+    await asyncio.wait_for(_first_token(events), 3)
+    assert not entered.is_set()
+    await events.aclose()
+    await service.drain()
+    await asyncio.wait_for(llm.request_closed.wait(), 3)
+    assert not entered.is_set() and not closed.is_set()
+    assert llm.stream_calls == ["generate"]
+    assert service.sessions.load("s", user_id="u")[-1].metadata["status"] == "stopped"
     assert service.memory.list("u") == []
 
 

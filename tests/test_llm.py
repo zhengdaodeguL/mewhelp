@@ -59,6 +59,10 @@ def fake_openai(monkeypatch: pytest.MonkeyPatch) -> types.ModuleType:
             mod.init_kwargs = kwargs  # type: ignore[attr-defined]
             self.chat = SimpleNamespace(completions=_Completions(mod))
 
+        def with_options(self, **kwargs: Any):
+            mod.options_kwargs = kwargs
+            return self
+
     mod.OpenAI = OpenAI  # type: ignore[attr-defined]
     monkeypatch.setitem(sys.modules, "openai", mod)
     return mod
