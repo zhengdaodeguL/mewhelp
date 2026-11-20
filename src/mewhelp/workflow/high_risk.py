@@ -281,10 +281,9 @@ def _render_outcome(intent: Intent, calls: list[ToolCall], error: str | None) ->
         return prefix + str(data.get("note") or "取消申请需人工审核后生效。") + str(data.get("refund_note") or "")
     if intent is Intent.CHANGE_ADDRESS:
         return f"已把订单 {data.get('order_id', '')} 的收货地址更新为：{data.get('shipping_address') or data.get('address', '')}。"
-    if intent is Intent.REFUND_REQUEST:
-        return prefix + "退款申请已提交，审核通过后 1 到 3 个工作日退回原支付方式。"
-    if intent is Intent.RETURN_REQUEST:
-        return prefix + "符合退货条件，已为你登记。请按退货页面的地址寄回，我们收到后办理退款。"
+    if intent in {Intent.REFUND_REQUEST, Intent.RETURN_REQUEST}:
+        # 工具只核验申请条件；保留时效、生鲜限制和审核要求，不宣称已经提交。
+        return prefix + str(data.get("note") or "退货退款申请需人工审核后生效。")
     return "操作已完成。"
 
 

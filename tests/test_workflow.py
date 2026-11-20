@@ -392,7 +392,7 @@ def test_不同查单错误仍分别展示():
         ("get_order", {"order_id": "ORD-9999"}),
     ])
     deps.enforce_order_ownership = True
-    state = new_state(request_id="req-errors", session_id="s-errors", user_id="U1001", question="查订单 ORD-1003")
+    state = new_state(request_id="req-errors", session_id="s-errors", user_id="U1001", question="查订单 ORD-1003 和 ORD-9999")
     out = build_graph(deps).invoke(state)
     assert "未关联这笔订单" in out["answer"]
     assert "没有查到这个订单号" in out["answer"]

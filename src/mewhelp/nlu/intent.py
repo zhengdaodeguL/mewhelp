@@ -70,6 +70,7 @@ _EXTRA_COMPILED: dict[Intent, tuple[re.Pattern[str], ...]] = {
 #: 这里以**追加**（不改写原表）的方式补齐，冻结契约原封不动，规则层也能用。
 #: 只补"漏词"，不补"改判" —— 判据口径仍归 _score 那一套。
 _EXTRA_KEYWORDS: dict[Intent, tuple[str, ...]] = {
+    Intent.ORDER_QUERY: ("这单", "那单"),
     Intent.CHANGE_ADDRESS: ("换成", "改成", "改一下地址"),
     Intent.LOGISTICS_QUERY: ("送到", "到货", "何时到"),
 }
@@ -546,7 +547,7 @@ def _is_question(text: str) -> bool:
 
       1. 带祈使标记（"帮我""我要"）-> 请求。用户明确说了要做什么，
          哪怕句尾有"吗"也是请求，不能当咨询打发掉。
-      2. 带"我的/这单"等指向自己订单的说法 -> 请求。问的是自己那笔单子
+      2. 带显式订单号或"我的/这单"等说法 -> 请求。问的是具体那笔单子
          能不能操作，不是品类规则。
       3. 命中定义式问法（"是什么""有哪些"）-> 咨询。
       4. 命中能愿结构（"可以退款吗"）-> 咨询。
@@ -556,7 +557,7 @@ def _is_question(text: str) -> bool:
     """
     if _IMPERATIVE_RE.search(text):
         return False
-    if _OWN_ORDER_RE.search(text):
+    if E.find_order_id(text) or _OWN_ORDER_RE.search(text):
         return False
     return bool(_DEFINITION_RE.search(text) or _MODAL_RE.search(text))
 

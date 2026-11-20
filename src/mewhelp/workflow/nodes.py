@@ -24,6 +24,7 @@ from typing import Any
 from ..domain import Exit, Intent, NodeName, RefusalReason, ToolError
 from ..generation import current_generation
 from ..llm import LLMResponse, extract_json
+from ..nlu.entities import ORDER_RE, find_order_id, normalize_order_id
 from ..schemas import (
     Evidence,
     GateDecision,
@@ -305,6 +306,11 @@ def make_agent_node(deps) -> Any:
             }
 
         specs = deps.tools.specs()
+        order_tools = {
+            spec["function"]["name"] for spec in specs
+            if "order_id" in spec["function"]["parameters"].get("properties", {})
+        }
+        order_ids = _agent_order_ids(state)
         calls: list[ToolCall] = []
         usage = TokenUsage()
         steps_detail: list[dict[str, Any]] = []
@@ -341,18 +347,31 @@ def make_agent_node(deps) -> Any:
                 steps_detail[-1]["blocked"] = "high_risk"
                 break
 
-            executed = [
-                (
+            executed: list[ToolCall] = []
+            for action, action_input in actions:
+                args = dict(action_input)
+                if action in order_tools:
+                    # 当轮指定的订单优先于模型参数；多个目标时只接受其中明确的一单。
+                    supplied = find_order_id(str(args.get("order_id") or ""))
+                    if len(order_ids) == 1:
+                        args["order_id"] = next(iter(order_ids))
+                    elif supplied in order_ids:
+                        args["order_id"] = supplied
+                    else:
+                        executed.append(ToolCall(
+                            name=action, args=args, ok=False,
+                            error="ORDER_CONTEXT_MISMATCH", attempts=0,
+                        ))
+                        continue
+                executed.append(
                     deps.tools.call(
                         action,
-                        dict(action_input),
+                        args,
                         principal_id=state.get("user_id") or None,
                     )
                     if deps.enforce_order_ownership
-                    else deps.tools.call(action, dict(action_input))
+                    else deps.tools.call(action, args)
                 )
-                for action, action_input in actions
-            ]
             calls.extend(executed)
             # 把这一步的动作与结果写回对话，供下一轮继续推理。
             # 正文为空（模型只用 function calling 说话）时要补一句动作本身 ——
@@ -439,22 +458,32 @@ def _brief(value: Any, limit: int = 400) -> str:
     return text if len(text) <= limit else text[:limit] + "…"
 
 
+def _agent_order_ids(state: AgentState) -> set[str]:
+    """当轮明示的订单限定查询范围；未明示时才沿用已有槽位或消解结果。"""
+    question = state.get("question", "")
+    explicit = {normalize_order_id(raw) for raw in ORDER_RE.findall(question)}
+    if explicit:
+        return explicit
+    if order_id := find_order_id(question):
+        return {order_id}
+    slots = state.get("slots")
+    order_id = (slots.order_id if slots else None) or find_order_id(
+        state.get("resolved_question", "")
+    )
+    return {order_id} if order_id else set()
+
+
 def _missing_slots(state: AgentState) -> list[str]:
     """这次请求走到 Agent 之前，还缺哪些必填槽位。
 
-    用的是**补全后**的问题再抽一次单号，这一点是必须的：指代消解（包括长期记忆
-    那一层）存在的意义就是把"我的订单"补成"订单 ORD-1002"。拿用户原话判，
-    记忆刚补上来的单号会被当成"缺失"，于是系统明明知道是哪一单，
-    却回一句"请把订单号发我"—— 记忆功能在这里就白做了。
+    与工具执行共用当轮订单范围。原话未报单号时，保留槽位或指代消解
+    （含长期记忆）补全的单号，避免明明有上下文却再次追问。
     """
     intent = state.get("intent")
     slots = state.get("slots")
     if intent is None or slots is None:
         return []
-    from .high_risk import extract_order_id
-
-    resolved = state.get("resolved_question") or state.get("question", "")
-    order_id = slots.order_id or extract_order_id(resolved)
+    order_id = next(iter(_agent_order_ids(state)), None)
     return slots.model_copy(update={"order_id": order_id}).missing_for(intent)
 
 
@@ -532,6 +561,8 @@ _TOOL_ERROR_TEXT: dict[str, str] = {
     "ORDER_NOT_CANCELLABLE": "这笔订单已经发货了，没法直接取消。",
     "ORDER_ADDRESS_LOCKED": "订单已发出，收货地址改不了了。",
     "REFUND_NOT_ELIGIBLE": "这笔订单不在退款条件内，需要的话我可以帮你转人工复核。",
+    "HIGH_RISK_REQUIRES_FLOW": "这笔操作需要通过人工审核流程，本次尚未办理。请重新发起申请或联系人工客服。",
+    "ORDER_CONTEXT_MISMATCH": "未能确认要查询哪笔订单，本次查询未完成。请明确提供要查询的订单号。",
     "TIMEOUT": "系统查询超时了，请稍后再试。",
     "UPSTREAM_ERROR": "系统暂时没查出来，请稍后再试。",
 }
@@ -543,7 +574,7 @@ def _tool_error_text(error: str | None, result: Any = None) -> str:
         return result["message"]
     if error and error in _TOOL_ERROR_TEXT:
         return _TOOL_ERROR_TEXT[error]
-    return "暂时没查到，麻烦核对一下信息再发我。"
+    return "这笔操作暂时无法完成，请稍后重试或联系人工客服。"
 
 
 # ============================================================
@@ -681,7 +712,7 @@ def make_generate_node(deps) -> Any:
                 ],
             }
 
-        # 业务工具出口却一个工具都没调成 —— 这不是"答不上来"，是"没查到"。
+        # 业务工具出口却一个工具都没调成，只能说明查询未完成，不能断言订单不存在。
         #
         # 不能让它掉进下面那条知识库通道：那条通道会拿着**空的证据**去生成
         # （business_tool 出口不经过 retrieve，`retrieval` 是 None），模型只能
@@ -689,7 +720,7 @@ def make_generate_node(deps) -> Any:
         # 于是一次工具规划的失败，被静默粉饰成一次正常的知识问答。
         if state.get("exit") is Exit.BUSINESS_TOOL:
             return {
-                "answer": "抱歉，这笔信息我这边暂时没查到，帮你转人工确认一下。",
+                "answer": "抱歉，这笔查询暂时未能完成，请稍后再试。",
                 "handoff": True,
                 "refusal_reason": RefusalReason.NO_EVIDENCE,
                 "path": [NodeName.GENERATE.value],
