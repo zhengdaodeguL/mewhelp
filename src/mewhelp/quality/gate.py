@@ -112,6 +112,11 @@ _DEFAULT_HIGH_RISK_MARGIN = 0.0
 _RE_DAYS = re.compile(r"(\d{1,3})\s*(?:个)?\s*天")
 _RE_YUAN = re.compile(r"(\d+(?:\.\d+)?)\s*元")
 
+#: 包装和称重描述不是商品主题；整串精确匹配会误拒写成“羊角蜜的带箱5斤”的依据。
+_PRODUCT_DESCRIPTION_RE = re.compile(
+    r"(?:\s*\d+(?:\.\d+)?\s*(?:公斤|千克|斤|克)|\s*(?:带|含|连)箱(?:子)?)+\s*$"
+)
+
 #: 品类后缀词表。"生鲜"这类词没有形态特征，只能靠"{0~4 个汉字}+后缀"兜住。
 #: 这张表故意写得窄：**抽错比抽不到更糟** —— 抽错会把覆盖率压到 0，
 #: 让闸门误拒一个本来答得出来的问题；抽不到只是让这条判据失效，
@@ -206,7 +211,9 @@ def _coverage_entities(question: str, slots: SlotExtraction | None) -> list[tupl
     pairs = list(_extract_kinds(question))
     if slots is not None:
         if slots.product:
-            pairs.append((_KIND_PRODUCT, slots.product))
+            subject = _PRODUCT_DESCRIPTION_RE.sub("", slots.product).strip()
+            if subject:
+                pairs.append((_KIND_PRODUCT, subject))
         if slots.order_id:
             pairs.append((_KIND_ORDER, _normalize_order_id(slots.order_id)))
     # 保序去重：同一实体的不同来源（问题里 + 槽位里）不该重复计入分母

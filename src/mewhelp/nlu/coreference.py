@@ -125,6 +125,12 @@ _TOPIC_CUES: tuple[tuple[str, tuple[str, ...]], ...] = (
 #: 补全后的实体前缀 —— 让补出来的话读起来像人话（"订单 ORD-1001"）
 _DOMAIN_PREFIX = {_DOMAIN_ORDER: "订单 "}
 
+#: 规格省略句没有“它/那个”；保留最近一问一答，才能找回商品及已确认的规格归属。
+_PRODUCT_FOLLOWUP_RE = re.compile(
+    r"^[那这](?:(?P<spec>\d+(?:\.\d+)?\s*(?:公斤|千克|斤|克|片|盒|袋|箱))的?|个|款|件)"
+)
+_PRODUCT_ATTRIBUTE_RE = re.compile(r"店|商家|规格|净重|重量|价格|多少钱")
+
 #: 指代短语里的量词。替换时保留它，才能把"那单能退吗"补成
 #: "订单 ORD-1001 那单能退吗"而不是"…1001 能退吗" —— 前者语义没有丢失。
 _DEMONSTRATIVE_MEASURE_RE = re.compile(r"^[那这](单|订单|笔|款|个|件)$")
@@ -204,6 +210,10 @@ class CoreferenceResolver:
             if from_memory is not None:
                 return from_memory
 
+            followup = self._resolve_product_followup(original, turns)
+            if followup is not None:
+                return followup
+
             # 第一层：量词自带类型（"这单"=订单、"这款"=商品）时补什么完全确定，
             # 连语义域都不用猜，一次模型调用都省掉。
             typed = self._self_typed_domain(original)
@@ -235,6 +245,38 @@ class CoreferenceResolver:
             return self._resolve_by_llm(original, turns, context)
         except Exception as exc:  # noqa: BLE001 —— 契约要求任何异常都收敛成降级结果
             return self._fallback(original, exc)
+
+    @staticmethod
+    def _resolve_product_followup(question: str, history: list[Turn]) -> ResolveResult | None:
+        """承接最近一次有明确答复的商品属性追问，不从旧订单或拒答里补实体。"""
+        # 句内已有商品时并未省略主体，保留原有限定词和话题切换判断。
+        if E.find_product(question):
+            return None
+        match = _PRODUCT_FOLLOWUP_RE.search(question)
+        if not match or not _PRODUCT_ATTRIBUTE_RE.search(question):
+            return None
+        turns = list(E.iter_turns(history))
+        if len(turns) < 2 or [t[1] for t in turns[-2:]] != ["user", "assistant"]:
+            return None
+        previous, answer = turns[-2:]
+        context = f"{previous[2]}\n{answer[2]}"
+        if E.find_order_id(context) or re.search(r"抱歉|无法确认|没有覆盖|转人工", answer[2]):
+            return None
+        if not _PRODUCT_ATTRIBUTE_RE.search(context):
+            return None
+        spec = match.group("spec")
+        if spec and not re.search(
+            r"(?<![\d.])" + re.escape(re.sub(r"\s+", "", spec)),
+            re.sub(r"\s+", "", answer[2]),
+        ):
+            return None
+        return ResolveResult(
+            original=question,
+            resolved=f"上轮问题：{previous[2]}\n已确认答复：{answer[2]}\n追问：{question}",
+            rewritten=True,
+            substitutions={match.group(0): context},
+            referenced_turns=[previous[0], answer[0]],
+        )
 
     @staticmethod
     def _self_typed_domain(question: str) -> str | None:

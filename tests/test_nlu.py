@@ -862,3 +862,105 @@ def test_official_examples_all_route_to_a_sane_exit():
             assert exit_ in allowed[spec.intent.value], (
                 f"{example!r} 期望出口 {allowed[spec.intent.value]}，实际 {exit_.value}"
             )
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "红心柚从哪里发货？",
+        "生鲜收到货24小时内有品质问题退多少？",
+        "七天无理由退货从哪天开始算？",
+        "退货需要把商品寄回吗？",
+    ],
+)
+def test_通用售后问题不索要订单号(text):
+    """没有订单指向或明确操作词的通用咨询必须走知识出口。"""
+    result = IntentClassifier(llm=MockLLMClient()).classify(text)
+    assert result.intent in {Intent.PRODUCT_FAQ, Intent.POLICY_FAQ}
+
+
+@pytest.mark.parametrize(
+    "text,expected",
+    [
+        ("我的订单从哪里发货？", Intent.ORDER_QUERY),
+        ("ORD-1007 退货需要把商品寄回吗？", Intent.RETURN_REQUEST),
+        ("帮我退货，需要把商品寄回吗？", Intent.RETURN_REQUEST),
+        ("我要退货，七天无理由从哪天开始算？", Intent.RETURN_REQUEST),
+    ],
+)
+def test_具体订单和明确操作仍走业务流程(classifier, text, expected):
+    assert classifier.classify(text).intent is expected
+
+
+@pytest.mark.parametrize(
+    "text,expected",
+    [
+        ("申请退货，需要把商品寄回吗？", Intent.RETURN_REQUEST),
+        ("转人工，红心柚从哪里发货？", Intent.HUMAN_HANDOFF),
+    ],
+)
+def test_通用问法不抢占明确申请和转人工(classifier, text, expected):
+    assert classifier.classify(text).intent is expected
+
+
+@pytest.mark.parametrize("question", ["那3斤的是哪个店的？", "那个是哪个店的？"])
+def test_商品追问承接上轮已确认答复(resolver, question):
+    history = [
+        turn("user", "苹果有哪些规格，分别是哪个店的？"),
+        turn("assistant", "苹果3斤是红运道旗舰店，5斤是果园旗舰店。"),
+    ]
+    result = resolver.resolve(question, history)
+    assert result.rewritten is True
+    assert "苹果" in result.resolved
+    assert "3斤是红运道旗舰店" in result.resolved
+    assert result.resolved.endswith(question)
+    assert result.referenced_turns == [1, 2]
+
+
+@pytest.mark.parametrize(
+    "question",
+    ["这个连衣裙多少钱？", "那个羊角蜜带箱5斤，就是5斤净重吗？"],
+)
+def test_商品追问自带商品名时不借用上轮话题(resolver, question):
+    history = [
+        turn("user", "苹果有哪些规格，分别是哪个店的？"),
+        turn("assistant", "苹果3斤是红运道旗舰店，5斤是果园旗舰店。"),
+    ]
+    result = resolver.resolve(question, history)
+    assert result.rewritten is False
+    assert result.resolved == question
+    assert "苹果" not in result.resolved
+    assert result.referenced_turns == []
+    assert result.substitutions == {}
+
+
+@pytest.mark.parametrize(
+    "answer",
+    [
+        "苹果13斤是红运道旗舰店。",
+        "苹果3斤无法确认店铺，帮你转人工。",
+        "订单 ORD-1007 的苹果3斤来自红运道旗舰店。",
+    ],
+)
+def test_商品规格追问不借用未确认或订单上下文(resolver, answer):
+    result = resolver.resolve(
+        "那3斤的是哪个店的？",
+        [turn("user", "苹果有哪些规格？"), turn("assistant", answer)],
+    )
+    assert result.rewritten is False
+
+
+def test_商品规格追问没有历史时保留原文(resolver):
+    question = "那3斤的是哪个店的？"
+    assert resolver.resolve(question, []).resolved == question
+
+
+@pytest.mark.parametrize(
+    "text,expected",
+    [
+        ("羊角蜜5斤带箱子，果肉有5斤吗？", "羊角蜜5斤带箱"),
+        ("这个超轻便携保温杯多少钱？", "超轻便携保温杯"),
+    ],
+)
+def test_商品名按词语边界保留首字(classifier, text, expected):
+    assert classifier.extract_slots(text, []).product == expected
