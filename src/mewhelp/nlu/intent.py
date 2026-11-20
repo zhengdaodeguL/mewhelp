@@ -45,7 +45,7 @@ import re
 from ..config import get_settings
 from ..domain import HIGH_RISK_INTENTS, INTENT_KEYWORDS, INTENT_LABELS, INTENT_SPECS, Intent
 from ..llm import as_bool, build_llm, extract_json
-from ..knowledge import is_damage_policy_question, product_attribute_question
+from ..knowledge import is_damage_policy_question, product_attribute_question, product_subject
 from ..schemas import ClassifyResult, SlotExtraction, Turn
 from . import entities as E
 
@@ -402,7 +402,9 @@ class IntentClassifier:
     # ------------------------------------------------------------------
     # 槽位抽取
     # ------------------------------------------------------------------
-    def extract_slots(self, text: str, history: list[Turn] | None = None) -> SlotExtraction:
+    def extract_slots(
+        self, text: str, history: list[Turn] | None = None, *, intent: Intent | None = None,
+    ) -> SlotExtraction:
         """抽槽位。**当前句优先，历史兜底**。
 
         顺序不能反：用户改主意的情况很常见（上一轮说 ORD-1001，这一轮说
@@ -421,6 +423,20 @@ class IntentClassifier:
         except Exception as exc:  # noqa: BLE001
             logger.warning("slots 规则层异常，降级为空槽位: %s", exc)
             slots = SlotExtraction()
+
+        # 按这次路由的实际需要补槽位。高风险流程会重新从当轮原话取必填值，
+        # 不消费这里的模型槽位；商品属性有明确主体时仍须经过检索/闸门校验。
+        if intent in HIGH_RISK_INTENTS or intent is Intent.HUMAN_HANDOFF:
+            return slots
+        if intent in {Intent.ORDER_QUERY, Intent.LOGISTICS_QUERY} and slots.order_id:
+            return slots
+        if intent is Intent.PRODUCT_FAQ and product_attribute_question(text):
+            subject = product_subject(text)
+            # 属性主体规则不是通用实体识别器。“换成红薯呢，它有哪些规格”
+            # 等复合问句仍走原来的抽取，不能把整段话写进 product 槽位。
+            if (re.fullmatch(r"[一-龥A-Za-z0-9·_-]{2,32}", subject)
+                    and not re.search(r"换成|改成|[呢吗吧它他她我你]", subject)):
+                return slots.model_copy(update={"product": subject})
 
         # 历史里没抽到、或抽到的东西不可信时才问模型。
         # 四个槽位都齐了还调模型是纯浪费；而高风险流程真正在乎的 order_id

@@ -33,14 +33,19 @@ class Settings(BaseSettings):
     llm_model: str = "gpt-5-mini"
     llm_temperature: float = 0.0
     llm_max_tokens: int = 1024
-    llm_timeout_s: float = 60.0
+    llm_timeout_s: float = Field(default=30.0, gt=0)
     #: 连接阶段的超时，比分给读取的那一段短得多。
     #: 中转域名下面往往挂着好几个 IP，其中个别是黑洞 —— 连接也等满 60 秒的话，
     #: 第一次挑中坏 IP 就把整次预算烧光，重试压根没机会发生。
-    llm_connect_timeout_s: float = 8.0
+    llm_connect_timeout_s: float = Field(default=3.0, gt=0)
     #: 模型请求的重试次数。和工具的 `tool_max_retries` 分开：工具的失败要记进
     #: 业务轨迹（"这次查询重试过"），模型的重试只是链路抖动，不该混在一个开关里。
-    llm_max_retries: int = 3
+    llm_max_retries: int = Field(default=1, ge=0)
+    #: 可规则兜底的消解、分类、槽位和记忆：短预算、不重试。
+    #: 各步骤还受 llm_timeout_s 上限约束；调低总预算时不会被这里放大。
+    llm_aux_timeout_s: float = Field(default=5.0, gt=0)
+    llm_plan_timeout_s: float = Field(default=8.0, gt=0)
+    llm_eval_timeout_s: float = Field(default=8.0, gt=0)
     #: 模型是否先输出思维链（`reasoning_content`）再给正文 —— DeepSeek-R 系、
     #: o 系这类推理模型都要打开。打开后输出预算改用下面那个更大的值，并且不发
     #: `response_format`（推理模型普遍不支持，个别中转直接 400）。

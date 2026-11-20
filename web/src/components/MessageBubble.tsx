@@ -66,7 +66,7 @@ export function MessageBubble({
 
   // 反馈和收藏都要靠这个句柄（后端叫 request_id）。没有它的消息
   // （开场白、正在生成的那条）就只给复制、引用和重问。
-  const actionable = Boolean(message.turnId) && !message.streaming
+  const actionable = Boolean(message.turnId) && !message.streaming && (!message.status || message.status === 'complete')
 
   return (
     <div
@@ -93,6 +93,11 @@ export function MessageBubble({
           {isUser ? highlight(message.content, query) : <RichText text={message.content} query={query} />}
           {message.streaming && <StreamingCursor />}
         </div>
+        {!isUser && !message.streaming && message.status && message.status !== 'complete' && (
+          <div className="message-status" role="status">
+            {message.status === 'verifying' ? '答复核对中' : message.status === 'stopped' ? '已停止 · 未完成' : '回答中断 · 未完成'}
+          </div>
+        )}
 
         {/* 消息工具条：平时藏起来，悬停或聚焦时才出现，不抢对话本身 */}
         {message.content && !message.streaming && (

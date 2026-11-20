@@ -19,8 +19,8 @@ import { IconClose, IconPencil, IconPlus, IconSearch, IconTrash } from './icons'
  *   * **删除要二次确认，而且是就地确认**，不用 `window.confirm`：
  *     原生弹窗在演示/嵌入式场景里经常被浏览器拦掉，点一下什么都不发生，
  *     用户会以为"删不掉"。就地确认还顺带告诉了他删的是哪一条。
- *   * **重命名走双击或铅笔按钮**，进入就地编辑。改完 Enter 提交、Esc 取消 ——
- *     和文件管理器一致，不用学。
+ *   * **操作收进常显的更多菜单**，和打开会话的按钮分开。
+ *     悬停不出现新的点击目标；重命名/删除都必须先主动打开菜单。
  */
 
 interface Props {
@@ -144,11 +144,6 @@ export function HistoryRail({
                 <div
                   className={`session${active ? ' session--active' : ''}`}
                   style={{ '--i': i } as React.CSSProperties}
-                  // 整块可点：会话条目里最常做的动作就是"切过去"，
-                  // 只让标题可点会让点击热区小得反直觉
-                  onClick={() => {
-                    if (!editing && !confirming) onSelect(s.sessionId)
-                  }}
                 >
                   {editing === s.sessionId ? (
                     <input
@@ -165,19 +160,20 @@ export function HistoryRail({
                       }}
                     />
                   ) : (
-                    <div className="session-title" title={s.title}>
-                      {s.title}
-                    </div>
-                  )}
-
-                  <div className="session-meta">
-                    <span>{turnsToRounds(s.turns)}</span>
-                    <span className="session-dot" aria-hidden="true" />
-                    <time dateTime={s.updatedAt}>{relativeTime(s.updatedAt, now)}</time>
-                  </div>
-
-                  {s.preview && editing !== s.sessionId && (
-                    <p className="session-preview">{s.preview}</p>
+                    <button
+                      type="button"
+                      className="session-select"
+                      aria-current={active ? 'true' : undefined}
+                      onClick={() => onSelect(s.sessionId)}
+                    >
+                      <span className="session-title" title={s.title}>{s.title}</span>
+                      <span className="session-meta">
+                        <span>{turnsToRounds(s.turns)}</span>
+                        <span className="session-dot" aria-hidden="true" />
+                        <time dateTime={s.updatedAt}>{relativeTime(s.updatedAt, now)}</time>
+                      </span>
+                      {s.preview && <span className="session-preview">{s.preview}</span>}
+                    </button>
                   )}
 
                   {confirming === s.sessionId ? (
@@ -199,32 +195,42 @@ export function HistoryRail({
                     </div>
                   ) : (
                     editing !== s.sessionId && (
-                      <div className="session-actions">
+                      <details
+                        className="session-menu"
+                        onKeyDown={(e) => {
+                          if (e.key === 'Escape') {
+                            e.currentTarget.open = false
+                            e.currentTarget.querySelector('summary')?.focus()
+                          }
+                        }}
+                        onBlur={(e) => {
+                          if (!e.currentTarget.contains(e.relatedTarget)) e.currentTarget.open = false
+                        }}
+                      >
+                        <summary aria-label={`「${s.title}」更多操作`} title="更多操作">···</summary>
+                        <div className="session-menu-items">
                         <button
                           type="button"
-                          className="icon-btn"
-                          title="重命名"
                           aria-label={`重命名「${s.title}」`}
                           onClick={(e) => {
-                            e.stopPropagation()
+                            e.currentTarget.closest('details')?.removeAttribute('open')
                             startRename(s)
                           }}
                         >
-                          <IconPencil width={13} height={13} />
+                          <IconPencil width={13} height={13} /> 重命名
                         </button>
                         <button
                           type="button"
-                          className="icon-btn"
-                          title="删除"
                           aria-label={`删除「${s.title}」`}
                           onClick={(e) => {
-                            e.stopPropagation()
+                            e.currentTarget.closest('details')?.removeAttribute('open')
                             setConfirming(s.sessionId)
                           }}
                         >
-                          <IconTrash width={13} height={13} />
+                          <IconTrash width={13} height={13} /> 删除
                         </button>
-                      </div>
+                        </div>
+                      </details>
                     )
                   )}
                 </div>

@@ -2233,6 +2233,9 @@ body.resizing {
 
 .session {
   position: relative;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 30px;
+  column-gap: 16px;
   padding: 8px 9px;
   border-radius: 10px;
   cursor: pointer;
@@ -2267,15 +2270,16 @@ body.resizing {
 }
 
 .session-title {
+  display: block;
   font-size: 13px;
   font-weight: 600;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  padding-right: 66px; /* 给按钮和标题留出安全间距 */
 }
 
 .session-rename {
+  grid-column: 1 / -1;
   width: 100%;
   font: inherit;
   font-size: 13px;
@@ -2316,41 +2320,89 @@ body.resizing {
   overflow: hidden;
 }
 
-.session-actions {
-  position: absolute;
-  top: 6px;
-  right: 6px;
-  display: flex;
-  gap: 10px;
-  opacity: 0;
-  transition: opacity 0.14s;
+.session-select {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  border: 0;
+  padding: 0;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
 }
 
-.session-actions .icon-btn {
-  width: 24px;
-  height: 24px;
+.session-menu {
+  position: relative;
+  align-self: start;
+}
+
+.session-menu summary {
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  list-style: none;
   border-radius: 6px;
+  color: var(--text-muted);
+  cursor: pointer;
+}
+
+.session-menu summary::-webkit-details-marker {
+  display: none;
+}
+
+.session-menu[open] {
+  z-index: 5;
+}
+
+.session-menu-items {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  min-width: 120px;
+  padding: 5px;
   background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 4px 16px #0002;
 }
 
-.session:hover .session-actions,
-.session:focus-within .session-actions {
-  opacity: 1;
+.session-menu-items button {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
 }
 
-@media (hover: none) {
-  .session-actions {
-    opacity: 1;
-  }
+.session-menu-items button:hover,
+.session-menu summary:hover {
+  background: var(--accent-soft);
 }
 
 .session-confirm {
+  grid-column: 1 / -1;
   display: flex;
   align-items: center;
   gap: 6px;
   margin-top: 6px;
   font-size: 11.5px;
   color: var(--text-muted);
+}
+
+.message-status {
+  margin-top: 6px;
+  color: var(--text-muted);
+  font-size: 12px;
 }
 
 .mini-btn {
@@ -4558,7 +4610,7 @@ body {
 }
 
 .session-title {
-  max-width: calc(100% - 26px);
+  max-width: 100%;
   color: var(--text);
   font-size: 12px;
   font-weight: 650;
@@ -4576,11 +4628,6 @@ body {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-}
-
-.session-actions {
-  top: 9px;
-  right: 7px;
 }
 
 .rail-foot {

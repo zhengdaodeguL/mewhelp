@@ -18,6 +18,7 @@ export type MessageKind = 'normal' | 'notice'
 
 /** 用户对一条答复的评价。没评过是 undefined。 */
 export type Rating = 'up' | 'down'
+export type MessageStatus = 'complete' | 'verifying' | 'stopped' | 'interrupted'
 
 export interface ChatMessage {
   id: string
@@ -26,6 +27,7 @@ export interface ChatMessage {
   content: string
   /** 正在逐字接收中（用于显示光标动画） */
   streaming?: boolean
+  status?: MessageStatus
   /** 本轮问答的不透明句柄：反馈与收藏的键。没有它就不能评、不能收藏。 */
   turnId?: string
   /** 我点过的赞/踩 */
@@ -36,6 +38,7 @@ export interface ChatMessage {
 export interface TurnOutcome {
   /** 已转人工 —— 这是真实业务结果，必须告诉用户 */
   handoff: boolean
+  status?: MessageStatus
 }
 
 /**
@@ -73,4 +76,5 @@ export interface HistoryMessage {
   content: string
   handoff: boolean
   requestId: string
+  status?: MessageStatus
 }
