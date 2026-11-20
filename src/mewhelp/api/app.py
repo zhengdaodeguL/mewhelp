@@ -614,6 +614,8 @@ def create_app(deps: GraphDeps | None = None) -> FastAPI:
                     "content": m.content,
                     "handoff": m.handoff,
                     "request_id": m.request_id,
+                    "evidence": m.evidence,
+                    "tools": m.tools,
                 }
                 for m in detail.messages
             ],

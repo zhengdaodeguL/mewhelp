@@ -16,7 +16,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { fetchSession, sendFeedback, streamChat } from '../api/client'
 import type { ChatMessage, MemoryItem, Rating } from '../types'
-import { mergeCards, type WorkspaceCard } from '../workspace'
+import { mergeCards, startWorkspaceTurn, type WorkspaceCard } from '../workspace'
 
 function randomId(prefix: string): string {
   const rand =
@@ -110,6 +110,7 @@ export function useChat({ sessionId, quote, onTurnEnd, onMemory }: Options) {
       if (!alive || controller.signal.aborted || sentRef.current) return
       if (restored.ok && restored.messages.length > 0) {
         setMessages(fromHistory(restored.messages))
+        setCards(restored.cards)
       }
     })
     return () => {
@@ -143,6 +144,7 @@ export function useChat({ sessionId, quote, onTurnEnd, onMemory }: Options) {
       setMessages((prev) => [...prev, userMessage, placeholder])
       setIsStreaming(true)
       sentRef.current = true
+      setCards(startWorkspaceTurn)
 
       const controller = new AbortController()
       abortRef.current = controller

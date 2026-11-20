@@ -2272,7 +2272,7 @@ body.resizing {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
-  padding-right: 44px; /* 给悬停出现的两个按钮让位 */
+  padding-right: 66px; /* 给按钮和标题留出安全间距 */
 }
 
 .session-rename {
@@ -2321,7 +2321,7 @@ body.resizing {
   top: 6px;
   right: 6px;
   display: flex;
-  gap: 1px;
+  gap: 10px;
   opacity: 0;
   transition: opacity 0.14s;
 }

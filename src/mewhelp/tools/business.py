@@ -215,7 +215,9 @@ def order_summary(order: dict[str, Any], *, today: date | None = None) -> dict[s
         "order_id": order["order_id"],
         "user_id": order.get("user_id"),
         "status": order.get("status"),
-        "status_label": STATUS_LABELS.get(order.get("status", ""), order.get("status")),
+        "status_label": {
+            "refunded": "已退款", "refunding": "退款中",
+        }.get(order.get("refund_status")) or STATUS_LABELS.get(order.get("status", ""), order.get("status")),
         "shipping_address": order.get("shipping_address"),
         "delivered_on": order.get("delivered_on"),
         "days_since_delivery": (ref - delivered_on).days if delivered_on else None,
@@ -310,7 +312,19 @@ def get_order(order_id: str) -> dict[str, Any]:
             order_id=order_id,
         )
     summary = order_summary(order)
-    return _ok(summary, f"订单 {summary['order_id']} 当前状态：{summary['status_label']}。")
+    details = [f"订单 {summary['order_id']} 当前状态：{summary['status_label']}。"]
+    if summary.get("created_at"):
+        details.append(f"下单日期：{str(summary['created_at'])[:10]}。")
+    if summary.get("delivered_on"):
+        details.append(f"签收日期：{summary['delivered_on']}。")
+    elif (order.get("logistics") or {}).get("events"):
+        times = [event.get("time") for event in order["logistics"]["events"] if event.get("time")]
+        if times:
+            details.append(f"最新物流时间：{max(times)}。")
+    if summary["items"]:
+        goods = "、".join(f"{item['name']} ×{item['qty']}" for item in summary["items"])
+        details.append(f"商品：{goods}。")
+    return _ok(summary, "".join(details))
 
 
 def _fmt_day(d: date) -> str:
@@ -560,6 +574,7 @@ def request_refund(order_id: str, today: str | date | None = None) -> dict[str, 
         "order_id": order["order_id"],
         "status": status,
         "refund_status": refund_status,
+        "data": order_summary(order, today=_resolve_today(today)),
     }
 
     if status != "delivered":
@@ -665,6 +680,7 @@ def cancel_order(order_id: str, today: str | date | None = None) -> dict[str, An
         "order_id": order["order_id"],
         "status": status,
         "status_label": _STATUS_LABELS_CN.get(status, status),
+        "data": order_summary(order),
     }
 
     if status in ("pending", "processing"):
@@ -674,7 +690,11 @@ def cancel_order(order_id: str, today: str | date | None = None) -> dict[str, An
             # 只给"预计结果"不给"已取消"：这个动作要过人工审核才生效，
             # 工具越权先把状态写死，就是"模型一句话就把单删了"。
             "resulting_status": "cancelled",
-            "refund_note": "已支付金额将在取消审核通过后原路退回，通常 1~3 个工作日到账。",
+            "refund_note": (
+                "订单未付款，无需退款。"
+                if status == "pending"
+                else "如已付款，已支付金额将在取消审核通过后原路退回，通常 1~3 个工作日到账。"
+            ),
             "requires_human_approval": True,
         }
         return _ok(data, f"订单当前为「{data['status_label']}」，可以取消。本次操作需人工审核后生效。")

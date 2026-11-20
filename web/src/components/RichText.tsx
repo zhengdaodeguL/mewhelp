@@ -52,7 +52,7 @@ function renderInline(text: string, query: string): ReactNode {
   )
 }
 
-/** 管道表格。后端已经把 `|---|---|` 分隔行去掉了，这里只切单元格。 */
+/** 管道表格。模型输出可能仍含分隔行，拆成单元格后识别并跳过。 */
 function renderTable(lines: string[], query: string): ReactNode {
   const rows = lines
     .filter((l) => l.includes('|'))
@@ -64,6 +64,7 @@ function renderTable(lines: string[], query: string): ReactNode {
         .split('|')
         .map((c) => c.trim()),
     )
+    .filter((row) => !row.every((cell) => /^:?-+:?$/.test(cell)))
   if (rows.length === 0) return null
 
   const [head, ...body] = rows

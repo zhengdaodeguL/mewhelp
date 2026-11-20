@@ -267,20 +267,24 @@ def _render_outcome(intent: Intent, calls: list[ToolCall], error: str | None) ->
 
     last = calls[-1]
     data = last.result if isinstance(last.result, dict) else {}
+    order_id = data.get("order_id") or last.args.get("order_id") or ""
+    prefix = f"订单 {order_id}：" if order_id else ""
     if error:
-        # 与查单出口保持一致，使用注册表核对归属后的账号提示。
-        if error == "ORDER_ACCOUNT_UNLINKED" and data.get("message"):
-            return data["message"]
-        return _REJECTION_TEXT.get(error, f"这笔操作没有完成（{error}）。")
+        # 账号未关联时没有查到订单，沿用账号提示，不能伪装成该单的业务结论。
+        if error == "ORDER_ACCOUNT_UNLINKED":
+            return data.get("message") or _REJECTION_TEXT["ORDER_ACCOUNT_UNLINKED"]
+        if intent is Intent.CHANGE_ADDRESS:
+            return _REJECTION_TEXT.get(error, f"这笔操作没有完成（{error}）。")
+        return prefix + (data.get("message") or _REJECTION_TEXT.get(error, f"这笔操作没有完成（{error}）。"))
 
     if intent is Intent.CANCEL_ORDER:
-        return f"已为你取消订单 {data.get('order_id', '')}。退款将按原支付方式退回，1 到 3 个工作日到账。"
+        return prefix + str(data.get("note") or "取消申请需人工审核后生效。") + str(data.get("refund_note") or "")
     if intent is Intent.CHANGE_ADDRESS:
         return f"已把订单 {data.get('order_id', '')} 的收货地址更新为：{data.get('shipping_address') or data.get('address', '')}。"
     if intent is Intent.REFUND_REQUEST:
-        return f"订单 {data.get('order_id', '')} 的退款申请已提交，审核通过后 1 到 3 个工作日退回原支付方式。"
+        return prefix + "退款申请已提交，审核通过后 1 到 3 个工作日退回原支付方式。"
     if intent is Intent.RETURN_REQUEST:
-        return f"订单 {data.get('order_id', '')} 符合退货条件，已为你登记。请按退货页面的地址寄回，我们收到后办理退款。"
+        return prefix + "符合退货条件，已为你登记。请按退货页面的地址寄回，我们收到后办理退款。"
     return "操作已完成。"
 
 

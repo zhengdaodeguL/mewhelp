@@ -242,6 +242,22 @@ export function mergeCards(existing: WorkspaceCard[], incoming: WorkspaceCard[])
   return [...fresh.values(), ...kept].slice(0, 20)
 }
 
+/** 新一轮只保留本轮依据，订单/物流卡仍按订单号更新。 */
+export function startWorkspaceTurn(existing: WorkspaceCard[]): WorkspaceCard[] {
+  return existing.filter((card) => card.kind !== 'source')
+}
+
+/** 按消息顺序重放每轮资料，恢复后的工作区与连续对话一致。 */
+export function cardsFromHistory(rows: unknown): WorkspaceCard[] {
+  let cards: WorkspaceCard[] = []
+  for (const row of arr(rows)) {
+    if (!isRecord(row) || row.role !== 'assistant') continue
+    cards = mergeCards(startWorkspaceTurn(cards), cardsFromEvidence(row.evidence))
+    cards = mergeCards(cards, cardsFromTools(row.tools))
+  }
+  return cards
+}
+
 /**
  * 把卡片拍成一段纯文本。
  *

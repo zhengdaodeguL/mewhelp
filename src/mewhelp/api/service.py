@@ -238,6 +238,8 @@ def to_session_messages(turns: Sequence[Turn]) -> list[SessionMessage]:
                 content=t.content,
                 handoff=bool(meta.get("handoff")) if t.role == "assistant" else False,
                 request_id=str(meta.get("request_id") or ""),
+                evidence=meta.get("evidence", []) if t.role == "assistant" else [],
+                tools=meta.get("tools", []) if t.role == "assistant" else [],
             )
         )
     return out
@@ -814,6 +816,8 @@ class ChatService:
                     "exit": _value(result.exit),
                     "path": result.path,
                     "handoff": result.handoff,
+                    "evidence": evidence_payload(result)["chunks"],
+                    "tools": tool_payload(result),
                 },
             ),
         ]
@@ -882,10 +886,17 @@ def tool_payload(result: ConversationResult) -> list[dict[str, Any]]:
     """把可展示的业务结果投影成工作区卡片数据。"""
     payload: list[dict[str, Any]] = []
     for tc in result.tool_calls:
-        if not tc.ok or not isinstance(tc.result, (dict, list)):
+        if not isinstance(tc.result, (dict, list)):
+            continue
+        data = tc.result
+        # 操作是否获准与订单是否查到是两件事。快照是资料，拒绝不是操作成功。
+        snapshot = data.get("data") if isinstance(data, dict) else None
+        if isinstance(snapshot, dict) and snapshot.get("order_id") and isinstance(snapshot.get("items"), list):
+            payload.append({"kind": "order", "ok": True, "result": snapshot})
+        if not tc.ok:
             continue
         kind = "logistics" if tc.name == "track_logistics" else "order"
-        payload.append({"kind": kind, "ok": True, "result": tc.result})
+        payload.append({"kind": kind, "ok": True, "result": data})
     return payload
 
 
