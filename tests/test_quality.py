@@ -462,6 +462,51 @@ GROUNDED_ANSWER = "生鲜类商品签收后 24 小时内可以申请退款，超
 
 
 class TestSelfEvaluatorHappyPath:
+    @pytest.mark.parametrize(
+        "answer,context",
+        [
+            ("苹果有1斤、3斤、5斤装。", "苹果有1斤、3斤、5斤装。"),
+            ("水饺每袋28元。", "水饺每袋28块钱。"),
+            ("坏单比例超过15%需人工复核。", "坏单比例超过15％需人工复核。"),
+        ],
+        ids=["apple_specs", "equivalent_price_unit", "equivalent_percent"],
+    )
+    def test_verbatim_answer_does_not_depend_on_model_verdict(self, answer, context):
+        """整段答案能在证据中核验时，不应再因模型逐字比对误判而转人工。"""
+        llm = FakeLLM({"grounded": False, "coverage": 0, "unsupported_claims": [answer]})
+        result = SelfEvaluator(llm).evaluate(answer, context)
+        assert result.grounded is True
+        assert result.coverage == 1.0
+        assert result.unsupported_claims == []
+        assert llm.tasks == ["self_eval"]
+
+    def test_matching_numbers_do_not_override_unsupported_statement(self):
+        """数字相同但结论不同，不能因为数字都命中就推翻模型拒绝。"""
+        answer = "水饺每袋28元，支持无条件退款。"
+        llm = FakeLLM({
+            "grounded": False, "coverage": 0.5,
+            "unsupported_claims": ["支持无条件退款"],
+        })
+        result = SelfEvaluator(llm).evaluate(answer, "水饺每袋28元，不支持无条件退款。")
+        assert result.grounded is False
+        assert result.unsupported_claims == ["支持无条件退款"]
+        assert llm.tasks == ["self_eval"]
+
+    @pytest.mark.parametrize(
+        "answer,context",
+        [
+            ("支持无条件退款。", "不支持无条件退款。"),
+            ("28元。", "128元。"),
+            ("水饺每袋28元", "水饺每袋28元起，具体看规格。"),
+        ],
+        ids=["negated", "partial_number", "price_qualifier"],
+    )
+    def test_partial_sentence_does_not_override_model_rejection(self, answer, context):
+        llm = FakeLLM({"grounded": False, "coverage": 0, "unsupported_claims": [answer]})
+        result = SelfEvaluator(llm).evaluate(answer, context)
+        assert result.grounded is False
+        assert answer in result.unsupported_claims
+
     def test_grounded_answer_passes(self) -> None:
         result = SelfEvaluator(FakeLLM({"grounded": True, "coverage": 1.0})).evaluate(
             GROUNDED_ANSWER, CONTEXT
