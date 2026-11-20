@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import sys
 import types
+import asyncio
 from types import SimpleNamespace
 from typing import Any
 
@@ -101,6 +102,138 @@ def make_settings(**over: Any) -> Settings:
 
 def make_client(fake_openai: types.ModuleType, **over: Any) -> OpenAILLMClient:
     return OpenAILLMClient(make_settings(**over))
+
+
+class _Chunks:
+    def __init__(self, chunks):
+        self.chunks = chunks
+        self.closed = False
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *args):
+        self.closed = True
+
+    def __iter__(self):
+        yield from self.chunks
+
+
+def delta(content=None, *, reasoning=None, finish=None, usage=None):
+    return SimpleNamespace(
+        choices=[SimpleNamespace(
+            index=0,
+            delta=SimpleNamespace(content=content, reasoning_content=reasoning),
+            finish_reason=finish,
+        )],
+        usage=usage,
+    )
+
+
+def test_stream_forwards_content_in_order_and_collects_usage(fake_openai):
+    """思维链不推送，正文保留分片边界，用量从流末尾读取。"""
+    chunks = _Chunks([
+        delta(reasoning="仅供内部检查"),
+        delta("  牛奶"), delta("规格"), delta("如下  "),
+        delta(finish="stop"),
+        SimpleNamespace(choices=[], usage=reply("").usage),
+    ])
+    fake_openai.result = chunks
+    pieces = []
+    response = make_client(fake_openai).chat_stream(
+        [{"role": "user", "content": "纯牛奶规格"}],
+        task="generate", on_token=pieces.append,
+    )
+    assert pieces == ["牛奶", "规格", "如下"]
+    assert response.text == "".join(pieces)
+    assert response.reasoning == "仅供内部检查"
+    assert response.usage.total_tokens == 18
+    assert fake_openai.last_kwargs["stream"] is True
+    assert fake_openai.last_kwargs["stream_options"] == {"include_usage": True}
+    assert chunks.closed
+
+
+@pytest.mark.parametrize(
+    "chunks, error",
+    [
+        ([delta("", reasoning="预算耗尽", finish="length")], "空正文"),
+        ([delta("半句", finish="length")], "截断"),
+        ([delta("没有完成标记")], "提前结束"),
+    ],
+)
+def test_stream_failure_closes_response(fake_openai, chunks, error):
+    stream = _Chunks(chunks)
+    fake_openai.result = stream
+    with pytest.raises(LLMError, match=error):
+        make_client(fake_openai).chat_stream([], task="generate", on_token=lambda text: None)
+    assert stream.closed
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("phase", ["headers", "body", "internal_json"])
+async def test_cancel_closes_inflight_http_request(monkeypatch, phase):
+    """真实 SDK + 本地假 HTTP 传输：等待响应头、读取正文、内部 JSON 均可取消。"""
+    import httpx
+    import openai
+    from mewhelp.generation import GenerationContext, current_generation
+
+    entered, closed, client_closed = asyncio.Event(), asyncio.Event(), asyncio.Event()
+    requests = []
+
+    class Body(httpx.AsyncByteStream):
+        async def __aiter__(self):
+            entered.set()
+            yield b'data: {"choices":[{"index":0,"delta":{"content":"hello"}}]}\n\n'
+            await asyncio.Event().wait()
+
+        async def aclose(self):
+            closed.set()
+
+    async def handle(request):
+        import json
+        requests.append(json.loads(request.content))
+        if phase != "body":
+            entered.set()
+            try:
+                await asyncio.Event().wait()
+            finally:
+                closed.set()
+        return httpx.Response(200, headers={"content-type": "text/event-stream"}, stream=Body())
+
+    real_client = openai.AsyncOpenAI
+
+    class Client(real_client):
+        async def close(self):
+            await super().close()
+            client_closed.set()
+
+    def make_async(**kwargs):
+        return Client(**kwargs, http_client=httpx.AsyncClient(transport=httpx.MockTransport(handle)))
+
+    monkeypatch.setattr(openai, "AsyncOpenAI", make_async)
+    client = OpenAILLMClient(make_settings())
+    context = GenerationContext()
+    context_token = current_generation.set(context)
+    try:
+        if phase == "internal_json":
+            task = asyncio.create_task(asyncio.to_thread(client.chat, [], json_mode=True, task="classify"))
+        else:
+            task = asyncio.create_task(asyncio.to_thread(client.chat_stream, [], task="generate", on_token=lambda text: None))
+        await asyncio.wait_for(entered.wait(), 3)
+        context.cancel()
+        context.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await asyncio.wait_for(task, 3)
+        await asyncio.wait_for(closed.wait(), 3)
+        await asyncio.wait_for(client_closed.wait(), 3)
+    finally:
+        context.cancel()
+        current_generation.reset(context_token)
+        client._client.close()
+    assert len(requests) == 1
+    assert requests[0].get("stream", False) is (phase != "internal_json")
+    if phase == "internal_json":
+        assert requests[0]["response_format"] == {"type": "json_object"}
 
 
 # ---------------------------------------------------------------- 响应解析

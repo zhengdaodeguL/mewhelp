@@ -13,6 +13,7 @@
 from __future__ import annotations
 
 import json
+import asyncio
 import re
 import shutil
 import subprocess
@@ -24,8 +25,10 @@ from fastapi.testclient import TestClient
 
 from mewhelp.api import create_app
 from mewhelp.api.app import INDEX_HTML
+from mewhelp.api.auth import SESSION_COOKIE
 from mewhelp.api.service import MAX_MESSAGE_CHARS, chunk_text, stream_events
 from mewhelp.config import Settings
+from mewhelp.generation import current_generation
 from mewhelp.schemas import ConversationResult
 from mewhelp.workflow.graph import build_deps
 from mewhelp.api.auth import Account
@@ -180,6 +183,71 @@ def test_chat_sse_event_order_and_tokens(client):
     for c in evidence["chunks"]:
         # snippet 是给用户看的原文摘录（工作区的"依据"卡片）；
         assert set(c) == {"title", "snippet"}
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("phase", ["before_token", "during_token"])
+async def test_http_disconnect_cancels_generation_without_saving(client, monkeypatch, phase):
+    """直接发送 ASGI http.disconnect，验证浏览器断连到模型取消的完整链路。"""
+    service = client.app.state.service
+    llm = client.app.state.deps.llm
+    original_stream = llm.chat_stream
+    disconnected = asyncio.Event()
+    closed = asyncio.Event()
+    sent = []
+
+    def stream(messages, *, on_token, **kwargs):
+        async def request():
+            try:
+                if phase == "before_token":
+                    disconnected.set()
+                else:
+                    on_token("尚未完成的回答")
+                await asyncio.Event().wait()
+            finally:
+                closed.set()
+        return current_generation.get().run(request())
+
+    monkeypatch.setattr(llm, "chat_stream", stream)
+    monkeypatch.setattr(service, "memory", None)
+    session_id = _session_key(client, "disconnect")
+    body = json.dumps({"session_id": session_id, "message": "尺码怎么选"}).encode()
+    received = False
+
+    async def receive():
+        nonlocal received
+        if not received:
+            received = True
+            return {"type": "http.request", "body": body, "more_body": False}
+        await disconnected.wait()
+        return {"type": "http.disconnect"}
+
+    async def send(message):
+        sent.append(message)
+        if b"event: token" in message.get("body", b""):
+            disconnected.set()
+            disconnected.set()
+
+    scope = {
+        "type": "http", "asgi": {"version": "3.0", "spec_version": "2.3"},
+        "http_version": "1.1", "method": "POST", "scheme": "http",
+        "path": "/api/chat", "raw_path": b"/api/chat", "query_string": b"",
+        "root_path": "", "server": ("testserver", 80), "client": ("127.0.0.1", 1234),
+        "headers": [
+            (b"content-type", b"application/json"),
+            (b"cookie", f"{SESSION_COOKIE}={client.cookies.get(SESSION_COOKIE)}".encode()),
+        ],
+    }
+    await asyncio.wait_for(client.app(scope, receive, send), 5)
+    await asyncio.wait_for(closed.wait(), 3)
+    assert sent[0]["status"] == 200
+    assert not any(b"event: done" in m.get("body", b"") for m in sent)
+    assert service.sessions.load(session_id, user_id=client.test_user_id) == []
+    assert service.sessions.get_session(session_id, user_id=client.test_user_id) is None
+    monkeypatch.setattr(llm, "chat_stream", original_stream)
+    retry = client.post("/api/chat", json={"session_id": session_id, "message": "尺码怎么选"})
+    assert events_of(parse_sse(retry.text), "done")
+    assert [t.role for t in service.sessions.load(session_id, user_id=client.test_user_id)] == ["user", "assistant"]
 
 
 def test_chat_sse_does_not_expose_unlinked_order_data(client):
@@ -606,7 +674,7 @@ def test_chunk_text_is_deterministic():
 
 @pytest.mark.asyncio
 async def test_stream_events_on_short_answer():
-    """事件流的顺序与内容（sleep=0，不真的等）。"""
+    """事件流的顺序与内容，不添加人为切块或等待。"""
     result = ConversationResult(
         request_id="req-x",
         session_id="s-x",
@@ -615,7 +683,7 @@ async def test_stream_events_on_short_answer():
         answer="答",
         path=["resolve", "classify"],
     )
-    events = [e async for e in stream_events(result, sleep=0)]
+    events = [e async for e in stream_events(result)]
     assert [e["event"] for e in events] == ["meta", "evidence", "token", "done"]
     assert json.loads(events[2]["data"]) == {"text": "答"}
     assert json.loads(events[3]["data"])["answer"] == "答"
@@ -768,7 +836,7 @@ def test_frontend_sse_parser_matches_server_bytes(client, tmp_path):
     js_answer = "".join(d["text"] for n, d in js_events if n == "token")
     js_done = [d for n, d in js_events if n == "done"][0]
     assert js_answer == js_done["answer"]
-    assert len([n for n, _ in js_events if n == "token"]) > 1
+    assert len([n for n, _ in js_events if n == "token"]) >= 1
     # handoff 是前端唯一消费的 done 字段：它决定要不要显示"已转人工"提示条
     assert "handoff" in js_done
 

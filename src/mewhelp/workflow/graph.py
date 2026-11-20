@@ -29,11 +29,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from functools import wraps
 from typing import Any
 
 from langgraph.graph import END, START, StateGraph
 
 from ..config import Settings, get_settings
+from ..generation import check_cancelled
 from ..llm import LLMClient, build_llm
 from .nodes import (
     gate_route,
@@ -121,15 +123,24 @@ def build_graph(deps: GraphDeps, checkpointer: Any | None = None) -> Any:
     deps.checkpointer = checkpointer
     g = StateGraph(AgentState)
 
-    g.add_node("resolve", make_resolve_node(deps))
-    g.add_node("classify", make_classify_node(deps))
-    g.add_node("retrieve", make_retrieve_node(deps))
-    g.add_node("gate", make_gate_node(deps))
-    g.add_node("agent", make_agent_node(deps))
-    g.add_node("high_risk_flow", make_high_risk_node(deps))
-    g.add_node("generate", make_generate_node(deps))
-    g.add_node("handoff", make_handoff_node(deps))
-    g.add_node("flywheel", make_flywheel_node(deps))
+    def cancellable(node):
+        @wraps(node)
+        def run(state):
+            check_cancelled()
+            result = node(state)
+            check_cancelled()
+            return result
+        return run
+
+    g.add_node("resolve", cancellable(make_resolve_node(deps)))
+    g.add_node("classify", cancellable(make_classify_node(deps)))
+    g.add_node("retrieve", cancellable(make_retrieve_node(deps)))
+    g.add_node("gate", cancellable(make_gate_node(deps)))
+    g.add_node("agent", cancellable(make_agent_node(deps)))
+    g.add_node("high_risk_flow", cancellable(make_high_risk_node(deps)))
+    g.add_node("generate", cancellable(make_generate_node(deps)))
+    g.add_node("handoff", cancellable(make_handoff_node(deps)))
+    g.add_node("flywheel", cancellable(make_flywheel_node(deps)))
 
     g.add_edge(START, "resolve")
     g.add_edge("resolve", "classify")

@@ -23,6 +23,7 @@ from dataclasses import dataclass, field
 from typing import Any, Iterable, Sequence
 
 from .config import Settings, get_settings
+from .generation import current_generation, check_cancelled
 from .schemas import TokenUsage
 
 
@@ -134,6 +135,14 @@ class LLMClient(ABC):
     def chat_json(self, messages, **kw) -> Any:
         resp = self.chat(messages, json_mode=True, **kw)
         return resp.json()
+
+    def chat_stream(self, messages, *, on_token, **kw) -> LLMResponse:
+        """离线客户端兼容接口；真实客户端覆盖为逐分片读取。"""
+        check_cancelled()
+        response = self.chat(messages, **kw)
+        check_cancelled()
+        on_token(response.text)
+        return response
 
 
 # ============================================================
@@ -591,6 +600,18 @@ class OpenAILLMClient(LLMClient):
         json_mode: bool = False,
         task: str = "generic",
     ) -> LLMResponse:
+        return self._chat(
+            messages, tools=tools, temperature=temperature, max_tokens=max_tokens,
+            json_mode=json_mode, task=task,
+        )
+
+    def chat_stream(self, messages, *, on_token, **kw) -> LLMResponse:
+        return self._chat(messages, on_token=on_token, **kw)
+
+    def _chat(
+        self, messages, *, tools=None, temperature=None, max_tokens=None,
+        json_mode=False, task="generic", on_token=None,
+    ) -> LLMResponse:
         t0 = time.perf_counter()
         kwargs: dict[str, Any] = {
             "model": self.model,
@@ -607,10 +628,22 @@ class OpenAILLMClient(LLMClient):
         if tools:
             kwargs["tools"] = list(tools)
 
+        if on_token is not None:
+            kwargs.update(stream=True, stream_options={"include_usage": True})
+
+        context = current_generation.get()
+        check_cancelled()
         try:
-            resp = self._client.chat.completions.create(**kwargs)
+            if context is not None:
+                resp = context.run(self._request_async(kwargs, on_token))
+            elif on_token is not None:
+                with self._client.chat.completions.create(**kwargs) as stream:
+                    resp = self._collect_stream(stream, on_token)
+            else:
+                resp = self._client.chat.completions.create(**kwargs)
         except Exception as exc:  # noqa: BLE001 — 统一收敛成 LLMError
             raise LLMError(f"LLM 调用失败: {exc}") from exc
+        check_cancelled()
 
         choice = resp.choices[0]
         message = choice.message
@@ -667,6 +700,78 @@ class OpenAILLMClient(LLMClient):
             latency_ms=(time.perf_counter() - t0) * 1000,
             raw=resp,
             reasoning=reasoning,
+        )
+
+    async def _request_async(self, kwargs, on_token):
+        """请求级异步连接，停止时连响应头等待、重试等待和读流一起取消。"""
+        from openai import AsyncOpenAI
+
+        async with AsyncOpenAI(
+            api_key=self.settings.openai_api_key,
+            base_url=self.settings.openai_base_url,
+            timeout=self._timeout(),
+            max_retries=self.settings.llm_max_retries,
+        ) as client:
+            response = await client.chat.completions.create(**kwargs)
+            if on_token is None:
+                return response
+            collector = _StreamCollector(on_token)
+            async with response:
+                async for chunk in response:
+                    collector.add(chunk)
+            return collector.response()
+
+    @staticmethod
+    def _collect_stream(stream, on_token):
+        collector = _StreamCollector(on_token)
+        for chunk in stream:
+            collector.add(chunk)
+        return collector.response()
+
+
+class _StreamCollector:
+    """正文即时推送；思维链与用量只留给内部结果。"""
+
+    def __init__(self, on_token):
+        self.on_token = on_token
+        self.text = ""
+        self.reasoning = ""
+        self.trailing = ""
+        self.usage = None
+        self.finish_reason = None
+
+    def add(self, chunk):
+        check_cancelled()
+        if getattr(chunk, "usage", None) is not None:
+            self.usage = chunk.usage
+        for choice in chunk.choices:
+            if choice.index != 0:
+                continue
+            self.finish_reason = choice.finish_reason or self.finish_reason
+            delta = choice.delta
+            self.reasoning += getattr(delta, "reasoning_content", None) or ""
+            content = getattr(delta, "content", None) or ""
+            # 与同步响应的 strip 一致，只暂存末尾空白，不重新切分模型正文。
+            pending = self.trailing + content
+            if not self.text:
+                pending = pending.lstrip()
+            piece = pending.rstrip()
+            self.trailing = pending[len(piece):]
+            if piece:
+                self.text += piece
+                self.on_token(piece)
+
+    def response(self):
+        from types import SimpleNamespace
+
+        if self.finish_reason is None:
+            raise LLMError("模型流提前结束，未收到完成标记")
+        return SimpleNamespace(
+            choices=[SimpleNamespace(
+                message=SimpleNamespace(content=self.text, reasoning_content=self.reasoning),
+                finish_reason=self.finish_reason,
+            )],
+            usage=self.usage,
         )
 
 

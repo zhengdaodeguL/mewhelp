@@ -10,17 +10,14 @@
 3. **异常兜底**：任何异常都要变成 `event: error` 或一句降级答复，
    **不允许让 SSE 连接裸崩** —— 连接一断，前端连"出了什么事"都看不到。
 
-关于同步/异步：图是同步的（LangGraph 的 invoke，内部还有几十毫秒到几秒的
-模型调用），所以一律用 `run_in_threadpool` 丢到线程池，绝不阻塞事件循环。
-在 mock 模式下这点代价看不出来，但一旦换成真实模型，阻塞事件循环会让
-**所有**并发请求一起卡住。
+图仍在线程中同步执行；最终生成经请求级异步模型连接实时推送，断连时取消。
 """
 
 from __future__ import annotations
 
 import logging
 import secrets
-from contextlib import asynccontextmanager
+from contextlib import aclosing, asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -51,7 +48,6 @@ from .service import (
     SessionStore,
     memory_to_public,
     sse_event,
-    stream_events,
 )
 
 logger = logging.getLogger("mewhelp.api")
@@ -520,16 +516,15 @@ def create_app(deps: GraphDeps | None = None) -> FastAPI:
         """SSE 流式问答：meta → evidence → tool* → token* → done。"""
 
         async def gen():
-            # 图是同步的，丢线程池跑；否则一个请求会把事件循环卡住，
-            # 其它请求（包括前端拉健康检查）全部排队。
             try:
-                result = await run_in_threadpool(
-                    service.ask,
+                async with aclosing(service.stream(
                     user_id=account.user_id,
                     session_id=payload.session_id,
                     message=payload.message,
                     quote=payload.quote,
-                )
+                )) as events:
+                    async for event in events:
+                        yield event
             except SessionOwnershipError:
                 yield sse_event(EVENT_ERROR, {"message": "这次对话不可用，请新建对话后重试。"})
                 return
@@ -537,13 +532,6 @@ def create_app(deps: GraphDeps | None = None) -> FastAPI:
                 logger.exception("[api] /api/chat 执行失败")
                 yield sse_event(EVENT_ERROR, {"message": "服务暂时不可用，请稍后再试。"})
                 return
-            try:
-                async for event in stream_events(result):
-                    yield event
-            except Exception as exc:  # noqa: BLE001 — 推流中途出错也不能裸崩
-                logger.exception("[api] SSE 推送中断")
-                yield sse_event(EVENT_ERROR, {"message": "服务暂时不可用，请稍后再试。"})
-
         return EventSourceResponse(gen())
 
     # ------------------------------------------------------------
